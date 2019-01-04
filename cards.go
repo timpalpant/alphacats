@@ -3,7 +3,6 @@ package alphacats
 import (
 	"fmt"
 	"math/bits"
-	"math/rand"
 	"strings"
 )
 
@@ -52,11 +51,19 @@ var (
 	topCardMask = CardPile(1<<bitsPerCard) - 1
 )
 
-// CardPile represents an ordered pile of known cards.
+// CardPile represents an ordered pile of cards.
 // The pile is encoded as a hexadecimal integer, where each digit (4 bits)
 // corresponds to the identity of a Card.
 // The top card in the pile is always the lowest order digit.
 type CardPile uint64
+
+func NewCardPile(cards []Card) CardPile {
+	result := CardPile(0)
+	for i, card := range cards {
+		result.SetNthCard(i, card)
+	}
+	return result
+}
 
 func (cp CardPile) SetNthCard(n int, card Card) CardPile {
 	result := cp
@@ -96,7 +103,11 @@ func NewCardSet(cards []Card) CardSet {
 	return result
 }
 
-func (cs CardSet) Count() int {
+func (cs CardSet) CountOf(card Card) uint8 {
+	return cs[card]
+}
+
+func (cs CardSet) Len() int {
 	result := 0
 	for _, n := range cs {
 		result += int(n)
@@ -116,13 +127,13 @@ func (cs CardSet) AsSlice() []Card {
 	return result
 }
 
-func (cs CardSet) DrawRandom(n int) CardSet {
-	cards := cs.AsSlice()
-	rand.Shuffle(len(cards), func(i, j int) {
-		cards[i], cards[j] = cards[j], cards[i]
-	})
+func (cs CardSet) Add(cards CardSet) CardSet {
+	result := cs
+	for card, count := range cards {
+		result[card] += count
+	}
 
-	return NewCardSet(cards[:n])
+	return result
 }
 
 func (cs CardSet) Remove(cards CardSet) CardSet {

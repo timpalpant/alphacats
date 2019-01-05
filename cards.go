@@ -52,9 +52,15 @@ var (
 )
 
 // CardPile represents an ordered pile of cards.
+//
 // The pile is encoded as a hexadecimal integer, where each digit (4 bits)
 // corresponds to the identity of a Card.
 // The top card in the pile is always the lowest order digit.
+//
+// NOTE: This implementation relies on the fact that there are at most
+// 13 cards in the draw pile, and 10 distinct cards. Therefore, we can
+// represent the identity of each card using 4 bits, and the identities
+// of all 13 cards in the pile in 13 * 4 = 52 bits, or a single uint64.
 type CardPile uint64
 
 func NewCardPile(cards []Card) CardPile {
@@ -76,6 +82,14 @@ func (cp CardPile) SetNthCard(n int, card Card) CardPile {
 func (cp CardPile) NthCard(n int) Card {
 	shift := uint(n) * bitsPerCard
 	return Card((cp >> shift) & topCardMask)
+}
+
+func (cp CardPile) RemoveCard(n int) CardPile {
+
+}
+
+func (cp CardPile) InsertCard(card Card, n int) CardPile {
+
 }
 
 // String implements Stringer.
@@ -111,6 +125,17 @@ func (cs CardSet) Len() int {
 	result := 0
 	for _, n := range cs {
 		result += int(n)
+	}
+
+	return result
+}
+
+func (cs CardSet) Distinct() []Card {
+	var result []Card
+	for card, count := range cs {
+		if count > 0 {
+			result = append(result, Card(card))
+		}
 	}
 
 	return result

@@ -28,6 +28,40 @@ type InfoSet struct {
 	RemainingCards CardSet
 }
 
+// Return a new InfoSet created as if we drew the given Card
+// from the top of the draw pile.
+func (is InfoSet) DrawCard(card Card) InfoSet {
+	result := is
+
+	// Add card to our hand.
+	result.OurHand[card]++
+
+	topCard := result.KnownDrawPileCards.NthCard(0)
+	// Shift our known draw pile cards up by one.
+	result.KnownDrawPileCards = result.KnownDrawPileCards.RemoveCard(0)
+	result.DrawPile[topCard]--
+	// If we didn't know what the top card in the pile was already, we know now.
+	if topCard == Unknown {
+		result.RemainingCards[card]--
+	}
+
+	return result
+}
+
+// Return a new InfoSet created as if our opponent drew the top card
+// of the draw pile.
+func (is InfoSet) OpponentDrewCard() InfoSet {
+	result := is
+
+	// If we knew what the top card in the pile was, we now know it is in their hand.
+	topCard := result.KnownDrawPileCards.NthCard(0)
+	result.KnownDrawPileCards = result.KnownDrawPileCards.RemoveCard(0)
+	result.OpponentHand[topCard]++
+	result.DrawPile[topCard]--
+
+	return result
+}
+
 // Verifies that the InfoSet is valid and satisifes all internal constraints.
 func (is InfoSet) Validate() error {
 	// Number of remaining cards must equal number of Unknowns
@@ -70,42 +104,4 @@ func NewInfoSetFromInitialDeal(deal CardSet) InfoSet {
 		DrawPile:       drawPile,
 		RemainingCards: remainingCards,
 	}
-}
-
-func EnumerateInitialInfoSets() []InfoSet {
-	deals := enumerateInitialDeals(CoreDeck, CardSet{}, Unknown, 4, nil)
-	result := make([]InfoSet, len(deals))
-	for i, deal := range deals {
-		result[i] = NewInfoSetFromInitialDeal(deal)
-	}
-
-	return result
-}
-
-func enumerateInitialDeals(available CardSet, current CardSet, start Card, desired int, result []CardSet) []CardSet {
-	nRemaining := uint8(desired - current.Count())
-	if nRemaining == 0 {
-		return append(result, current)
-	}
-
-	for card := start; card <= Cat; card++ {
-		count := available[card]
-		for i := uint8(0); i <= min(count, nRemaining); i++ {
-			current[card] += i
-			available[card] -= i
-			result = enumerateInitialDeals(available, current, card+1, desired, result)
-			current[card] -= i
-			available[card] += i
-		}
-	}
-
-	return result
-}
-
-func min(i, j uint8) uint8 {
-	if i < j {
-		return i
-	}
-
-	return j
 }

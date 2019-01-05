@@ -45,13 +45,11 @@ func NewStack(cards []Card) Stack {
 
 // SetNthCard returns a new CardPile with the identity of the Nth card
 // in the stack set to card.
-func (s Stack) SetNthCard(n int, card Card) Stack {
+func (s *Stack) SetNthCard(n int, card Card) {
 	assertWithinRange(n)
-	result := s
-	result -= Stack(s.NthCard(n))
+	*s -= Stack(s.NthCard(n))
 	shift := uint(n) * bitsPerCard
-	result += Stack(card << shift)
-	return result
+	*s += Stack(card << shift)
 }
 
 // NthCard returns the identity of the card in the Nth position of the stack.
@@ -62,34 +60,34 @@ func (s Stack) NthCard(n int) Card {
 	return Card((s >> shift) & topCardMask)
 }
 
-// RemoveCard returns a new CardPile with the card in the Nth position removed.
-func (s Stack) RemoveCard(n int) Stack {
+// RemoveCard removes the Card in the Nth position.
+func (s *Stack) RemoveCard(n int) {
 	assertWithinRange(n)
 	// Get all cards after (and including) the one to remove.
 	// This means all of the high order bits, excluding the last (n-1) * bitsPerCard.
 	nBitsToKeep := (uint(n-1) * bitsPerCard)
 	keepMask := Stack(1<<nBitsToKeep) - 1
-	result := s & keepMask
-	remainingCards := s &^ keepMask
+	result := (*s) & keepMask
+	remainingCards := (*s) &^ keepMask
 	// Shift remaining cards one (pop off the nth card to remove it).
 	result += (remainingCards >> bitsPerCard)
-	return result
+	*s = result
 }
 
-// InsertCard returns a new CardPile with the given card inserted in the Nth position.
-func (s Stack) InsertCard(card Card, n int) Stack {
+// InsertCard places the given card inserted in the Nth position.
+func (s *Stack) InsertCard(card Card, n int) {
 	assertWithinRange(n)
 	// Get all cards after (and including) the nth card.
 	// This means all of the high order bits, excluding the last (n-1) * bitsPerCard.
 	nBitsToKeep := (uint(n-1) * bitsPerCard)
 	keepMask := Stack(1<<nBitsToKeep) - 1
-	result := s & keepMask
-	remainingCards := s &^ keepMask
+	result := (*s) & keepMask
+	remainingCards := (*s) &^ keepMask
 	// Shift remaining cards left one to make room for the card we are inserting.
 	result += (remainingCards << bitsPerCard)
 	// Add our card in the nth position.
-	result = result.SetNthCard(n, card)
-	return result
+	result.SetNthCard(n, card)
+	*s = result
 }
 
 // String implements Stringer.

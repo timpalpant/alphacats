@@ -48,6 +48,12 @@ func (is InfoSet) DrawCard(card Card) InfoSet {
 	return result
 }
 
+func (is InfoSet) PlayCard(card Card) InfoSet {
+	result := is
+	result.OurHand[card]--
+	return result
+}
+
 // Return a new InfoSet created as if our opponent drew the top card
 // of the draw pile.
 func (is InfoSet) OpponentDrewCard() InfoSet {
@@ -58,6 +64,19 @@ func (is InfoSet) OpponentDrewCard() InfoSet {
 	result.KnownDrawPileCards = result.KnownDrawPileCards.RemoveCard(0)
 	result.OpponentHand[topCard]++
 	result.DrawPile[topCard]--
+
+	return result
+}
+
+func (is InfoSet) OpponentPlayedCard(card Card) InfoSet {
+	result := is
+	if is.OpponentHand.CountOf(card) > 0 {
+		// We knew the player had this card.
+		result.OpponentHand[card]--
+	} else {
+		result.OpponentHand[Unknown]--
+		result.RemainingCards[card]--
+	}
 
 	return result
 }

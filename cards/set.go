@@ -59,39 +59,35 @@ func (s Set) AsSlice() []Card {
 	return result
 }
 
-// Add returns a new Set with the given card added to it.
-func (s Set) Add(card Card) Set {
-	result := s
-	result[card]++
-	return result
+// Add includes one of the given Card in the Set.
+func (s *Set) Add(card Card) {
+	(*s)[card]++
 }
 
-// Remove returns a new Set with the given card removed.
+// Remove removes one of the given Card from the Set.
 // Remove panics if the card is not present in the Set.
-func (s Set) Remove(card Card) Set {
-	result := s
-	if result[card] == 0 {
+func (s *Set) Remove(card Card) {
+	if (*s)[card] == 0 {
 		panic(fmt.Errorf("card %v not in set", card))
 	}
 
-	result[card]--
-	return result
+	(*s)[card]--
 }
 
-// AddAll returns a new Set with the given cards added to it.
-func (s Set) AddAll(cards Set) Set {
-	result := s
+// AddAll adds the given cards to the Set.
+func (s *Set) AddAll(cards Set) {
+	result := (*s)
 	for card, count := range cards {
 		result[card] += count
 	}
 
-	return result
+	*s = result
 }
 
-// RemoveAll returns a new Set with the given cards removed from it.
+// RemoveAll removes the given cards from the set.
 // RemoveAll panics if the cards are not present to be removed.
-func (s Set) RemoveAll(cards Set) Set {
-	result := s
+func (s *Set) RemoveAll(cards Set) {
+	result := (*s)
 	for card, count := range cards {
 		if result[card] < count {
 			panic(fmt.Errorf("cannot remove %d %v cards from set with only %d",
@@ -101,7 +97,7 @@ func (s Set) RemoveAll(cards Set) Set {
 		result[card] -= count
 	}
 
-	return result
+	*s = result
 }
 
 // String implements Stringer.

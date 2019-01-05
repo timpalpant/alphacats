@@ -28,14 +28,13 @@ type Stack uint64
 
 func assertWithinRange(n int) {
 	if n >= maxCapacity {
-		panic(fmt.Errorf("card position %d is out of range for Pile", n))
+		panic(fmt.Errorf("card position %d is out of range for Stack", n))
 	}
 }
 
 // NewStack creates a new Stack from the given slice of Cards.
 func NewStack(cards []Card) Stack {
 	assertWithinRange(len(cards) - 1)
-
 	result := Stack(0)
 	for i, card := range cards {
 		result.SetNthCard(i, card)
@@ -63,31 +62,24 @@ func (s Stack) NthCard(n int) Card {
 // RemoveCard removes the Card in the Nth position.
 func (s *Stack) RemoveCard(n int) {
 	assertWithinRange(n)
-	// Get all cards after (and including) the one to remove.
-	// This means all of the high order bits, excluding the last (n-1) * bitsPerCard.
-	nBitsToKeep := (uint(n-1) * bitsPerCard)
+	nBitsToKeep := uint(n) * bitsPerCard
 	keepMask := Stack(1<<nBitsToKeep) - 1
-	result := (*s) & keepMask
-	remainingCards := (*s) &^ keepMask
-	// Shift remaining cards one (pop off the nth card to remove it).
-	result += (remainingCards >> bitsPerCard)
-	*s = result
+	unchanged := (*s) & keepMask
+	// Shift remaining cards one (but skip the nth card to remove it).
+	toShift := (*s) &^ (keepMask << bitsPerCard)
+	*s = unchanged + (toShift >> bitsPerCard)
 }
 
 // InsertCard places the given card inserted in the Nth position.
 func (s *Stack) InsertCard(card Card, n int) {
 	assertWithinRange(n)
-	// Get all cards after (and including) the nth card.
-	// This means all of the high order bits, excluding the last (n-1) * bitsPerCard.
-	nBitsToKeep := (uint(n-1) * bitsPerCard)
+	nBitsToKeep := uint(n) * bitsPerCard
 	keepMask := Stack(1<<nBitsToKeep) - 1
-	result := (*s) & keepMask
-	remainingCards := (*s) &^ keepMask
-	// Shift remaining cards left one to make room for the card we are inserting.
-	result += (remainingCards << bitsPerCard)
-	// Add our card in the nth position.
-	result.SetNthCard(n, card)
-	*s = result
+	unchanged := (*s) & keepMask
+	toShift := (*s) &^ keepMask
+	// Shift remaining cards one to make room for the card we are inserting.
+	*s = unchanged + (toShift << bitsPerCard)
+	(*s).SetNthCard(n, card)
 }
 
 // String implements Stringer.

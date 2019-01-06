@@ -1,4 +1,4 @@
-package alphacats
+package cards
 
 import (
 	"testing"

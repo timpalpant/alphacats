@@ -1,5 +1,9 @@
 package alphacats
 
+import (
+	"github.com/timpalpant/alphacats/cards"
+)
+
 type Player uint8
 
 const (
@@ -17,11 +21,11 @@ func nextPlayer(p Player) Player {
 
 // GameState represents the current state of the game.
 type GameState struct {
-	DrawPile CardSet
+	DrawPile cards.Set
 	// Cards in the draw pile whose identity has been fixed
 	// because one of the players knows it (either because of a
 	// SeeTheFuture card or replacing a card in the deck).
-	FixedDrawPileCards CardPile
+	FixedDrawPileCards cards.Stack
 	InfoSets           map[Player]InfoSet
 }
 
@@ -45,10 +49,10 @@ func NewGameTree() *GameTree {
 
 func enumerateInitialStates() []*GameNode {
 	result := make([]*GameNode, 0)
-	player1Deals := enumerateInitialDeals(CoreDeck, CardSet{}, Unknown, 4, nil)
+	player1Deals := enumerateInitialDeals(CoreDeck, cards.Set{}, Unknown, 4, nil)
 	for _, p1Deal := range player1Deals {
 		remainingCards := CoreDeck.Remove(p1Deal)
-		player2Deals := enumerateInitialDeals(remainingCards, CardSet{}, Unknown, 4, nil)
+		player2Deals := enumerateInitialDeals(remainingCards, cards.Set{}, Unknown, 4, nil)
 		for _, p2Deal := range player2Deals {
 			gameState := buildInitialGameState(p1Deal, p2Deal)
 			// Player0 always goes first.
@@ -60,7 +64,7 @@ func enumerateInitialStates() []*GameNode {
 	return result
 }
 
-func buildInitialGameState(player1Deal, player2Deal CardSet) GameState {
+func buildInitialGameState(player1Deal, player2Deal cards.Set) GameState {
 	remainingCards := CoreDeck.Remove(player1Deal).Remove(player2Deal)
 	return GameState{
 		DrawPile: remainingCards,
@@ -127,7 +131,7 @@ func playerHasDefuseCard(state GameState, player Player) bool {
 	return state.InfoSets[player].OurHand.CountOf(Defuse) > 0
 }
 
-func playerDrewCard(state GameState, card Card) GameState {
+func playerDrewCard(state GameState, card cards.Card) GameState {
 	newState := state
 	// Pop card from the draw pile.
 	newState.DrawPile[card]--
@@ -270,7 +274,7 @@ func buildDefuseChildren(state GameState, player Player, pendingTurns int) []*Ga
 	return result
 }
 
-func enumerateInitialDeals(available CardSet, current CardSet, start Card, desired int, result []CardSet) []CardSet {
+func enumerateInitialDeals(available cards.Set, current cards.Set, start card.Card, desired int, result []cards.Set) []cards.Set {
 	nRemaining := uint8(desired - current.Len())
 	if nRemaining == 0 {
 		return append(result, current)

@@ -1,4 +1,4 @@
-package alphacats
+package cards
 
 // Card represents one card from the Exploding Kittens game deck.
 type Card int

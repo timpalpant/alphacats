@@ -2,6 +2,8 @@ package alphacats
 
 import (
 	"fmt"
+
+	"github.com/timpalpant/alphacats/cards"
 )
 
 // InfoSet defines a minimal and hashable representation of a Player's
@@ -13,24 +15,24 @@ import (
 //      but whose location we do not yet know.
 type InfoSet struct {
 	// The Cards we have in our hand. All Cards should be known.
-	OurHand CardSet
+	OurHand cards.Set
 	// The Cards our opponent has in their hand. Some Cards may be Unknown.
-	OpponentHand CardSet
+	OpponentHand cards.Set
 	// The Cards remaining in the draw pile. Some Cards may be Unknown.
-	DrawPile CardSet
+	DrawPile cards.Set
 	// Cards that we know in the draw pile. For example, after playing a
 	// SeeTheFuture card we know the identity of the top three cards.
-	KnownDrawPileCards CardPile
+	KnownDrawPileCards cards.Stack
 	// The remaining Cards whose location we do not know. These may be
 	// in our opponent's hand or in the draw pile. The number of cards should
 	// correspond to the total number of Unknown Cards in the OpponentHand
 	// and the DrawPile.
-	RemainingCards CardSet
+	RemainingCards cards.Set
 }
 
 // Return a new InfoSet created as if we drew the given Card
 // from the top of the draw pile.
-func (is InfoSet) DrawCard(card Card) InfoSet {
+func (is InfoSet) DrawCard(card cards.Card) InfoSet {
 	result := is
 
 	// Add card to our hand.
@@ -48,7 +50,7 @@ func (is InfoSet) DrawCard(card Card) InfoSet {
 	return result
 }
 
-func (is InfoSet) PlayCard(card Card) InfoSet {
+func (is InfoSet) PlayCard(card cards.Card) InfoSet {
 	result := is
 	result.OurHand[card]--
 	return result
@@ -68,7 +70,7 @@ func (is InfoSet) OpponentDrewCard() InfoSet {
 	return result
 }
 
-func (is InfoSet) OpponentPlayedCard(card Card) InfoSet {
+func (is InfoSet) OpponentPlayedCard(card cards.Card) InfoSet {
 	result := is
 	if is.OpponentHand.CountOf(card) > 0 {
 		// We knew the player had this card.
@@ -103,7 +105,7 @@ func (is InfoSet) Validate() error {
 	return nil
 }
 
-func NewInfoSetFromInitialDeal(deal CardSet) InfoSet {
+func NewInfoSetFromInitialDeal(deal cards.Set) InfoSet {
 	ourHand := deal
 	ourHand[Defuse] += 1
 

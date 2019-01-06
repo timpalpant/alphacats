@@ -1,4 +1,4 @@
-package alphacats
+package cards
 
 // Cards in the 2-player core deck in the iOS app.
 // Does not include the ExplodingCat, or the Defuse cards initially

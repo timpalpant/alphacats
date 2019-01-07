@@ -119,7 +119,7 @@ func (is *InfoSet) PlayCard(card cards.Card) {
 	is.OurHand[card]--
 }
 
-// Return a new InfoSet created as if our opponent drew the top card
+// Modify InfoSet to reflect our opponent drawing the top card
 // of the draw pile.
 func (is *InfoSet) OpponentDrewCard(fromBottom bool) {
 	position := 0
@@ -141,5 +141,24 @@ func (is *InfoSet) OpponentPlayedCard(card cards.Card) {
 	} else {
 		is.OpponentHand[cards.Unknown]--
 		is.RemainingCards[card]--
+	}
+}
+
+// Modify InfoSet to reflect seeing these cards on the top
+// of the draw pile.
+func (is *InfoSet) SeeTopCards(topN []cards.Card) {
+	for i, card := range topN {
+		// Did we know this card already?
+		nthCard := is.KnownDrawPileCards.NthCard(i)
+		if nthCard == cards.Unknown {
+			// Now we know it.
+			is.RemainingCards[card]--                 // No longer an Unknown card somewhere.
+			is.DrawPile[nthCard]--                    // No longer Unknown.
+			is.DrawPile[card]++                       // Now we know what it is.
+			is.KnownDrawPileCards.SetNthCard(i, card) // And where it is.
+		} else if nthCard != card {
+			panic(fmt.Errorf("we knew %d th card to be %v, but are now told it is %v",
+				i, nthCard, card))
+		}
 	}
 }

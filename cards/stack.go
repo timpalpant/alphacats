@@ -13,7 +13,7 @@ var (
 	maxCapacity = int(64 / bitsPerCard)
 )
 
-// Pile represents an ordered pile of cards, some of which may be unknown.
+// Stack represents an ordered pile of cards, some of which may be unknown.
 //
 // The pile is encoded as a hexadecimal integer, where each digit (4 bits)
 // corresponds to the identity of a Card.

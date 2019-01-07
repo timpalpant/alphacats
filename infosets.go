@@ -13,6 +13,10 @@ import (
 //   3) The cards in the draw pile, and their positions if we know it,
 //   4) The outstanding set of cards that must be in play somewhere,
 //      but whose location we do not yet know.
+//
+// Because an InfoSet completely defines a player's point of view
+// within the game, a Player strategy must have a single action policy
+// for each distinct InfoSet.
 type InfoSet struct {
 	// The Cards we have in our hand. All Cards should be known.
 	OurHand cards.Set

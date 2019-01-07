@@ -33,11 +33,27 @@ type GameState struct {
 	Player1Info InfoSet
 }
 
+func (gs *GameState) InfoSet(p Player) *InfoSet {
+	if p == Player0 {
+		return &gs.Player0Info
+	}
+
+	return &gs.Player1Info
+}
+
+func (gs *GameState) GetPlayerHand(p Player) cards.Set {
+	return gs.InfoSet(p).OurHand
+}
+
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
-	state           GameState
-	player          Player
-	children        []*GameNode
+	state    GameState
+	player   Player
+	children []*GameNode
+	// If player == Chance, then these are the cumulative probabilities
+	// of selecting each of the children. i.e. to select a child outcome,
+	// draw a random number p \in (0, 1] and then select the first child with
+	// cumulative probability >= p: children[cumulativeProbs >= p][0]
 	cumulativeProbs []float64
 }
 
@@ -59,13 +75,15 @@ func NewGameTree() *GameNode {
 
 func enumerateInitialStates() []*GameNode {
 	result := make([]*GameNode, 0)
-	player1Deals := enumerateInitialDeals(cards.CoreDeck, cards.Set{}, cards.Unknown, 4, nil)
-	for _, p1Deal := range player1Deals {
+	// Deal 4 cards to player 0.
+	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.Set{}, cards.Unknown, 4, nil)
+	for _, p0Deal := range player0Deals {
 		remainingCards := cards.CoreDeck
-		remainingCards.RemoveAll(p1Deal)
-		player2Deals := enumerateInitialDeals(remainingCards, cards.Set{}, cards.Unknown, 4, nil)
-		for _, p2Deal := range player2Deals {
-			gameState := buildInitialGameState(p1Deal, p2Deal)
+		remainingCards.RemoveAll(p0Deal)
+		// Deal 4 cards to player 1.
+		player1Deals := enumerateInitialDeals(remainingCards, cards.Set{}, cards.Unknown, 4, nil)
+		for _, p1Deal := range player1Deals {
+			gameState := buildInitialGameState(p0Deal, p1Deal)
 			// Player0 always goes first.
 			node := newPlayTurnNode(gameState, Player0, 1)
 			result = append(result, node)
@@ -86,11 +104,13 @@ func buildInitialGameState(player1Deal, player2Deal cards.Set) GameState {
 	}
 }
 
+// Chance node where the given player is drawing a card from the draw pile.
+// If fromBottom == true, then the player is drawing from the bottom of the pile.
 func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTurns int) *GameNode {
 	children, probs := buildDrawCardChildren(state, player, fromBottom, pendingTurns)
 	return &GameNode{
 		state:           state,
-		player:          player,
+		player:          Chance,
 		children:        children,
 		cumulativeProbs: probs,
 	}
@@ -120,8 +140,8 @@ func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode
 
 func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNode {
 	newState := state
-	newState.InfoSets[player] = playCard(newState.InfoSets[player], cards.Defuse)
-	newState.InfoSets[1-player] = opponentPlayedCard(newState.InfoSets[1-player], cards.Defuse)
+	newState.InfoSet(player).PlayCard(cards.Defuse)
+	newState.InfoSet(1 - player).OpponentPlayedCard(cards.Defuse)
 
 	// Player may choose where to place exploding cat back in the draw pile.
 	return &GameNode{

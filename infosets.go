@@ -89,55 +89,41 @@ func NewInfoSetFromInitialDeal(deal cards.Set) InfoSet {
 	}
 }
 
-// Return a new InfoSet created as if we drew the given Card
-// from the top of the draw pile.
-func drawCard(is InfoSet, card cards.Card, fromBottom bool) InfoSet {
-	result := is
-
+// Modify InfoSet as if we drew the given Card from the top of the draw pile.
+func (is *InfoSet) DrawCard(card cards.Card, fromBottom bool) {
 	// Add card to our hand.
-	result.OurHand[card]++
+	is.OurHand[card]++
 
-	topCard := result.KnownDrawPileCards.NthCard(0)
+	topCard := is.KnownDrawPileCards.NthCard(0)
 	// Shift our known draw pile cards up by one.
-	result.KnownDrawPileCards.RemoveCard(0)
-	result.DrawPile[topCard]--
+	is.KnownDrawPileCards.RemoveCard(0)
+	is.DrawPile[topCard]--
 	// If we didn't know what the top card in the pile was already, we know now.
 	if topCard == cards.Unknown {
-		result.RemainingCards[card]--
+		is.RemainingCards[card]--
 	}
-
-	return result
 }
 
-func playCard(is InfoSet, card cards.Card) InfoSet {
-	result := is
-	result.OurHand[card]--
-	return result
+func (is *InfoSet) PlayCard(card cards.Card) {
+	is.OurHand[card]--
 }
 
 // Return a new InfoSet created as if our opponent drew the top card
 // of the draw pile.
-func opponentDrewCard(is InfoSet, fromBottom bool) InfoSet {
-	result := is
-
+func (is *InfoSet) OpponentDrewCard(fromBottom bool) {
 	// If we knew what the top card in the pile was, we now know it is in their hand.
-	topCard := result.KnownDrawPileCards.NthCard(0)
-	result.KnownDrawPileCards.RemoveCard(0)
-	result.OpponentHand[topCard]++
-	result.DrawPile[topCard]--
-
-	return result
+	topCard := is.KnownDrawPileCards.NthCard(0)
+	is.KnownDrawPileCards.RemoveCard(0)
+	is.OpponentHand[topCard]++
+	is.DrawPile[topCard]--
 }
 
-func opponentPlayedCard(is InfoSet, card cards.Card) InfoSet {
-	result := is
+func (is *InfoSet) OpponentPlayedCard(card cards.Card) {
 	if is.OpponentHand.CountOf(card) > 0 {
 		// We knew the player had this card.
-		result.OpponentHand[card]--
+		is.OpponentHand[card]--
 	} else {
-		result.OpponentHand[cards.Unknown]--
-		result.RemainingCards[card]--
+		is.OpponentHand[cards.Unknown]--
+		is.RemainingCards[card]--
 	}
-
-	return result
 }

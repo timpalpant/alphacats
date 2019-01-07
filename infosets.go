@@ -98,12 +98,19 @@ func (is *InfoSet) DrawCard(card cards.Card, fromBottom bool) {
 	// Add card to our hand.
 	is.OurHand[card]++
 
-	topCard := is.KnownDrawPileCards.NthCard(0)
+	position := 0
+	if fromBottom {
+		position = is.DrawPile.Len() - 1
+	}
+
+	// NB: drawnCard may be unknown (it is a random variable
+	// realized as the card passed as an argument).
+	drawnCard := is.KnownDrawPileCards.NthCard(position)
 	// Shift our known draw pile cards up by one.
-	is.KnownDrawPileCards.RemoveCard(0)
-	is.DrawPile[topCard]--
-	// If we didn't know what the top card in the pile was already, we know now.
-	if topCard == cards.Unknown {
+	is.KnownDrawPileCards.RemoveCard(position)
+	is.DrawPile[drawnCard]--
+	// If we didn't know what the card in the pile was already, we know now.
+	if drawnCard == cards.Unknown {
 		is.RemainingCards[card]--
 	}
 }
@@ -115,11 +122,16 @@ func (is *InfoSet) PlayCard(card cards.Card) {
 // Return a new InfoSet created as if our opponent drew the top card
 // of the draw pile.
 func (is *InfoSet) OpponentDrewCard(fromBottom bool) {
-	// If we knew what the top card in the pile was, we now know it is in their hand.
-	topCard := is.KnownDrawPileCards.NthCard(0)
-	is.KnownDrawPileCards.RemoveCard(0)
-	is.OpponentHand[topCard]++
-	is.DrawPile[topCard]--
+	position := 0
+	if fromBottom {
+		position = is.DrawPile.Len() - 1
+	}
+
+	// If we knew what the card in the pile was, we now know it is in their hand.
+	drawnCard := is.KnownDrawPileCards.NthCard(position)
+	is.KnownDrawPileCards.RemoveCard(position)
+	is.OpponentHand[drawnCard]++
+	is.DrawPile[drawnCard]--
 }
 
 func (is *InfoSet) OpponentPlayedCard(card cards.Card) {

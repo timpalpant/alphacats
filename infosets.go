@@ -30,64 +30,18 @@ type InfoSet struct {
 	RemainingCards cards.Set
 }
 
-// Return a new InfoSet created as if we drew the given Card
-// from the top of the draw pile.
-func (is InfoSet) DrawCard(card cards.Card) InfoSet {
-	result := is
-
-	// Add card to our hand.
-	result.OurHand[card]++
-
-	topCard := result.KnownDrawPileCards.NthCard(0)
-	// Shift our known draw pile cards up by one.
-	result.KnownDrawPileCards = result.KnownDrawPileCards.RemoveCard(0)
-	result.DrawPile[topCard]--
-	// If we didn't know what the top card in the pile was already, we know now.
-	if topCard == Unknown {
-		result.RemainingCards[card]--
-	}
-
-	return result
-}
-
-func (is InfoSet) PlayCard(card cards.Card) InfoSet {
-	result := is
-	result.OurHand[card]--
-	return result
-}
-
-// Return a new InfoSet created as if our opponent drew the top card
-// of the draw pile.
-func (is InfoSet) OpponentDrewCard() InfoSet {
-	result := is
-
-	// If we knew what the top card in the pile was, we now know it is in their hand.
-	topCard := result.KnownDrawPileCards.NthCard(0)
-	result.KnownDrawPileCards = result.KnownDrawPileCards.RemoveCard(0)
-	result.OpponentHand[topCard]++
-	result.DrawPile[topCard]--
-
-	return result
-}
-
-func (is InfoSet) OpponentPlayedCard(card cards.Card) InfoSet {
-	result := is
-	if is.OpponentHand.CountOf(card) > 0 {
-		// We knew the player had this card.
-		result.OpponentHand[card]--
-	} else {
-		result.OpponentHand[Unknown]--
-		result.RemainingCards[card]--
-	}
-
-	return result
-}
-
 // Verifies that the InfoSet is valid and satisifes all internal constraints.
 func (is InfoSet) Validate() error {
+	// All cards in our hand must be known.
+	if is.OurHand.CountOf(cards.Unknown) != 0 {
+		return fmt.Errorf("found Unknown cards in our hand")
+	}
+
 	// Number of remaining cards must equal number of Unknowns
 	// in draw pile + opponent hand.
-	nUnknown := is.OpponentHand.Add(is.DrawPile).CountOf(Unknown)
+	unknownCards := is.OpponentHand
+	unknownCards.AddAll(is.DrawPile)
+	nUnknown := unknownCards.CountOf(cards.Unknown)
 	if int(nUnknown) != is.RemainingCards.Len() {
 		return fmt.Errorf("%d remaining cards but %d Unknowns", is.RemainingCards.Len(), nUnknown)
 	}
@@ -95,7 +49,7 @@ func (is InfoSet) Validate() error {
 	// Any known cards in the draw pile must exist in the draw pile CardSet.
 	for i := 0; i < is.DrawPile.Len(); i++ {
 		card := is.KnownDrawPileCards.NthCard(i)
-		if card != Unknown {
+		if card != cards.Unknown {
 			if is.DrawPile.CountOf(card) == 0 {
 				return fmt.Errorf("%v in draw pile but not card set", card)
 			}
@@ -105,19 +59,27 @@ func (is InfoSet) Validate() error {
 	return nil
 }
 
+// Return a new InfoSet created as if the player is dealt the given
+// Set of (4) cards at the beginning of the game, not including the
+// Defuse card that is always added.
 func NewInfoSetFromInitialDeal(deal cards.Set) InfoSet {
+	if deal.Len() != 4 {
+		panic(fmt.Errorf("initial deal must have 4 cards, got %d", deal.Len()))
+	}
+
 	ourHand := deal
-	ourHand[Defuse] += 1
+	ourHand[cards.Defuse] += 1
 
-	opponentHand := CardSet{}
-	opponentHand[Defuse] = 1
-	opponentHand[Unknown] = 4
+	opponentHand := cards.Set{}
+	opponentHand[cards.Defuse] = 1
+	opponentHand[cards.Unknown] = 4
 
-	drawPile := CardSet{}
-	drawPile[ExplodingCat] = 1
-	drawPile[Unknown] = 12
+	drawPile := cards.Set{}
+	drawPile[cards.ExplodingCat] = 1
+	drawPile[cards.Unknown] = 12
 
-	remainingCards := CoreDeck.Remove(deal)
+	remainingCards := cards.CoreDeck
+	remainingCards.RemoveAll(deal)
 
 	return InfoSet{
 		OurHand:        ourHand,
@@ -125,4 +87,57 @@ func NewInfoSetFromInitialDeal(deal cards.Set) InfoSet {
 		DrawPile:       drawPile,
 		RemainingCards: remainingCards,
 	}
+}
+
+// Return a new InfoSet created as if we drew the given Card
+// from the top of the draw pile.
+func drawCard(is InfoSet, card cards.Card, fromBottom bool) InfoSet {
+	result := is
+
+	// Add card to our hand.
+	result.OurHand[card]++
+
+	topCard := result.KnownDrawPileCards.NthCard(0)
+	// Shift our known draw pile cards up by one.
+	result.KnownDrawPileCards.RemoveCard(0)
+	result.DrawPile[topCard]--
+	// If we didn't know what the top card in the pile was already, we know now.
+	if topCard == cards.Unknown {
+		result.RemainingCards[card]--
+	}
+
+	return result
+}
+
+func playCard(is InfoSet, card cards.Card) InfoSet {
+	result := is
+	result.OurHand[card]--
+	return result
+}
+
+// Return a new InfoSet created as if our opponent drew the top card
+// of the draw pile.
+func opponentDrewCard(is InfoSet, fromBottom bool) InfoSet {
+	result := is
+
+	// If we knew what the top card in the pile was, we now know it is in their hand.
+	topCard := result.KnownDrawPileCards.NthCard(0)
+	result.KnownDrawPileCards.RemoveCard(0)
+	result.OpponentHand[topCard]++
+	result.DrawPile[topCard]--
+
+	return result
+}
+
+func opponentPlayedCard(is InfoSet, card cards.Card) InfoSet {
+	result := is
+	if is.OpponentHand.CountOf(card) > 0 {
+		// We knew the player had this card.
+		result.OpponentHand[card]--
+	} else {
+		result.OpponentHand[cards.Unknown]--
+		result.RemainingCards[card]--
+	}
+
+	return result
 }

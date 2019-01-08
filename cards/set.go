@@ -112,5 +112,5 @@ func (s Set) String() string {
 		result = append(result, cardCount)
 	}
 
-	return "{CardSet: " + strings.Join(result, ", ") + "}"
+	return "{" + strings.Join(result, ", ") + "}"
 }

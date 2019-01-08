@@ -91,5 +91,5 @@ func (s Stack) String() string {
 		s >>= bitsPerCard
 	}
 
-	return "[Stack: " + strings.Join(cards, ", ") + "]"
+	return "[" + strings.Join(cards, ", ") + "]"
 }

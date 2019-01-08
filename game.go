@@ -7,6 +7,7 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 type Player uint8
@@ -32,6 +33,55 @@ type GameState struct {
 	// Info observable from the point of view of either player.
 	Player0Info InfoSet
 	Player1Info InfoSet
+}
+
+// Validate sanity checks the GameState to ensure we have maintained
+// internal consistency in the game tree.
+func (gs *GameState) Validate() error {
+	if err := gs.Player0Info.Validate(); err != nil {
+		return errors.Wrapf(err, "player %v info invalid", Player0)
+	}
+
+	if err := gs.Player1Info.Validate(); err != nil {
+		return errors.Wrapf(err, "player %v info invalid", Player1)
+	}
+
+	// All player's should know the current number of cards in the draw pile.
+	if gs.DrawPile.Len() != gs.Player0Info.NumCardsInDrawPile() {
+		return fmt.Errorf("player %v thinks draw pile has %d cards, actually %d",
+			Player0, gs.Player0Info.NumCardsInDrawPile(), gs.DrawPile.Len())
+	}
+	if gs.DrawPile.Len() != gs.Player1Info.NumCardsInDrawPile() {
+		return fmt.Errorf("player %v thinks draw pile has %d cards, actually %d",
+			Player1, gs.Player1Info.NumCardsInDrawPile(), gs.DrawPile.Len())
+	}
+
+	// All fixed draw pile cards must be in the draw pile.
+	for i := 0; i < gs.DrawPile.Len(); i++ {
+		card := gs.FixedDrawPileCards.NthCard(i)
+		if card != cards.Unknown && gs.DrawPile.CountOf(card) == 0 {
+			return fmt.Errorf("card %v fixed at position %v in draw pile but not in set %v",
+				card, i, gs.DrawPile)
+		}
+	}
+
+	// If a draw pile card is fixed in the view of either player,
+	// it must be fixed here as well.
+	for i := 0; i < gs.DrawPile.Len(); i++ {
+		p0Card := gs.Player0Info.KnownDrawPileCards.NthCard(i)
+		if p0Card != cards.Unknown && p0Card != gs.FixedDrawPileCards.NthCard(i) {
+			return fmt.Errorf("player %v thinks draw pile position %d is %v, but actually %v",
+				Player0, i, p0Card, gs.FixedDrawPileCards.NthCard(i))
+		}
+
+		p1Card := gs.Player1Info.KnownDrawPileCards.NthCard(i)
+		if p1Card != cards.Unknown && p1Card != gs.FixedDrawPileCards.NthCard(i) {
+			return fmt.Errorf("player %v thinks draw pile position %d is %v, but actually %v",
+				Player1, i, p1Card, gs.FixedDrawPileCards.NthCard(i))
+		}
+	}
+
+	return nil
 }
 
 func (gs *GameState) InfoSet(p Player) *InfoSet {
@@ -122,6 +172,7 @@ func buildInitialGameState(player1Deal, player2Deal cards.Set) GameState {
 	remainingCards := cards.CoreDeck
 	remainingCards.RemoveAll(player1Deal)
 	remainingCards.RemoveAll(player2Deal)
+	remainingCards.Add(cards.ExplodingCat)
 	return GameState{
 		DrawPile:    remainingCards,
 		Player0Info: NewInfoSetFromInitialDeal(player1Deal),
@@ -134,6 +185,10 @@ func buildInitialGameState(player1Deal, player2Deal cards.Set) GameState {
 func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building draw card node: player = %v, from bottom = %v, pending turns = %v",
 		player, fromBottom, pendingTurns)
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
+
 	children, probs := buildDrawCardChildren(state, player, fromBottom, pendingTurns)
 	return &GameNode{
 		state:           state,
@@ -146,6 +201,10 @@ func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTur
 func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building play turn node: player = %v, pending turns = %v",
 		player, pendingTurns)
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
+
 	if pendingTurns == 0 {
 		// Player's turn is done, next player.
 		player = nextPlayer(player)
@@ -162,6 +221,10 @@ func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode
 func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building give card node: player = %v, pending turns = %v",
 		player, pendingTurns)
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
+
 	return &GameNode{
 		state:    state,
 		player:   player,
@@ -172,9 +235,13 @@ func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode
 func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building must defuse node: player = %v, pending turns = %v",
 		player, pendingTurns)
+
 	newState := state
 	newState.InfoSet(player).PlayCard(cards.Defuse)
 	newState.InfoSet(1 - player).OpponentPlayedCard(cards.Defuse)
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
 
 	// Player may choose where to place exploding cat back in the draw pile.
 	return &GameNode{
@@ -187,6 +254,10 @@ func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNo
 func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building see the future node: player = %v, pending turns = %v",
 		player, pendingTurns)
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
+
 	children, probs := buildSeeTheFutureChildren(state, player, pendingTurns)
 	return &GameNode{
 		state:           state,
@@ -198,7 +269,7 @@ func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *Game
 
 func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pendingTurns int) ([]*GameNode, []float64) {
 	if state.DrawPile.Len() == 0 {
-		panic(fmt.Errorf("trying to draw card but no cards in draw pile! %v", state))
+		panic(fmt.Errorf("trying to draw card but no cards in draw pile! %+v", state))
 	}
 
 	var result []*GameNode
@@ -241,9 +312,6 @@ func getNextDrawnCardNode(state GameState, player Player, card cards.Card, fromB
 	newState := playerDrewCard(state, player, card, fromBottom)
 	var nextNode *GameNode
 	if card == cards.ExplodingCat {
-		// FIXME: Both players see that the card drawn was a cat,
-		// even if they didn't know it already.
-
 		if playerHasDefuseCard(state, player) {
 			// Player has a defuse card, must play it.
 			nextNode = newMustDefuseNode(newState, player, pendingTurns)
@@ -263,7 +331,7 @@ func getNextDrawnCardNode(state GameState, player Player, card cards.Card, fromB
 func playerDrewCard(state GameState, player Player, card cards.Card, fromBottom bool) GameState {
 	newState := state
 	// Pop card from the draw pile.
-	newState.DrawPile[card]--
+	newState.DrawPile.Remove(card)
 	// Shift known draw pile cards up by one.
 	position := 0
 	if fromBottom {
@@ -272,7 +340,7 @@ func playerDrewCard(state GameState, player Player, card cards.Card, fromBottom 
 	newState.FixedDrawPileCards.RemoveCard(position)
 	// Add to player's hand.
 	newState.InfoSet(player).DrawCard(card, fromBottom)
-	newState.InfoSet(1 - player).OpponentDrewCard(fromBottom)
+	newState.InfoSet(1-player).OpponentDrewCard(card, fromBottom)
 	return newState
 }
 
@@ -360,10 +428,13 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 		//   2) Updating opponent's view of the world to reflect played card,
 		//   3) Updating game state based on action in card.
 		newGameState := state
+		glog.Infof("Player %v playing %v", player, card)
+		glog.Infof("Game state is: %+v", state)
 		newGameState.InfoSet(player).PlayCard(card)
 		newGameState.InfoSet(1 - player).OpponentPlayedCard(card)
 
 		var nextNode *GameNode
+		glog.V(3).Infof("Player %v playing %v card", player, card)
 		switch card {
 		case cards.Defuse:
 			// No action besides losing card.
@@ -403,6 +474,8 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 				// Other player must give us a card.
 				nextNode = newGiveCardNode(newGameState, nextPlayer(player), pendingTurns)
 			}
+		default:
+			panic(fmt.Errorf("Player playing unsupported %v card", card))
 		}
 
 		result = append(result, nextNode)
@@ -428,6 +501,7 @@ func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*
 	cardChoices := state.GetPlayerHand(player).Distinct()
 	result := make([]*GameNode, 0, len(cardChoices))
 	for _, card := range cardChoices {
+		glog.V(3).Infof("Player %v giving card %v", player, card)
 		// Form child node by:
 		//   1) Removing card from our hand,
 		//   2) Adding card to opponent's hand,
@@ -435,18 +509,17 @@ func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*
 		newGameState := state
 
 		ourInfo := newGameState.InfoSet(player)
-		ourInfo.OurHand[card]--
-		ourInfo.OpponentHand[card]++
+		ourInfo.OurHand.Remove(card)
+		ourInfo.OpponentHand.Add(card)
 
 		opponentInfo := newGameState.InfoSet(1 - player)
-		opponentInfo.OurHand[card]++
-		if opponentInfo.OpponentHand[card] > 0 {
+		opponentInfo.OurHand.Add(card)
+		if opponentInfo.OpponentHand.CountOf(card) > 0 {
 			// If opponent already knew we had one of these cards
-			opponentInfo.OpponentHand[card]--
+			opponentInfo.OpponentHand.Remove(card)
 		} else {
 			// Otherwise it was one of the Unknown cards in our hand.
-			opponentInfo.OpponentHand[cards.Unknown]--
-			opponentInfo.RemainingCards[card]--
+			opponentInfo.OpponentHand.Remove(cards.Unknown)
 		}
 
 		// Game play returns to other player (with the given card in their hand).
@@ -486,11 +559,11 @@ func buildDefuseChildren(state GameState, player Player, pendingTurns int) []*Ga
 func insertExplodingCat(state GameState, player Player, position int) GameState {
 	newState := state
 	// Place exploding cat card in the Nth position in draw pile.
-	newState.DrawPile[cards.ExplodingCat]++
+	newState.DrawPile.Add(cards.ExplodingCat)
 	newState.FixedDrawPileCards.InsertCard(cards.ExplodingCat, position)
-	newState.InfoSet(player).DrawPile[cards.ExplodingCat]++
+	newState.InfoSet(player).OurHand.Remove(cards.ExplodingCat)
 	newState.InfoSet(player).KnownDrawPileCards.InsertCard(cards.ExplodingCat, position)
-	newState.InfoSet(1 - player).DrawPile[cards.ExplodingCat]++
+	newState.InfoSet(1 - player).OpponentHand.Remove(cards.ExplodingCat)
 	// FIXME: Known draw pile cards is not completely reset,
 	// just reset until we get to the cat. Player's knowledge beneath the
 	// insertion should be retained!

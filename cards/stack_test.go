@@ -41,6 +41,27 @@ func TestSetNthCard(t *testing.T) {
 	}
 }
 
+func TestSetNthCard_NoOp(t *testing.T) {
+	testCards := []Card{Slap2x, Slap1x, ExplodingCat}
+	stack := NewStack(testCards)
+	for i, card := range testCards {
+		if stack.NthCard(i) != card {
+			t.Errorf("got %v, expected %v", stack.NthCard(i), card)
+		}
+	}
+
+	// Should be a no-op since these are already set.
+	for i, card := range testCards {
+		stack.SetNthCard(i, card)
+	}
+
+	for i, card := range testCards {
+		if stack.NthCard(i) != card {
+			t.Errorf("got %v, expected %v", stack.NthCard(i), card)
+		}
+	}
+}
+
 func TestRemoveCard(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
 	stack := NewStack(testCards)

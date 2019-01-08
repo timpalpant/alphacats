@@ -359,6 +359,7 @@ func buildSeeTheFutureChildren(state GameState, player Player, pendingTurns int)
 		for j, card := range topN {
 			newState.FixedDrawPileCards.SetNthCard(j, card)
 		}
+
 		newNode := newPlayTurnNode(newState, player, pendingTurns)
 		result = append(result, newNode)
 	}

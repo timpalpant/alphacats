@@ -46,9 +46,11 @@ func NewStack(cards []Card) Stack {
 // in the stack set to card.
 func (s *Stack) SetNthCard(n int, card Card) {
 	assertWithinRange(n)
-	*s -= Stack(s.NthCard(n))
 	shift := uint(n) * bitsPerCard
-	*s += Stack(card << shift)
+	// Zero out the current card in that position.
+	*s &= ^Stack(topCardMask << shift)
+	// Set the new card in that position
+	*s |= Stack(card << shift)
 }
 
 // NthCard returns the identity of the card in the Nth position of the stack.

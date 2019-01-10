@@ -59,7 +59,7 @@ func NewInfoSetFromInitialDeal(deal cards.Set) InfoSet {
 	ourHand := deal
 	ourHand.Add(cards.Defuse)
 
-	opponentHand := cards.Set{}
+	opponentHand := cards.NewSet()
 	opponentHand.Add(cards.Defuse)
 	for i := 0; i < 4; i++ {
 		opponentHand.Add(cards.Unknown)

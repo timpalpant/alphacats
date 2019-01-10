@@ -3,6 +3,7 @@ package alphacats
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 
 	"github.com/timpalpant/alphacats/cards"
 
@@ -19,19 +20,9 @@ const (
 )
 
 var (
-	player0Win = &GameNode{player: Player0}
-	player1Win = &GameNode{player: Player1}
-
-	nodeCache = map[nodeKey]*GameNode{}
-	nTerminal = 0
+	player0Win = &GameNode{player: Player0, turnType: GameOver}
+	player1Win = &GameNode{player: Player1, turnType: GameOver}
 )
-
-func setNodeCache(key nodeKey, node *GameNode) {
-	nodeCache[key] = node
-	if len(nodeCache)%100000 == 0 {
-		glog.Infof("Built %d game nodes (%d terminal games)", len(nodeCache), nTerminal)
-	}
-}
 
 func playerWin(p Player) *GameNode {
 	if p == Player0 {
@@ -49,10 +40,12 @@ type TurnType int
 
 const (
 	DrawCard TurnType = iota
+	Deal
 	PlayTurn
 	GiveCard
 	MustDefuse
 	SeeTheFuture
+	GameOver
 )
 
 // GameState represents the current state of the game.
@@ -145,10 +138,43 @@ func (gs *GameState) GetPlayerHand(p Player) cards.Set {
 	return gs.InfoSet(p).OurHand
 }
 
+type Strategy interface {
+	Select(nChoices int) int
+}
+
+type History []*GameNode
+
+func (h History) String() string {
+	var result []string
+	result = append(result, fmt.Sprintf("Game of %d turns:", len(h)))
+	for i, node := range h {
+		s := fmt.Sprintf("Turn %d: %v", i, node)
+		result = append(result, s)
+	}
+
+	return strings.Join(result, "\n")
+}
+
+func SampleHistory(root *GameNode, s Strategy) History {
+	var history History
+	node := root
+	for node != nil {
+		history = append(history, node)
+		node.buildChildren()
+		node = node.SampleOne(s)
+	}
+
+	return history
+}
+
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
-	state    GameState
-	player   Player
+	state        GameState
+	player       Player
+	turnType     TurnType
+	fromBottom   bool
+	pendingTurns int
+
 	children []*GameNode
 	// If player == Chance, then these are the cumulative probabilities
 	// of selecting each of the children. i.e. to select a child outcome,
@@ -157,19 +183,44 @@ type GameNode struct {
 	cumulativeProbs []float64
 }
 
-func (gn *GameNode) SampleOne() *GameNode {
-	if gn.player != Chance {
-		panic(fmt.Errorf("cannot sample game child from non-chance %v node", gn.player))
+func (gn *GameNode) buildChildren() {
+	glog.V(2).Info("Building node children")
+	switch gn.turnType {
+	case DrawCard:
+		children, probs := buildDrawCardChildren(gn.state, gn.player, gn.fromBottom, gn.pendingTurns)
+		gn.children = children
+		gn.cumulativeProbs = probs
+	case Deal:
+		gn.children = buildDealChildren()
+	case PlayTurn:
+		gn.children = buildPlayTurnChildren(gn.state, gn.player, gn.pendingTurns)
+	case GiveCard:
+		gn.children = buildGiveCardChildren(gn.state, gn.player, gn.pendingTurns)
+	case MustDefuse:
+		gn.children = buildMustDefuseChildren(gn.state, gn.player, gn.pendingTurns)
+	case SeeTheFuture:
+		children, probs := buildSeeTheFutureChildren(gn.state, gn.player, gn.pendingTurns)
+		gn.children = children
+		gn.cumulativeProbs = probs
+	}
+}
+
+func (gn *GameNode) SampleOne(s Strategy) *GameNode {
+	if len(gn.children) == 0 {
+		return nil
 	}
 
-	x := rand.Float64()
-	for i, p := range gn.cumulativeProbs {
-		if p >= x {
-			return gn.children[i]
+	if gn.player == Chance {
+		x := rand.Float64()
+		for i, p := range gn.cumulativeProbs {
+			if p >= x {
+				return gn.children[i]
+			}
 		}
 	}
 
-	return nil
+	i := s.Select(len(gn.children))
+	return gn.children[i]
 }
 
 func (gn *GameNode) NumChildren() int {
@@ -177,32 +228,22 @@ func (gn *GameNode) NumChildren() int {
 }
 
 func NewGameTree() *GameNode {
-	glog.Info("Building game tree")
-	// TODO: should not be uniform distribution over possible initial deals,
-	// some are more likely than others.
-	initialStates := enumerateInitialStates()
-	uniform := make([]float64, len(initialStates))
-	for i := 0; i < len(uniform); i++ {
-		uniform[i] = float64(i+1) / float64(len(uniform))
-	}
-
 	return &GameNode{
-		player:          Chance,
-		children:        initialStates,
-		cumulativeProbs: uniform,
+		player:   Chance,
+		turnType: Deal,
 	}
 }
 
-func enumerateInitialStates() []*GameNode {
+func buildDealChildren() []*GameNode {
 	result := make([]*GameNode, 0)
 	// Deal 4 cards to player 0.
-	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.Set{}, cards.Unknown, 4, nil)
+	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
 	glog.V(1).Infof("Enumerated %d initial deals for Player0", len(player0Deals))
 	for _, p0Deal := range player0Deals {
 		remainingCards := cards.CoreDeck
 		remainingCards.RemoveAll(p0Deal)
 		// Deal 4 cards to player 1.
-		player1Deals := enumerateInitialDeals(remainingCards, cards.Set{}, cards.Unknown, 4, nil)
+		player1Deals := enumerateInitialDeals(remainingCards, cards.NewSet(), cards.Unknown, 4, nil)
 		glog.V(1).Infof("Enumerated %d initial deals for Player1", len(player1Deals))
 		for _, p1Deal := range player1Deals {
 			glog.V(2).Infof("P0 deal: %v, P1 deal: %v", p0Deal, p1Deal)
@@ -229,14 +270,6 @@ func buildInitialGameState(player1Deal, player2Deal cards.Set) GameState {
 	}
 }
 
-type nodeKey struct {
-	state        GameState
-	player       Player
-	turnType     TurnType
-	fromBottom   bool
-	pendingTurns int
-}
-
 // Chance node where the given player is drawing a card from the draw pile.
 // If fromBottom == true, then the player is drawing from the bottom of the pile.
 func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTurns int) *GameNode {
@@ -246,36 +279,18 @@ func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTur
 		panic(err)
 	}
 
-	key := nodeKey{
+	return &GameNode{
 		state:        state,
-		player:       player,
+		player:       Chance,
 		turnType:     DrawCard,
 		fromBottom:   fromBottom,
 		pendingTurns: pendingTurns,
 	}
-
-	if node, ok := nodeCache[key]; ok {
-		return node
-	}
-
-	children, probs := buildDrawCardChildren(state, player, fromBottom, pendingTurns)
-	node := &GameNode{
-		state:           state,
-		player:          Chance,
-		children:        children,
-		cumulativeProbs: probs,
-	}
-
-	setNodeCache(key, node)
-	return node
 }
 
 func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building play turn node: player = %v, pending turns = %v",
 		player, pendingTurns)
-	if err := state.Validate(); err != nil {
-		panic(err)
-	}
 
 	if pendingTurns == 0 {
 		// Player's turn is done, next player.
@@ -283,25 +298,12 @@ func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode
 		pendingTurns = 1
 	}
 
-	key := nodeKey{
+	return &GameNode{
 		state:        state,
 		player:       player,
 		turnType:     PlayTurn,
 		pendingTurns: pendingTurns,
 	}
-
-	if node, ok := nodeCache[key]; ok {
-		return node
-	}
-
-	node := &GameNode{
-		state:    state,
-		player:   player,
-		children: buildPlayTurnChildren(state, player, pendingTurns),
-	}
-
-	setNodeCache(key, node)
-	return node
 }
 
 func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode {
@@ -311,25 +313,12 @@ func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode
 		panic(err)
 	}
 
-	key := nodeKey{
+	return &GameNode{
 		state:        state,
 		player:       player,
 		turnType:     GiveCard,
 		pendingTurns: pendingTurns,
 	}
-
-	if node, ok := nodeCache[key]; ok {
-		return node
-	}
-
-	node := &GameNode{
-		state:    state,
-		player:   player,
-		children: buildGiveCardChildren(state, player, pendingTurns),
-	}
-
-	setNodeCache(key, node)
-	return node
 }
 
 func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNode {
@@ -343,26 +332,13 @@ func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNo
 		panic(err)
 	}
 
-	key := nodeKey{
-		state:        state,
+	// Player may choose where to place exploding cat back in the draw pile.
+	return &GameNode{
+		state:        newState,
 		player:       player,
 		turnType:     MustDefuse,
 		pendingTurns: pendingTurns,
 	}
-
-	if node, ok := nodeCache[key]; ok {
-		return node
-	}
-
-	// Player may choose where to place exploding cat back in the draw pile.
-	node := &GameNode{
-		state:    newState,
-		player:   player,
-		children: buildDefuseChildren(newState, player, pendingTurns),
-	}
-
-	setNodeCache(key, node)
-	return node
 }
 
 func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *GameNode {
@@ -372,27 +348,11 @@ func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *Game
 		panic(err)
 	}
 
-	key := nodeKey{
+	return &GameNode{
 		state:        state,
-		player:       player,
-		turnType:     SeeTheFuture,
+		player:       Chance,
 		pendingTurns: pendingTurns,
 	}
-
-	if node, ok := nodeCache[key]; ok {
-		return node
-	}
-
-	children, probs := buildSeeTheFutureChildren(state, player, pendingTurns)
-	node := &GameNode{
-		state:           state,
-		player:          Chance,
-		children:        children,
-		cumulativeProbs: probs,
-	}
-
-	setNodeCache(key, node)
-	return node
 }
 
 func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pendingTurns int) ([]*GameNode, []float64) {
@@ -447,7 +407,6 @@ func getNextDrawnCardNode(state GameState, player Player, card cards.Card, fromB
 			// Player does not have a defuse card, end game with loss for them.
 			glog.V(3).Infof("Reached terminal node with %v win", 1-player)
 			nextNode = playerWin(1 - player)
-			nTerminal++
 		}
 	} else {
 		// Just a normal card, add it to player's hand and continue.
@@ -501,16 +460,6 @@ func enumerateTopNCards(drawPile cards.Set, fixed cards.Stack, n int) ([][]cards
 			nextCardProbabilities[card] = p
 		}
 	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			glog.Info(drawPile)
-			glog.Info(fixed)
-			glog.Info(n)
-			glog.Info(nextCardProbabilities)
-			glog.Info(topCard)
-		}
-	}()
 
 	for card, p := range nextCardProbabilities {
 		if n == 1 || drawPile.Len() == 1 {
@@ -619,8 +568,8 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 
 func shuffleDrawPile(state GameState) GameState {
 	result := state
-	result.Player0Info.KnownDrawPileCards = cards.NewStack(nil)
-	result.Player1Info.KnownDrawPileCards = cards.NewStack(nil)
+	result.Player0Info.KnownDrawPileCards = cards.NewStack()
+	result.Player1Info.KnownDrawPileCards = cards.NewStack()
 	return result
 }
 
@@ -658,10 +607,10 @@ func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*
 	return result
 }
 
-func buildDefuseChildren(state GameState, player Player, pendingTurns int) []*GameNode {
+func buildMustDefuseChildren(state GameState, player Player, pendingTurns int) []*GameNode {
 	result := make([]*GameNode, 0)
-	nCardsInDrawPile := uint8(state.DrawPile.Len())
-	nOptions := int(min(nCardsInDrawPile, 5))
+	nCardsInDrawPile := int(state.DrawPile.Len())
+	nOptions := min(nCardsInDrawPile, 5)
 	for i := 0; i <= nOptions; i++ {
 		newState := insertExplodingCat(state, player, i)
 		// Defusing the exploding cat ends a turn.
@@ -693,31 +642,31 @@ func insertExplodingCat(state GameState, player Player, position int) GameState 
 	// FIXME: Known draw pile cards is not completely reset,
 	// just reset until we get to the cat. Player's knowledge beneath the
 	// insertion should be retained!
-	newState.InfoSet(1 - player).KnownDrawPileCards = cards.NewStack(nil)
+	newState.InfoSet(1 - player).KnownDrawPileCards = cards.NewStack()
 	return newState
 }
 
 func enumerateInitialDeals(available cards.Set, current cards.Set, start cards.Card, desired int, result []cards.Set) []cards.Set {
-	nRemaining := uint8(desired - current.Len())
+	nRemaining := desired - current.Len()
 	if nRemaining == 0 {
 		return append(result, current)
 	}
 
 	for card := start; card <= cards.Cat; card++ {
-		count := available[card]
-		for i := uint8(0); i <= min(count, nRemaining); i++ {
-			current[card] += i
-			available[card] -= i
+		count := int(available.CountOf(card))
+		for i := 0; i <= min(count, nRemaining); i++ {
+			current.AddN(card, i)
+			available.RemoveN(card, i)
 			result = enumerateInitialDeals(available, current, card+1, desired, result)
-			current[card] -= i
-			available[card] += i
+			current.RemoveN(card, i)
+			available.AddN(card, i)
 		}
 	}
 
 	return result
 }
 
-func min(i, j uint8) uint8 {
+func min(i, j int) int {
 	if i < j {
 		return i
 	}

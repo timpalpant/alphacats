@@ -4,9 +4,9 @@ import (
 	"testing"
 )
 
-func TestNewSet(t *testing.T) {
+func TestNewSetFromCards(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	set := NewSet(testCards)
+	set := NewSetFromCards(testCards)
 	expected := map[Card]uint8{
 		Unknown:      2,
 		Skip:         1,
@@ -23,7 +23,7 @@ func TestNewSet(t *testing.T) {
 
 func TestLen(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	set := NewSet(testCards)
+	set := NewSetFromCards(testCards)
 	if set.Len() != 6 {
 		t.Errorf("card set has len %d, expected %d", set.Len(), 6)
 	}
@@ -31,7 +31,7 @@ func TestLen(t *testing.T) {
 
 func TestDistinct(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	set := NewSet(testCards)
+	set := NewSetFromCards(testCards)
 	expected := []Card{Unknown, Skip, Shuffle, SeeTheFuture}
 	if !setEqual(set.Distinct(), expected) {
 		t.Errorf("got unexpected set of distinct cards: %v", set.Distinct())
@@ -40,21 +40,21 @@ func TestDistinct(t *testing.T) {
 
 func TestAsSlice(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	set := NewSet(testCards)
+	set := NewSetFromCards(testCards)
 	if !setEqual(set.AsSlice(), testCards) {
 		t.Errorf("got unexpected slice of cards: %v", set)
 	}
 }
 
 func TestAdd(t *testing.T) {
-	set := NewSet(nil)
+	set := NewSetFromCards(nil)
 	set.Add(Skip)
 	if !setEqual(set.AsSlice(), []Card{Skip}) {
 		t.Errorf("got unexpected slice of cards: %v", set)
 	}
 
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	set = NewSet(testCards)
+	set = NewSetFromCards(testCards)
 	set.Add(Skip)
 	if set.CountOf(Skip) != 2 {
 		t.Error("failed to add Skip card")
@@ -68,7 +68,7 @@ func TestAdd(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	set := NewSet(testCards)
+	set := NewSetFromCards(testCards)
 	set.Remove(Skip)
 	if set.CountOf(Skip) != 0 {
 		t.Error("failed to remove Skip card")
@@ -92,13 +92,13 @@ func TestRemove_Panic(t *testing.T) {
 		}
 	}()
 
-	set := NewSet([]Card{Skip})
+	set := NewSetFromCards([]Card{Skip})
 	set.Remove(Shuffle)
 }
 
 func TestAddAll(t *testing.T) {
-	set1 := NewSet([]Card{Skip})
-	set2 := NewSet([]Card{Unknown, Unknown, Shuffle})
+	set1 := NewSetFromCards([]Card{Skip})
+	set2 := NewSetFromCards([]Card{Unknown, Unknown, Shuffle})
 	set1.AddAll(set2)
 	expected := []Card{Skip, Unknown, Unknown, Shuffle}
 	if !setEqual(set1.AsSlice(), expected) {
@@ -107,8 +107,8 @@ func TestAddAll(t *testing.T) {
 }
 
 func TestRemoveAll(t *testing.T) {
-	set1 := NewSet([]Card{Unknown, Unknown, Skip, Shuffle})
-	set2 := NewSet([]Card{Unknown, Skip})
+	set1 := NewSetFromCards([]Card{Unknown, Unknown, Skip, Shuffle})
+	set2 := NewSetFromCards([]Card{Unknown, Skip})
 	set1.RemoveAll(set2)
 	expected := []Card{Unknown, Shuffle}
 	if !setEqual(set1.AsSlice(), expected) {
@@ -123,8 +123,8 @@ func TestRemoveAll_Panic(t *testing.T) {
 		}
 	}()
 
-	set := NewSet([]Card{Skip})
-	set2 := NewSet([]Card{Unknown, Skip})
+	set := NewSetFromCards([]Card{Skip})
+	set2 := NewSetFromCards([]Card{Unknown, Skip})
 	set.RemoveAll(set2)
 }
 

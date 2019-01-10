@@ -4,9 +4,9 @@ import (
 	"testing"
 )
 
-func TestNewStack(t *testing.T) {
+func TestNewStackFromCards(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	stack := NewStack(testCards)
+	stack := NewStackFromCards(testCards)
 	for i, card := range testCards {
 		if stack.NthCard(i) != card {
 			t.Errorf("card pile position %d has %v, expected %v", i, stack.NthCard(i), card)
@@ -16,7 +16,7 @@ func TestNewStack(t *testing.T) {
 
 func TestSetNthCard(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	stack := NewStack(testCards)
+	stack := NewStackFromCards(testCards)
 	stack.SetNthCard(1, Slap1x)
 	testCards[1] = Slap1x
 	for i, card := range testCards {
@@ -43,7 +43,7 @@ func TestSetNthCard(t *testing.T) {
 
 func TestSetNthCard_NoOp(t *testing.T) {
 	testCards := []Card{Slap2x, Slap1x, ExplodingCat}
-	stack := NewStack(testCards)
+	stack := NewStackFromCards(testCards)
 	for i, card := range testCards {
 		if stack.NthCard(i) != card {
 			t.Errorf("got %v, expected %v", stack.NthCard(i), card)
@@ -64,7 +64,7 @@ func TestSetNthCard_NoOp(t *testing.T) {
 
 func TestRemoveCard(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	stack := NewStack(testCards)
+	stack := NewStackFromCards(testCards)
 	stack.RemoveCard(0)
 	testCards = testCards[1:]
 	for i, card := range testCards {
@@ -85,7 +85,7 @@ func TestRemoveCard(t *testing.T) {
 
 func TestInsertCard(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
-	stack := NewStack(testCards)
+	stack := NewStackFromCards(testCards)
 	stack.InsertCard(Slap1x, 0)
 	testCards = append([]Card{Slap1x}, testCards...)
 	for i, card := range testCards {

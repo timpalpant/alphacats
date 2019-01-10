@@ -32,8 +32,12 @@ func assertWithinRange(n int) {
 	}
 }
 
+func NewStack() Stack {
+	return Stack(0)
+}
+
 // NewStack creates a new Stack from the given slice of Cards.
-func NewStack(cards []Card) Stack {
+func NewStackFromCards(cards []Card) Stack {
 	assertWithinRange(len(cards) - 1)
 	result := Stack(0)
 	for i, card := range cards {

@@ -251,6 +251,11 @@ func buildDealChildren() []*GameNode {
 			// Player0 always goes first.
 			node := newPlayTurnNode(gameState, Player0, 1)
 			result = append(result, node)
+
+			// FIXME: Just for testing.
+			if len(result) >= 5 {
+				return result
+			}
 		}
 	}
 
@@ -328,7 +333,7 @@ func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNo
 	newState := state
 	newState.InfoSet(player).PlayCard(cards.Defuse)
 	newState.InfoSet(1 - player).OpponentPlayedCard(cards.Defuse)
-	if err := state.Validate(); err != nil {
+	if err := newState.Validate(); err != nil {
 		panic(err)
 	}
 

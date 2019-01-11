@@ -66,6 +66,27 @@ func TestAdd(t *testing.T) {
 	}
 }
 
+func TestAddN(t *testing.T) {
+	set := NewSet()
+	set.AddN(Skip, 3)
+	if !setEqual(set.AsSlice(), []Card{Skip, Skip, Skip}) {
+		t.Errorf("got unexpected slice of cards: %v", set)
+	}
+
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	set = NewSetFromCards(testCards)
+	set.AddN(Skip, 2)
+	if set.CountOf(Skip) != 3 {
+		t.Error("failed to add Skip cards")
+	}
+
+	expected := append(testCards, Skip, Skip)
+	if !setEqual(set.AsSlice(), expected) {
+		t.Errorf("got unexpected slice of cards: %v", set)
+	}
+
+}
+
 func TestRemove(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
 	set := NewSetFromCards(testCards)
@@ -94,6 +115,37 @@ func TestRemove_Panic(t *testing.T) {
 
 	set := NewSetFromCards([]Card{Skip})
 	set.Remove(Shuffle)
+}
+
+func TestRemoveN(t *testing.T) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	set := NewSetFromCards(testCards)
+	set.RemoveN(Unknown, 2)
+	if set.CountOf(Unknown) != 0 {
+		t.Error("failed to remove Unknown cards")
+	}
+
+	set.RemoveN(SeeTheFuture, 1)
+	if set.CountOf(SeeTheFuture) != 1 {
+		t.Error("failed to remove SeeTheFuture card")
+	}
+
+	expected := []Card{Skip, Shuffle, SeeTheFuture}
+	if !setEqual(set.AsSlice(), expected) {
+		t.Errorf("got unexpected slice of cards: %v", set)
+	}
+
+}
+
+func TestRemoveN_Panic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic when removing non-existent card")
+		}
+	}()
+
+	set := NewSetFromCards([]Card{Skip})
+	set.RemoveN(Skip, 2)
 }
 
 func TestAddAll(t *testing.T) {

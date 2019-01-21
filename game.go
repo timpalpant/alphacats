@@ -2,8 +2,6 @@ package alphacats
 
 import (
 	"fmt"
-	"math/rand"
-	"strings"
 
 	"github.com/timpalpant/alphacats/cards"
 
@@ -17,6 +15,18 @@ const (
 	Player0 Player = iota
 	Player1
 	Chance
+)
+
+type TurnType int
+
+const (
+	DrawCard TurnType = iota
+	Deal
+	PlayTurn
+	GiveCard
+	MustDefuse
+	SeeTheFuture
+	GameOver
 )
 
 var (
@@ -35,18 +45,6 @@ func playerWin(p Player) *GameNode {
 func nextPlayer(p Player) Player {
 	return 1 - p
 }
-
-type TurnType int
-
-const (
-	DrawCard TurnType = iota
-	Deal
-	PlayTurn
-	GiveCard
-	MustDefuse
-	SeeTheFuture
-	GameOver
-)
 
 // GameState represents the current state of the game.
 type GameState struct {
@@ -76,6 +74,12 @@ func (gs *GameState) Validate() error {
 	if gs.DrawPile.Len() != gs.Player1Info.NumCardsInDrawPile() {
 		return fmt.Errorf("player %v thinks draw pile has %d cards, actually %d",
 			Player1, gs.Player1Info.NumCardsInDrawPile(), gs.DrawPile.Len())
+	}
+
+	// All players should have the same view of the discard pile.
+	if gs.Player0Info.DiscardPile != gs.Player1Info.DiscardPile {
+		return fmt.Errorf("players do not agree on discard pile: %v != %v",
+			gs.Player0Info.DiscardPile, gs.Player1Info.DiscardPile)
 	}
 
 	// All fixed draw pile cards must be in the draw pile.
@@ -138,35 +142,6 @@ func (gs *GameState) GetPlayerHand(p Player) cards.Set {
 	return gs.InfoSet(p).OurHand
 }
 
-type Strategy interface {
-	Select(nChoices int) int
-}
-
-type History []*GameNode
-
-func (h History) String() string {
-	var result []string
-	result = append(result, fmt.Sprintf("Game of %d turns:", len(h)))
-	for i, node := range h {
-		s := fmt.Sprintf("Turn %d: %v", i, node)
-		result = append(result, s)
-	}
-
-	return strings.Join(result, "\n")
-}
-
-func SampleHistory(root *GameNode, s Strategy) History {
-	var history History
-	node := root
-	for node != nil {
-		history = append(history, node)
-		node.buildChildren()
-		node = node.SampleOne(s)
-	}
-
-	return history
-}
-
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
 	state        GameState
@@ -181,6 +156,10 @@ type GameNode struct {
 	// draw a random number p \in (0, 1] and then select the first child with
 	// cumulative probability >= p: children[cumulativeProbs >= p][0]
 	cumulativeProbs []float64
+}
+
+func (gn *GameNode) String() string {
+	return fmt.Sprintf("%v - %v: %v", gn.player, gn.turnType, gn.state)
 }
 
 func (gn *GameNode) buildChildren() {
@@ -205,32 +184,23 @@ func (gn *GameNode) buildChildren() {
 	}
 }
 
-func (gn *GameNode) SampleOne(s Strategy) *GameNode {
-	if len(gn.children) == 0 {
-		return nil
-	}
-
-	if gn.player == Chance {
-		x := rand.Float64()
-		for i, p := range gn.cumulativeProbs {
-			if p >= x {
-				return gn.children[i]
-			}
-		}
-	}
-
-	i := s.Select(len(gn.children))
-	return gn.children[i]
-}
-
 func (gn *GameNode) NumChildren() int {
 	return len(gn.children)
 }
 
 func NewGameTree() *GameNode {
+	children := buildDealChildren()
+	probs := make([]float64, len(children))
+	// FIXME: Should not be a uniform distribution!
+	for i := 0; i < len(probs); i++ {
+		probs[i] = float64(i+1) / float64(len(probs))
+	}
+
 	return &GameNode{
-		player:   Chance,
-		turnType: Deal,
+		player:          Chance,
+		turnType:        Deal,
+		children:        children,
+		cumulativeProbs: probs,
 	}
 }
 
@@ -251,11 +221,6 @@ func buildDealChildren() []*GameNode {
 			// Player0 always goes first.
 			node := newPlayTurnNode(gameState, Player0, 1)
 			result = append(result, node)
-
-			// FIXME: Just for testing.
-			if len(result) >= 5 {
-				return result
-			}
 		}
 	}
 
@@ -334,6 +299,7 @@ func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNo
 	newState.InfoSet(player).PlayCard(cards.Defuse)
 	newState.InfoSet(1 - player).OpponentPlayedCard(cards.Defuse)
 	if err := newState.Validate(); err != nil {
+		glog.Errorf("State: %+v", newState)
 		panic(err)
 	}
 
@@ -651,21 +617,23 @@ func insertExplodingCat(state GameState, player Player, position int) GameState 
 	return newState
 }
 
-func enumerateInitialDeals(available cards.Set, current cards.Set, start cards.Card, desired int, result []cards.Set) []cards.Set {
+func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Card, desired int, result []cards.Set) []cards.Set {
+	if card > cards.Cat {
+		return result
+	}
+
 	nRemaining := desired - current.Len()
-	if nRemaining == 0 {
+	if nRemaining == 0 || nRemaining > available.Len() {
 		return append(result, current)
 	}
 
-	for card := start; card <= cards.Cat; card++ {
-		count := int(available.CountOf(card))
-		for i := 0; i <= min(count, nRemaining); i++ {
-			current.AddN(card, i)
-			available.RemoveN(card, i)
-			result = enumerateInitialDeals(available, current, card+1, desired, result)
-			current.RemoveN(card, i)
-			available.AddN(card, i)
-		}
+	count := int(available.CountOf(card))
+	for i := 0; i <= min(count, nRemaining); i++ {
+		current.AddN(card, i)
+		available.RemoveN(card, i)
+		result = enumerateInitialDeals(available, current, card+1, desired, result)
+		current.RemoveN(card, i)
+		available.AddN(card, i)
 	}
 
 	return result

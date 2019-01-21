@@ -142,6 +142,7 @@ func (s Set) String() string {
 	result := make([]string, 0)
 	for card := Card(0); s > 0; card++ {
 		count := uint8(s & mask)
+		s >>= bitsPerCardCount
 		if count == 0 {
 			continue
 		}

@@ -29,6 +29,20 @@ const (
 	GameOver
 )
 
+var turnTypeStr = [...]string{
+	"DrawCard",
+	"Deal",
+	"PlayTurn",
+	"GiveCard",
+	"MustDefuse",
+	"SeeTheFuture",
+	"GameOver",
+}
+
+func (tt TurnType) String() string {
+	return turnTypeStr[tt]
+}
+
 var (
 	player0Win = &GameNode{player: Player0, turnType: GameOver}
 	player1Win = &GameNode{player: Player1, turnType: GameOver}
@@ -43,6 +57,10 @@ func playerWin(p Player) *GameNode {
 }
 
 func nextPlayer(p Player) Player {
+	if p != Player0 && p != Player1 {
+		panic(fmt.Sprintf("cannot call nextPlayer with player %v", p))
+	}
+
 	return 1 - p
 }
 
@@ -159,7 +177,7 @@ type GameNode struct {
 }
 
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v - %v: %v", gn.player, gn.turnType, gn.state)
+	return fmt.Sprintf("Player %v - %s: %+v", gn.player, gn.turnType, gn.state)
 }
 
 func (gn *GameNode) buildChildren() {

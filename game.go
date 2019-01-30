@@ -14,7 +14,6 @@ type Player uint8
 const (
 	Player0 Player = iota
 	Player1
-	Chance
 )
 
 type TurnType int
@@ -37,6 +36,10 @@ var turnTypeStr = [...]string{
 	"MustDefuse",
 	"SeeTheFuture",
 	"GameOver",
+}
+
+func (tt TurnType) IsChance() bool {
+	return tt == DrawCard || tt == Deal || tt == SeeTheFuture
 }
 
 func (tt TurnType) String() string {
@@ -169,7 +172,7 @@ type GameNode struct {
 	pendingTurns int
 
 	children []*GameNode
-	// If player == Chance, then these are the cumulative probabilities
+	// If turnType is Chance, then these are the cumulative probabilities
 	// of selecting each of the children. i.e. to select a child outcome,
 	// draw a random number p \in (0, 1] and then select the first child with
 	// cumulative probability >= p: children[cumulativeProbs >= p][0]
@@ -215,7 +218,7 @@ func NewGameTree() *GameNode {
 	}
 
 	return &GameNode{
-		player:          Chance,
+		player:          Player0,
 		turnType:        Deal,
 		children:        children,
 		cumulativeProbs: probs,
@@ -269,7 +272,7 @@ func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTur
 
 	return &GameNode{
 		state:        state,
-		player:       Chance,
+		player:       player,
 		turnType:     DrawCard,
 		fromBottom:   fromBottom,
 		pendingTurns: pendingTurns,
@@ -339,7 +342,7 @@ func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *Game
 
 	return &GameNode{
 		state:        state,
-		player:       Chance,
+		player:       player,
 		pendingTurns: pendingTurns,
 	}
 }

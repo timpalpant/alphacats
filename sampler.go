@@ -45,7 +45,7 @@ func SampleOne(gn *GameNode, s Strategy) *GameNode {
 	}
 
 	var selected int
-	if gn.player == Chance {
+	if gn.turnType.IsChance() {
 		x := rand.Float64()
 		selected = sort.Search(len(gn.children), func(i int) bool {
 			return gn.cumulativeProbs[i] >= x

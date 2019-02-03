@@ -19,6 +19,9 @@ func (h History) String() string {
 	var result []string
 	result = append(result, fmt.Sprintf("Game of %d turns:", len(h)))
 	for i, node := range h {
+		if i == 0 {
+			continue // Deal
+		}
 		s := fmt.Sprintf("\tTurn %d: %v", i, node)
 		result = append(result, s)
 	}

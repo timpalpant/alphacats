@@ -16,20 +16,12 @@ const (
 )
 
 var playerStr = [...]string{
-	"Player 0",
-	"Player 1",
+	"Player0",
+	"Player1",
 }
 
 func (p Player) String() string {
 	return playerStr[p]
-}
-
-func nextPlayer(p Player) Player {
-	if p != Player0 && p != Player1 {
-		panic(fmt.Sprintf("cannot call nextPlayer with player %v", p))
-	}
-
-	return 1 - p
 }
 
 type TurnType int

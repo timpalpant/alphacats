@@ -506,6 +506,14 @@ func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Ca
 	return result
 }
 
+func nextPlayer(p Player) Player {
+	if p != Player0 && p != Player1 {
+		panic(fmt.Sprintf("cannot call nextPlayer with player %v", p))
+	}
+
+	return 1 - p
+}
+
 func min(i, j int) int {
 	if i < j {
 		return i

@@ -8,6 +8,7 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 )
 
+// Player represents the identity of a player in the game.
 type Player uint8
 
 const (
@@ -24,6 +25,7 @@ func (p Player) String() string {
 	return playerStr[p]
 }
 
+// TurnType represents the kind of turn at a given point in the game.
 type TurnType int
 
 const (

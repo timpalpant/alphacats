@@ -22,7 +22,7 @@ func (h History) String() string {
 		if i == 0 {
 			continue // Deal
 		}
-		s := fmt.Sprintf("\tTurn %d: %v", i, node)
+		s := fmt.Sprintf("\tTurn %d: %s", i, node)
 		result = append(result, s)
 	}
 

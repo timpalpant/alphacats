@@ -10,12 +10,22 @@ import (
 
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
-	state        GameState
-	player       Player
-	turnType     TurnType
-	fromBottom   bool
+	state    GameState
+	player   Player
+	turnType TurnType
+	// fromBottom is true iff turnType == DrawCard and the player must
+	// draw the card from the bottom of the draw pile.
+	fromBottom bool
+	// pendingTurns is the number of turns the player has outstanding
+	// to play. In general this will be 1, except when Slap cards are played.
 	pendingTurns int
 
+	// description is a string (for debugging) representing the action
+	// that was taken to reach this game node from the previous one.
+	description string
+
+	// children are the possible next states in the game.
+	// Which child is realized will depend on chance or a player's action.
 	children []*GameNode
 	// If turnType is Chance, then these are the cumulative probabilities
 	// of selecting each of the children. i.e. to select a child outcome,
@@ -24,8 +34,17 @@ type GameNode struct {
 	cumulativeProbs []float64
 }
 
+func NewGameTree() *GameNode {
+	gn := &GameNode{
+		player:   Player0,
+		turnType: Deal,
+	}
+	gn.buildChildren()
+	return gn
+}
+
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v - %s: %+v", gn.player, gn.turnType, gn.state)
+	return fmt.Sprintf("%v. Now: %v's turn to %v", gn.description, gn.player, gn.turnType)
 }
 
 func (gn *GameNode) buildChildren() {
@@ -36,7 +55,15 @@ func (gn *GameNode) buildChildren() {
 		gn.children = children
 		gn.cumulativeProbs = probs
 	case Deal:
-		gn.children = buildDealChildren()
+		children, probs := buildDealChildren()
+		gn.children = children
+
+		// FIXME: Actually calculate deal probabilities.
+		for i := 0; i < len(probs); i++ {
+			probs[i] = float64(i+1) / float64(len(probs))
+		}
+
+		gn.cumulativeProbs = probs
 	case PlayTurn:
 		gn.children = buildPlayTurnChildren(gn.state, gn.player, gn.pendingTurns)
 	case GiveCard:
@@ -54,24 +81,9 @@ func (gn *GameNode) NumChildren() int {
 	return len(gn.children)
 }
 
-func NewGameTree() *GameNode {
-	children := buildDealChildren()
-	probs := make([]float64, len(children))
-	// FIXME: Should not be a uniform distribution!
-	for i := 0; i < len(probs); i++ {
-		probs[i] = float64(i+1) / float64(len(probs))
-	}
-
-	return &GameNode{
-		player:          Player0,
-		turnType:        Deal,
-		children:        children,
-		cumulativeProbs: probs,
-	}
-}
-
-func buildDealChildren() []*GameNode {
+func buildDealChildren() ([]*GameNode, []float64) {
 	result := make([]*GameNode, 0)
+	probs := make([]float64, 0)
 	// Deal 4 cards to player 0.
 	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
 	glog.V(1).Infof("Enumerated %d initial deals for Player0", len(player0Deals))
@@ -80,30 +92,39 @@ func buildDealChildren() []*GameNode {
 		remainingCards.RemoveAll(p0Deal)
 		// Deal 4 cards to player 1.
 		player1Deals := enumerateInitialDeals(remainingCards, cards.NewSet(), cards.Unknown, 4, nil)
-		glog.V(1).Infof("Enumerated %d initial deals for Player1", len(player1Deals))
+		glog.V(2).Infof("Enumerated %d initial deals for Player1", len(player1Deals))
 		for _, p1Deal := range player1Deals {
-			glog.V(2).Infof("P0 deal: %v, P1 deal: %v", p0Deal, p1Deal)
+			glog.V(3).Infof("P0 deal: %v, P1 deal: %v", p0Deal, p1Deal)
 			gameState := buildInitialGameState(p0Deal, p1Deal)
 			// Player0 always goes first.
 			node := newPlayTurnNode(gameState, Player0, 1)
+			node.description = "Initial deal"
 			result = append(result, node)
+			p := dealProbability(p0Deal, p1Deal)
+			probs = append(probs, p)
 		}
 	}
 
-	glog.Infof("Built %d initial game states", len(result))
-	return result
+	glog.V(1).Infof("Built %d initial game states", len(result))
+	return result, probs
 }
 
-func buildInitialGameState(player1Deal, player2Deal cards.Set) GameState {
+func buildInitialGameState(player0Deal, player1Deal cards.Set) GameState {
 	remainingCards := cards.CoreDeck
+	remainingCards.RemoveAll(player0Deal)
 	remainingCards.RemoveAll(player1Deal)
-	remainingCards.RemoveAll(player2Deal)
 	remainingCards.Add(cards.ExplodingCat)
 	return GameState{
 		DrawPile:    remainingCards,
-		Player0Info: NewInfoSetFromInitialDeal(player1Deal),
-		Player1Info: NewInfoSetFromInitialDeal(player2Deal),
+		Player0Info: NewInfoSetFromInitialDeal(player0Deal),
+		Player1Info: NewInfoSetFromInitialDeal(player1Deal),
 	}
+}
+
+// Calculates the probability of the given initial deal
+// based upon the distribution of cards in the deck.
+func dealProbability(player0Deal, player1Deal cards.Set) float64 {
+	return 0.01
 }
 
 // Chance node where the given player is drawing a card from the draw pile.
@@ -127,6 +148,9 @@ func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTur
 func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building play turn node: player = %v, pending turns = %v",
 		player, pendingTurns)
+	if err := state.Validate(); err != nil {
+		panic(err)
+	}
 
 	if pendingTurns == 0 {
 		// Player's turn is done, next player.
@@ -251,6 +275,10 @@ func getNextDrawnCardNode(state GameState, player Player, card cards.Card, fromB
 		nextNode = newPlayTurnNode(newState, player, pendingTurns)
 	}
 
+	nextNode.description = fmt.Sprintf("%v drew %v", player, card)
+	if fromBottom {
+		nextNode.description += " from bottom of draw pile"
+	}
 	return nextNode
 }
 
@@ -270,13 +298,14 @@ func buildSeeTheFutureChildren(state GameState, player Player, pendingTurns int)
 
 	cards, probs := enumerateTopNCards(state.DrawPile, state.FixedDrawPileCards(), 3)
 	var cumProb float64
-	for i, topN := range cards {
+	for i, top3 := range cards {
 		cumProb += probs[i]
 		cumulativeProbs = append(cumulativeProbs, cumProb)
 
 		newState := state
-		newState.InfoSet(player).SeeTopCards(topN)
+		newState.InfoSet(player).SeeTopCards(top3)
 		newNode := newPlayTurnNode(newState, player, pendingTurns)
+		newNode.description = fmt.Sprintf("%v saw top 3 cards: %v", player, top3)
 		result = append(result, newNode)
 	}
 
@@ -393,11 +422,13 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 			panic(fmt.Errorf("Player playing unsupported %v card", card))
 		}
 
+		nextNode.description = fmt.Sprintf("%v chose to play %v card", player, card)
 		result = append(result, nextNode)
 	}
 
 	// End our turn by drawing a card.
 	nextNode := newDrawCardNode(state, player, false, pendingTurns)
+	nextNode.description = fmt.Sprintf("%v chose to draw card", player)
 	result = append(result, nextNode)
 
 	glog.V(3).Infof("Built %d play turn children", len(result))
@@ -438,6 +469,7 @@ func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*
 
 		// Game play returns to other player (with the given card in their hand).
 		nextNode := newPlayTurnNode(newGameState, nextPlayer(player), pendingTurns)
+		nextNode.description = fmt.Sprintf("%v gave %v card to %v", player, card, nextPlayer(player))
 		result = append(result, nextNode)
 	}
 
@@ -453,6 +485,7 @@ func buildMustDefuseChildren(state GameState, player Player, pendingTurns int) [
 		newState := insertExplodingCat(state, player, i)
 		// Defusing the exploding cat ends a turn.
 		nextNode := newPlayTurnNode(newState, player, pendingTurns-1)
+		nextNode.description = fmt.Sprintf("%v put the exploding cat in position %d", player, i)
 		result = append(result, nextNode)
 	}
 
@@ -462,6 +495,7 @@ func buildMustDefuseChildren(state GameState, player Player, pendingTurns int) [
 		newState := insertExplodingCat(state, player, bottom)
 		// Defusing the exploding cat ends a turn.
 		nextNode := newPlayTurnNode(newState, player, pendingTurns-1)
+		nextNode.description = fmt.Sprintf("%v put the exploding cat on the bottom", player)
 		result = append(result, nextNode)
 	}
 

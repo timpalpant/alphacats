@@ -29,12 +29,28 @@ func TestLen(t *testing.T) {
 	}
 }
 
+func BenchmarkLen(b *testing.B) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	set := NewSetFromCards(testCards)
+	for i := 0; i < b.N; i++ {
+		_ = set.Len()
+	}
+}
+
 func TestDistinct(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
 	set := NewSetFromCards(testCards)
 	expected := []Card{Unknown, Skip, Shuffle, SeeTheFuture}
 	if !setEqual(set.Distinct(), expected) {
 		t.Errorf("got unexpected set of distinct cards: %v", set.Distinct())
+	}
+}
+
+func BenchmarkDistinct(b *testing.B) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	set := NewSetFromCards(testCards)
+	for i := 0; i < b.N; i++ {
+		_ = set.Distinct()
 	}
 }
 
@@ -84,7 +100,15 @@ func TestAddN(t *testing.T) {
 	if !setEqual(set.AsSlice(), expected) {
 		t.Errorf("got unexpected slice of cards: %v", set)
 	}
+}
 
+func BenchmarkAddRemoveN(b *testing.B) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	set := NewSetFromCards(testCards)
+	for i := 0; i < b.N; i++ {
+		set.AddN(Skip, 2)
+		set.RemoveN(Skip, 2)
+	}
 }
 
 func TestRemove(t *testing.T) {

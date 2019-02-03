@@ -41,6 +41,14 @@ func TestSetNthCard(t *testing.T) {
 	}
 }
 
+func BenchmarkSetNthCard(b *testing.B) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	stack := NewStackFromCards(testCards)
+	for i := 0; i < b.N; i++ {
+		stack.SetNthCard(4, Skip)
+	}
+}
+
 func TestSetNthCard_NoOp(t *testing.T) {
 	testCards := []Card{Slap2x, Slap1x, ExplodingCat}
 	stack := NewStackFromCards(testCards)
@@ -80,6 +88,15 @@ func TestRemoveCard(t *testing.T) {
 		if stack.NthCard(i) != card {
 			t.Errorf("card pile position %d has %v, expected %v", i, stack.NthCard(i), card)
 		}
+	}
+}
+
+func BenchmarkInsertRemoveCard(b *testing.B) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	stack := NewStackFromCards(testCards)
+	for i := 0; i < b.N; i++ {
+		stack.InsertCard(Skip, 2)
+		stack.RemoveCard(2)
 	}
 }
 

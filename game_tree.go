@@ -57,12 +57,6 @@ func (gn *GameNode) buildChildren() {
 	case Deal:
 		children, probs := buildDealChildren()
 		gn.children = children
-
-		// FIXME: Actually calculate deal probabilities.
-		for i := 0; i < len(probs); i++ {
-			probs[i] = float64(i+1) / float64(len(probs))
-		}
-
 		gn.cumulativeProbs = probs
 	case PlayTurn:
 		gn.children = buildPlayTurnChildren(gn.state, gn.player, gn.pendingTurns)
@@ -83,7 +77,6 @@ func (gn *GameNode) NumChildren() int {
 
 func buildDealChildren() ([]*GameNode, []float64) {
 	result := make([]*GameNode, 0)
-	probs := make([]float64, 0)
 	// Deal 4 cards to player 0.
 	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
 	glog.V(1).Infof("Enumerated %d initial deals for Player0", len(player0Deals))
@@ -100,12 +93,17 @@ func buildDealChildren() ([]*GameNode, []float64) {
 			node := newPlayTurnNode(gameState, Player0, 1)
 			node.description = "Initial deal"
 			result = append(result, node)
-			p := dealProbability(p0Deal, p1Deal)
-			probs = append(probs, p)
 		}
 	}
 
 	glog.V(1).Infof("Built %d initial game states", len(result))
+
+	// All deals are equally likely.
+	probs := make([]float64, len(result))
+	for i := 0; i < len(probs); i++ {
+		probs[i] = float64(i+1) / float64(len(probs))
+	}
+
 	return result, probs
 }
 
@@ -119,12 +117,6 @@ func buildInitialGameState(player0Deal, player1Deal cards.Set) GameState {
 		Player0Info: NewInfoSetFromInitialDeal(player0Deal),
 		Player1Info: NewInfoSetFromInitialDeal(player1Deal),
 	}
-}
-
-// Calculates the probability of the given initial deal
-// based upon the distribution of cards in the deck.
-func dealProbability(player0Deal, player1Deal cards.Set) float64 {
-	return 0.01
 }
 
 // Chance node where the given player is drawing a card from the draw pile.

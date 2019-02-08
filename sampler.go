@@ -46,14 +46,6 @@ func walkGameTree(node *GameNode, seen map[GameState]struct{}, infoSets map[Info
 		glog.Infof("Found %d distinct info sets", len(infoSets))
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			glog.Errorf("%s", node)
-			glog.Errorf("%+v", node.state)
-			panic(r)
-		}
-	}()
-
 	node.buildChildren()
 	for _, child := range node.children {
 		walkGameTree(child, seen, infoSets)

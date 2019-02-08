@@ -214,53 +214,14 @@ func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pend
 		panic(fmt.Errorf("trying to draw card but no cards in draw pile! %+v", state))
 	}
 
-	var result []*GameNode
-	var probs []float64
 	// Drawing a card ends one turn.
 	pendingTurns--
 
-	// Check if card being drawn is known. If it is then this node is
-	// deterministic, return it.
-	if fromBottom && bottomCardIsKnown(state) {
-		bottom := state.DrawPile.Len() - 1
-		card := state.FixedDrawPileCards().NthCard(bottom)
-		nextNode := getNextDrawnCardNode(state, player, card, fromBottom, pendingTurns)
-		result = append(result, nextNode)
-		probs = append(probs, 1.0)
-		return result, probs
-	} else if !fromBottom && topCardIsKnown(state) {
-		card := state.FixedDrawPileCards().NthCard(0)
-		nextNode := getNextDrawnCardNode(state, player, card, fromBottom, pendingTurns)
-		result = append(result, nextNode)
-		probs = append(probs, 1.0)
-		return result, probs
-	}
-
-	// Else: choose a card randomly according to distribution.
-	// Note: We need to exclude any cards whose identity is already fixed in a
-	// position known not to be the top (bottom) card.
-	candidates := state.DrawPile
-	// Loop over all fixed cards NOT in the location we are drawing.
-	fixed := state.FixedDrawPileCards()
-	var start, end int
-	if fromBottom { // If drawing from the bottom.
-		start = 0
-		end = candidates.Len() - 1
-	} else { // If drawing from the top.
-		start = 1
-		end = candidates.Len()
-	}
-
-	for i := start; i < end; i++ {
-		if known := fixed.NthCard(i); known != cards.Unknown {
-			candidates.Remove(known)
-		}
-	}
-
+	var result []*GameNode
+	var probs []float64
 	cumProb := 0.0
-	nCandidates := float64(candidates.Len())
-	for card, count := range candidates.Counts() {
-		p := float64(count) / nCandidates
+	nextCards := nextCardProbabilities(state.DrawPile, state.FixedDrawPileCards(), fromBottom)
+	for card, p := range nextCards {
 		cumProb += p
 		nextNode := getNextDrawnCardNode(state, player, card, fromBottom, pendingTurns)
 		result = append(result, nextNode)
@@ -269,6 +230,49 @@ func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pend
 
 	glog.V(3).Infof("Built %d draw card children with probs: %v", len(result), probs)
 	return result, probs
+}
+
+func nextCardProbabilities(drawPile cards.Set, fixed cards.Stack, fromBottom bool) map[cards.Card]float64 {
+	result := make(map[cards.Card]float64)
+
+	bottom := drawPile.Len() - 1
+	bottomCard := fixed.NthCard(bottom)
+	topCard := fixed.NthCard(0)
+	if fromBottom && bottomCard != cards.Unknown {
+		result[bottomCard] = 1.0
+		return result
+	} else if !fromBottom && topCard != cards.Unknown {
+		result[topCard] = 1.0
+		return result
+	}
+
+	// Note: We need to exclude any cards whose identity is already fixed in a
+	// position known not to be the top (bottom) card.
+	// Loop over all fixed cards NOT in the location we are drawing.
+	var start, end int
+	if fromBottom { // If drawing from the bottom.
+		start = 0
+		end = drawPile.Len() - 1
+	} else { // If drawing from the top.
+		start = 1
+		end = drawPile.Len()
+	}
+
+	candidates := drawPile
+	for i := start; i < end; i++ {
+		if known := fixed.NthCard(i); known != cards.Unknown {
+			candidates.Remove(known)
+		}
+	}
+
+	counts := candidates.Counts()
+	nCandidates := float64(candidates.Len())
+	for card, count := range counts {
+		p := float64(count) / nCandidates
+		result[card] = p
+	}
+
+	return result
 }
 
 func getNextDrawnCardNode(state GameState, player Player, card cards.Card, fromBottom bool, pendingTurns int) *GameNode {
@@ -333,18 +337,8 @@ func enumerateTopNCards(drawPile cards.Set, fixed cards.Stack, n int) ([][]cards
 	var result [][]cards.Card
 	var resultProbs []float64
 
-	nextCardProbabilities := make(map[cards.Card]float64)
-	topCard := fixed.NthCard(0)
-	if topCard != cards.Unknown { // Card is fixed
-		nextCardProbabilities[topCard] = 1.0
-	} else {
-		for _, card := range drawPile.Distinct() {
-			p := float64(drawPile.CountOf(card)) / float64(drawPile.Len())
-			nextCardProbabilities[card] = p
-		}
-	}
-
-	for card, p := range nextCardProbabilities {
+	nextCards := nextCardProbabilities(drawPile, fixed, false)
+	for card, p := range nextCards {
 		if n == 1 || drawPile.Len() == 1 {
 			result = append(result, []cards.Card{card})
 			resultProbs = append(resultProbs, p)
@@ -363,15 +357,6 @@ func enumerateTopNCards(drawPile cards.Set, fixed cards.Stack, n int) ([][]cards
 	}
 
 	return result, resultProbs
-}
-
-func topCardIsKnown(state GameState) bool {
-	return state.FixedDrawPileCards().NthCard(0) != cards.Unknown
-}
-
-func bottomCardIsKnown(state GameState) bool {
-	bottom := state.DrawPile.Len() - 1
-	return state.FixedDrawPileCards().NthCard(bottom) != cards.Unknown
 }
 
 func playerHasDefuseCard(state GameState, player Player) bool {

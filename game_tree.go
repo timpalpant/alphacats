@@ -204,6 +204,7 @@ func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *Game
 	return &GameNode{
 		state:        state,
 		player:       player,
+		turnType:     SeeTheFuture,
 		pendingTurns: pendingTurns,
 	}
 }
@@ -296,6 +297,8 @@ func buildSeeTheFutureChildren(state GameState, player Player, pendingTurns int)
 
 		newState := state
 		newState.InfoSet(player).SeeTopCards(top3)
+		// FIXME: How do we represent the second-order knowledge for 1-player
+		// that player now knows the top 3 cards?
 		newNode := newPlayTurnNode(newState, player, pendingTurns)
 		newNode.description = fmt.Sprintf("%v saw top 3 cards: %v", player, top3)
 		result = append(result, newNode)
@@ -503,6 +506,8 @@ func insertExplodingCat(state GameState, player Player, position int) GameState 
 	newState.InfoSet(player).OurHand.Remove(cards.ExplodingCat)
 	newState.InfoSet(player).KnownDrawPileCards.InsertCard(cards.ExplodingCat, position)
 	newState.InfoSet(1 - player).OpponentHand.Remove(cards.ExplodingCat)
+	// FIXME: How do we represent the second-order knowledge that the other
+	// player now knows the position of the exploding cat?
 	// FIXME: Known draw pile cards is not completely reset,
 	// just reset until we get to the cat. Player's knowledge beneath the
 	// insertion should be retained!

@@ -29,7 +29,8 @@ func (p Player) String() string {
 type TurnType int
 
 const (
-	DrawCard TurnType = iota
+	Invalid TurnType = iota
+	DrawCard
 	Deal
 	PlayTurn
 	GiveCard
@@ -101,19 +102,23 @@ func (gs *GameState) Validate() error {
 		}
 	}
 
-	// If a draw pile card is fixed in the view of either player,
-	// it must be fixed here as well.
-	for i := 0; i < gs.DrawPile.Len(); i++ {
-		p0Card := gs.Player0Info.KnownDrawPileCards.NthCard(i)
-		if p0Card != cards.Unknown && p0Card != gs.FixedDrawPileCards().NthCard(i) {
-			return fmt.Errorf("player %v thinks draw pile position %d is %v, but actually %v",
-				Player0, i, p0Card, gs.FixedDrawPileCards().NthCard(i))
+	// If a player knows a card in the other player's hand, they must
+	// actually have it. Note: They may have more (that are Unknown top opponent).
+	p0Unknown := gs.Player0Info.OpponentHand.CountOf(cards.Unknown)
+	p1Unknown := gs.Player1Info.OpponentHand.CountOf(cards.Unknown)
+	for card := cards.Unknown + 1; card <= cards.Cat; card++ {
+		n := gs.Player0Info.OpponentHand.CountOf(card)
+		m := gs.Player1Info.OurHand.CountOf(card)
+		if m < n || m > n+p0Unknown {
+			return fmt.Errorf("player 0 thinks player 1 has %d of %v, but they actually have %d",
+				n, card, m)
 		}
 
-		p1Card := gs.Player1Info.KnownDrawPileCards.NthCard(i)
-		if p1Card != cards.Unknown && p1Card != gs.FixedDrawPileCards().NthCard(i) {
-			return fmt.Errorf("player %v thinks draw pile position %d is %v, but actually %v",
-				Player1, i, p1Card, gs.FixedDrawPileCards().NthCard(i))
+		n = gs.Player1Info.OpponentHand.CountOf(card)
+		m = gs.Player0Info.OurHand.CountOf(card)
+		if m < n || m > n+p1Unknown {
+			return fmt.Errorf("player 1 thinks player 0 has %d of %v, but they actually have %d",
+				n, card, m)
 		}
 	}
 

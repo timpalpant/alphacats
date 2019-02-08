@@ -40,6 +40,7 @@ const (
 )
 
 var turnTypeStr = [...]string{
+	"Invalid",
 	"DrawCard",
 	"Deal",
 	"PlayTurn",

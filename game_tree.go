@@ -237,9 +237,30 @@ func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pend
 	}
 
 	// Else: choose a card randomly according to distribution.
+	// Note: We need to exclude any cards whose identity is already fixed in a
+	// position known not to be the top (bottom) card.
+	candidates := state.DrawPile
+	// Loop over all fixed cards NOT in the location we are drawing.
+	fixed := state.FixedDrawPileCards()
+	var start, end int
+	if fromBottom { // If drawing from the bottom.
+		start = 0
+		end = candidates.Len() - 1
+	} else { // If drawing from the top.
+		start = 1
+		end = candidates.Len()
+	}
+
+	for i := start; i < end; i++ {
+		if known := fixed.NthCard(i); known != cards.Unknown {
+			candidates.Remove(known)
+		}
+	}
+
 	cumProb := 0.0
-	for _, card := range state.DrawPile.Distinct() {
-		p := float64(state.DrawPile.CountOf(card)) / float64(state.DrawPile.Len())
+	nCandidates := float64(candidates.Len())
+	for card, count := range candidates.Counts() {
+		p := float64(count) / nCandidates
 		cumProb += p
 		nextNode := getNextDrawnCardNode(state, player, card, fromBottom, pendingTurns)
 		result = append(result, nextNode)

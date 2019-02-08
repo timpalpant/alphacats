@@ -49,6 +49,7 @@ func walkGameTree(node *GameNode, seen map[GameState]struct{}, infoSets map[Info
 	defer func() {
 		if r := recover(); r != nil {
 			glog.Errorf("%s", node)
+			glog.Errorf("%+v", node.state)
 			panic(r)
 		}
 	}()

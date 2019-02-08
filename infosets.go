@@ -73,14 +73,22 @@ func NewInfoSetFromInitialDeal(deal cards.Set) InfoSet {
 
 // Modify InfoSet as if we drew the given Card from the top of the draw pile.
 func (is *InfoSet) DrawCard(card cards.Card, fromBottom bool) {
-	// Add card to our hand.
-	is.OurHand.Add(card)
-
 	// Shift our known draw pile cards up by one.
 	position := 0
 	if fromBottom {
 		position = is.NumCardsInDrawPile() - 1
 	}
+
+	known := is.KnownDrawPileCards.NthCard(position)
+	if known != cards.Unknown && known != card {
+		panic(fmt.Errorf("drew card %v from %v (from bottom: %v) but we knew it to be %v",
+			card, position, fromBottom, known))
+	}
+
+	// Add card to our hand.
+	// NOTE: Must be after above calculation of # cards in draw pile,
+	// since that is backed out from the number of cards in our hand.
+	is.OurHand.Add(card)
 	is.KnownDrawPileCards.RemoveCard(position)
 
 	if err := is.Validate(); err != nil {
@@ -108,6 +116,11 @@ func (is *InfoSet) OpponentDrewCard(card cards.Card, fromBottom bool) {
 	// If we knew what the card in the pile was, we now know it is in their hand.
 	// Otherwise an Unknown card is added to their hand.
 	drawnCard := is.KnownDrawPileCards.NthCard(position)
+	if drawnCard != cards.Unknown && drawnCard != card {
+		panic(fmt.Errorf("drew card %v from %v (from bottom: %v) but we knew it to be %v",
+			card, position, fromBottom, drawnCard))
+	}
+
 	// If they drew an exploding cat then we see it either way.
 	if card == cards.ExplodingCat {
 		drawnCard = cards.ExplodingCat

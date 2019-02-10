@@ -5,8 +5,6 @@ import (
 
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/internal/gamestate"
-
-	"github.com/golang/glog"
 )
 
 // turnType represents the kind of turn at a given point in the game.
@@ -85,7 +83,6 @@ func (gn *GameNode) String() string {
 }
 
 func (gn *GameNode) buildChildren() {
-	glog.V(2).Infof("Building %v:%v node children", gn.player, gn.turnType)
 	switch gn.turnType {
 	case DrawCard:
 		children, probs := buildDrawCardChildren(gn.state, gn.player, false, gn.pendingTurns)
@@ -120,23 +117,18 @@ func buildDealChildren() ([]GameNode, []float64) {
 	result := make([]GameNode, 0)
 	// Deal 4 cards to player 0.
 	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
-	glog.V(1).Infof("Enumerated %d initial deals for Player0", len(player0Deals))
 	for _, p0Deal := range player0Deals {
 		remainingCards := cards.CoreDeck
 		remainingCards.RemoveAll(p0Deal)
 		// Deal 4 cards to player 1.
 		player1Deals := enumerateInitialDeals(remainingCards, cards.NewSet(), cards.Unknown, 4, nil)
-		glog.V(2).Infof("Enumerated %d initial deals for Player1", len(player1Deals))
 		for _, p1Deal := range player1Deals {
-			glog.V(3).Infof("P0 deal: %v, P1 deal: %v", p0Deal, p1Deal)
 			state := gamestate.New(p0Deal, p1Deal)
 			// Player0 always goes first.
 			node := newPlayTurnNode(state, gamestate.Player0, 1)
 			result = append(result, node)
 		}
 	}
-
-	glog.V(1).Infof("Built %d initial game states", len(result))
 
 	// All deals are equally likely.
 	probs := make([]float64, len(result))
@@ -150,12 +142,6 @@ func buildDealChildren() ([]GameNode, []float64) {
 // Chance node where the given player is drawing a card from the draw pile.
 // If fromBottom == true, then the player is drawing from the bottom of the pile.
 func newDrawCardNode(state gamestate.GameState, player gamestate.Player, fromBottom bool, pendingTurns int) GameNode {
-	glog.V(3).Infof("Building draw card node: player = %v, from bottom = %v, pending turns = %v",
-		player, fromBottom, pendingTurns)
-	if err := state.Validate(); err != nil {
-		panic(err)
-	}
-
 	tt := DrawCard
 	if fromBottom {
 		tt = DrawCardFromBottom
@@ -170,12 +156,6 @@ func newDrawCardNode(state gamestate.GameState, player gamestate.Player, fromBot
 }
 
 func newPlayTurnNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) GameNode {
-	glog.V(3).Infof("Building play turn node: player = %v, pending turns = %v",
-		player, pendingTurns)
-	if err := state.Validate(); err != nil {
-		panic(err)
-	}
-
 	if pendingTurns == 0 {
 		// Player's turn is done, next player.
 		player = nextPlayer(player)
@@ -191,12 +171,6 @@ func newPlayTurnNode(state gamestate.GameState, player gamestate.Player, pending
 }
 
 func newGiveCardNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) GameNode {
-	glog.V(3).Infof("Building give card node: player = %v, pending turns = %v",
-		player, pendingTurns)
-	if err := state.Validate(); err != nil {
-		panic(err)
-	}
-
 	return GameNode{
 		state:        state,
 		player:       player,
@@ -206,15 +180,8 @@ func newGiveCardNode(state gamestate.GameState, player gamestate.Player, pending
 }
 
 func newMustDefuseNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) GameNode {
-	glog.V(3).Infof("Building must defuse node: player = %v, pending turns = %v",
-		player, pendingTurns)
-
 	action := gamestate.Action{Player: player, Type: gamestate.PlayCard, Card: cards.Defuse}
 	newState := gamestate.Apply(state, action)
-	if err := newState.Validate(); err != nil {
-		glog.Errorf("State: %+v", newState)
-		panic(err)
-	}
 
 	// Player may choose where to place exploding cat back in the draw pile.
 	return GameNode{
@@ -226,12 +193,6 @@ func newMustDefuseNode(state gamestate.GameState, player gamestate.Player, pendi
 }
 
 func newSeeTheFutureNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) GameNode {
-	glog.V(3).Infof("Building see the future node: player = %v, pending turns = %v",
-		player, pendingTurns)
-	if err := state.Validate(); err != nil {
-		panic(err)
-	}
-
 	return GameNode{
 		state:        state,
 		player:       player,
@@ -273,7 +234,6 @@ func buildDrawCardChildren(state gamestate.GameState, player gamestate.Player, f
 		probs = append(probs, cumProb)
 	}
 
-	glog.V(3).Infof("Built %d draw card children with probs: %v", len(result), probs)
 	return result, probs
 }
 
@@ -293,8 +253,7 @@ func getNextDrawnCardNode(state gamestate.GameState, player gamestate.Player, ca
 		} else {
 			// Player does not have a defuse card, end game with loss for them.
 			winner := nextPlayer(player)
-			glog.V(3).Infof("Reached terminal node with player %v win", winner)
-			nextNode = newTerminalGameNode(newState, player)
+			nextNode = newTerminalGameNode(newState, winner)
 		}
 	} else {
 		// Just a normal card, add it to player's hand and continue.
@@ -319,7 +278,6 @@ func buildSeeTheFutureChildren(state gamestate.GameState, player gamestate.Playe
 		result = append(result, newNode)
 	}
 
-	glog.V(3).Infof("Built %d see the future children", len(result))
 	return result, cumulativeProbs
 }
 
@@ -338,7 +296,6 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 		newGameState := gamestate.Apply(state, action)
 
 		var nextNode GameNode
-		glog.V(3).Infof("Player %v playing %v card", player, card)
 		switch card {
 		case cards.Defuse:
 			// No action besides losing card.
@@ -349,6 +306,7 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 		case cards.Slap1x:
 			// Ends our turn (and all pending turns). Goes to next player with
 			// any pending turns + 1.
+			// FIXME: This should look to see whether previous action was slap.
 			if pendingTurns == 1 {
 				nextNode = newPlayTurnNode(newGameState, nextPlayer(player), 1)
 			} else {
@@ -357,6 +315,7 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 		case cards.Slap2x:
 			// Ends our turn (and all pending turns). Goes to next player with
 			// any pending turns + 2.
+			// FIXME: This should look to see whether previous action was slap.
 			if pendingTurns == 1 {
 				nextNode = newPlayTurnNode(newGameState, nextPlayer(player), 2)
 			} else {
@@ -388,7 +347,6 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 	nextNode := newDrawCardNode(state, player, false, pendingTurns)
 	result = append(result, nextNode)
 
-	glog.V(3).Infof("Built %d play turn children", len(result))
 	return result
 }
 
@@ -396,7 +354,6 @@ func buildGiveCardChildren(state gamestate.GameState, player gamestate.Player, p
 	cardChoices := state.GetPlayerHand(player).Distinct()
 	result := make([]GameNode, 0, len(cardChoices))
 	for _, card := range cardChoices {
-		glog.V(4).Infof("Player %v giving card %v", player, card)
 		// Form child node by:
 		//   1) Removing card from our hand,
 		//   2) Adding card to opponent's hand,
@@ -409,7 +366,6 @@ func buildGiveCardChildren(state gamestate.GameState, player gamestate.Player, p
 		result = append(result, nextNode)
 	}
 
-	glog.V(3).Infof("Built %d give card children", len(result))
 	return result
 }
 
@@ -443,8 +399,7 @@ func buildMustDefuseChildren(state gamestate.GameState, player gamestate.Player,
 		result = append(result, nextNode)
 	}
 
-	// TODO: Place randomly?
-	glog.V(3).Infof("Built %d defuse children", len(result))
+	// FIXME: Place randomly?
 	return result
 }
 

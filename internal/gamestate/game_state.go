@@ -3,7 +3,6 @@ package gamestate
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -116,14 +115,12 @@ func (gs *GameState) Validate() error {
 		card := gs.fixedDrawPileCards.NthCard(i)
 		p0Card := p0Known.NthCard(i)
 		if p0Card != cards.Unknown && p0Card != card {
-			glog.Errorf("%+v", gs)
 			return fmt.Errorf("player %v thinks %dth card is %v but is actually %v",
 				Player0, i, p0Card, card)
 		}
 
 		p1Card := p1Known.NthCard(i)
 		if p1Card != cards.Unknown && p1Card != card {
-			glog.Errorf("%+v", gs)
 			return fmt.Errorf("player %v thinks %dth card is %v but is actually %v",
 				Player1, i, p1Card, card)
 		}

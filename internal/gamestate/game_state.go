@@ -197,18 +197,18 @@ func (gs *GameState) HasDefuseCard(p Player) bool {
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
 type InfoSet struct {
-	privateInfo privateInfo
-	history     string
+	privateInfo   privateInfo
+	publicHistory string
 }
 
 func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	return InfoSet{
-		privateInfo: *gs.privateInfo(player),
-		history:     historyString(gs.history),
+		privateInfo:   *gs.privateInfo(player),
+		publicHistory: publicHistoryKey(gs.history),
 	}
 }
 
-func historyString(actions []Action) string {
+func publicHistoryKey(actions []Action) string {
 	parts := make([]string, len(actions))
 	for i, action := range actions {
 		parts[i] = action.String()

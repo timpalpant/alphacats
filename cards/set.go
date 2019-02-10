@@ -39,6 +39,12 @@ func (s Set) CountOf(card Card) uint8 {
 	return uint8((s >> shift) & mask)
 }
 
+// Contains returns whether the Set contains at least one of the given type of Card.
+func (s Set) Contains(card Card) bool {
+	return s.CountOf(card) > 0
+}
+
+// Counts returns a map of the number of each type of card in this Set.
 func (s Set) Counts() map[Card]uint8 {
 	result := make(map[Card]uint8)
 	for card := Card(0); s > 0; card++ {

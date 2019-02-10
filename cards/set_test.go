@@ -21,6 +21,23 @@ func TestNewSetFromCards(t *testing.T) {
 	}
 }
 
+func TestContains(t *testing.T) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	set := NewSetFromCards(testCards)
+
+	if set.Contains(Slap1x) {
+		t.Error("set does not contain Slap1x")
+	}
+
+	if !set.Contains(Shuffle) {
+		t.Error("set contains 1 Shuffle card")
+	}
+
+	if !set.Contains(SeeTheFuture) {
+		t.Error("set contains 2 SeeTheFuture cards")
+	}
+}
+
 func TestLen(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
 	set := NewSetFromCards(testCards)

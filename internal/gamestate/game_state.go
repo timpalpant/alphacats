@@ -10,6 +10,17 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 )
 
+var (
+	fixedCardProbabilities = make([]map[cards.Card]float64, cards.Cat+1)
+	cardProbabilitiesCache = map[cards.Set]map[cards.Card]float64{}
+)
+
+func init() {
+	for card := cards.Card(0); card <= cards.Cat; card++ {
+		fixedCardProbabilities[card] = map[cards.Card]float64{card: 1.0}
+	}
+}
+
 // GameState represents the current state of the game.
 //
 // Any additional fields added to GameState must also be added to clone().
@@ -211,7 +222,7 @@ func (gs *GameState) BottomCardProbabilities() map[cards.Card]float64 {
 	bottomCard := gs.fixedDrawPileCards.NthCard(bottom)
 	if bottomCard != cards.Unknown {
 		// Identity of the bottom card is fixed.
-		return map[cards.Card]float64{bottomCard: 1.0}
+		return fixedCardProbabilities[bottomCard]
 	}
 
 	// Note: We need to exclude any cards whose identity is already fixed in a
@@ -225,13 +236,13 @@ func (gs *GameState) BottomCardProbabilities() map[cards.Card]float64 {
 		}
 	}
 
-	return toProbabilities(candidates.Counts())
+	return toProbabilities(candidates)
 }
 
 func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
 	topCard := gs.fixedDrawPileCards.NthCard(0)
 	if topCard != cards.Unknown {
-		return map[cards.Card]float64{topCard: 1.0}
+		return fixedCardProbabilities[topCard]
 	}
 
 	// Note: We need to exclude any cards whose identity is already fixed in a
@@ -246,26 +257,24 @@ func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
 		}
 	}
 
-	return toProbabilities(candidates.Counts())
+	return toProbabilities(candidates)
 }
 
-func toProbabilities(counts map[cards.Card]uint8) map[cards.Card]float64 {
+func toProbabilities(candidates cards.Set) map[cards.Card]float64 {
+	if result, ok := cardProbabilitiesCache[candidates]; ok {
+		return result
+	}
+
+	counts := candidates.Counts()
 	result := make(map[cards.Card]float64, len(counts))
-	nTotal := float64(sum(counts))
+	nTotal := float64(candidates.Len())
 	for card, count := range counts {
 		p := float64(count) / nTotal
 		result[card] = p
 	}
 
+	cardProbabilitiesCache[candidates] = result
 	return result
-}
-
-func sum(counts map[cards.Card]uint8) int {
-	total := 0
-	for _, count := range counts {
-		total += int(count)
-	}
-	return total
 }
 
 func (gs *GameState) privateInfo(p Player) *privateInfo {

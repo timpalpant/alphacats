@@ -4,25 +4,53 @@ import (
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
+	"github.com/timpalpant/alphacats/gamestate"
 
 	"github.com/golang/glog"
 )
 
+// turnType represents the kind of turn at a given point in the game.
+type TurnType uint8
+
+const (
+	_ TurnType = iota
+	DrawCard
+	DrawCardFromBottom
+	Deal
+	PlayTurn
+	GiveCard
+	MustDefuse
+	SeeTheFuture
+	GameOver
+)
+
+var turnTypeStr = [...]string{
+	"Invalid",
+	"DrawCard",
+	"Deal",
+	"PlayTurn",
+	"GiveCard",
+	"MustDefuse",
+	"SeeTheFuture",
+	"GameOver",
+}
+
+func (tt TurnType) IsChance() bool {
+	return tt == DrawCard || tt == Deal || tt == SeeTheFuture
+}
+
+func (tt TurnType) String() string {
+	return turnTypeStr[tt]
+}
+
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
-	state    GameState
-	player   Player
+	state    gamestate.GameState
+	player   gamestate.Player
 	turnType TurnType
-	// fromBottom is true iff turnType == DrawCard and the player must
-	// draw the card from the bottom of the draw pile.
-	fromBottom bool
 	// pendingTurns is the number of turns the player has outstanding
 	// to play. In general this will be 1, except when Slap cards are played.
 	pendingTurns int
-
-	// description is a string (for debugging) representing the action
-	// that was taken to reach this game node from the previous one.
-	description string
 
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
@@ -36,22 +64,30 @@ type GameNode struct {
 
 func NewGameTree() *GameNode {
 	gn := &GameNode{
-		player:   Player0,
+		player:   gamestate.Player0,
 		turnType: Deal,
 	}
 	gn.buildChildren()
 	return gn
 }
 
+func (gn *GameNode) GetHistory() []gamestate.Action {
+	return gn.state.GetHistory()
+}
+
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v. Now: %v's turn to %v", gn.description, gn.player, gn.turnType)
+	return fmt.Sprintf("%v's turn to %v", gn.player, gn.turnType)
 }
 
 func (gn *GameNode) buildChildren() {
 	glog.V(2).Info("Building node children")
 	switch gn.turnType {
 	case DrawCard:
-		children, probs := buildDrawCardChildren(gn.state, gn.player, gn.fromBottom, gn.pendingTurns)
+		children, probs := buildDrawCardChildren(gn.state, gn.player, false, gn.pendingTurns)
+		gn.children = children
+		gn.cumulativeProbs = probs
+	case DrawCardFromBottom:
+		children, probs := buildDrawCardChildren(gn.state, gn.player, true, gn.pendingTurns)
 		gn.children = children
 		gn.cumulativeProbs = probs
 	case Deal:
@@ -88,10 +124,9 @@ func buildDealChildren() ([]*GameNode, []float64) {
 		glog.V(2).Infof("Enumerated %d initial deals for Player1", len(player1Deals))
 		for _, p1Deal := range player1Deals {
 			glog.V(3).Infof("P0 deal: %v, P1 deal: %v", p0Deal, p1Deal)
-			gameState := buildInitialGameState(p0Deal, p1Deal)
+			state := gamestate.New(p0Deal, p1Deal)
 			// Player0 always goes first.
-			node := newPlayTurnNode(gameState, Player0, 1)
-			node.description = "Initial deal"
+			node := newPlayTurnNode(state, gamestate.Player0, 1)
 			result = append(result, node)
 		}
 	}
@@ -107,37 +142,29 @@ func buildDealChildren() ([]*GameNode, []float64) {
 	return result, probs
 }
 
-func buildInitialGameState(player0Deal, player1Deal cards.Set) GameState {
-	remainingCards := cards.CoreDeck
-	remainingCards.RemoveAll(player0Deal)
-	remainingCards.RemoveAll(player1Deal)
-	remainingCards.Add(cards.ExplodingCat)
-	return GameState{
-		DrawPile:    remainingCards,
-		Player0Info: NewInfoSetFromInitialDeal(player0Deal),
-		Player1Info: NewInfoSetFromInitialDeal(player1Deal),
-	}
-}
-
 // Chance node where the given player is drawing a card from the draw pile.
 // If fromBottom == true, then the player is drawing from the bottom of the pile.
-func newDrawCardNode(state GameState, player Player, fromBottom bool, pendingTurns int) *GameNode {
+func newDrawCardNode(state gamestate.GameState, player gamestate.Player, fromBottom bool, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building draw card node: player = %v, from bottom = %v, pending turns = %v",
 		player, fromBottom, pendingTurns)
 	if err := state.Validate(); err != nil {
 		panic(err)
 	}
 
+	tt := DrawCard
+	if fromBottom {
+		tt = DrawCardFromBottom
+	}
+
 	return &GameNode{
 		state:        state,
 		player:       player,
-		turnType:     DrawCard,
-		fromBottom:   fromBottom,
+		turnType:     tt,
 		pendingTurns: pendingTurns,
 	}
 }
 
-func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode {
+func newPlayTurnNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building play turn node: player = %v, pending turns = %v",
 		player, pendingTurns)
 	if err := state.Validate(); err != nil {
@@ -158,7 +185,7 @@ func newPlayTurnNode(state GameState, player Player, pendingTurns int) *GameNode
 	}
 }
 
-func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode {
+func newGiveCardNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building give card node: player = %v, pending turns = %v",
 		player, pendingTurns)
 	if err := state.Validate(); err != nil {
@@ -173,13 +200,12 @@ func newGiveCardNode(state GameState, player Player, pendingTurns int) *GameNode
 	}
 }
 
-func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNode {
+func newMustDefuseNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building must defuse node: player = %v, pending turns = %v",
 		player, pendingTurns)
 
-	newState := state
-	newState.InfoSet(player).PlayCard(cards.Defuse)
-	newState.InfoSet(1 - player).OpponentPlayedCard(cards.Defuse)
+	action := gamestate.Action{Player: player, Type: gamestate.PlayCard, Card: cards.Defuse}
+	newState := gamestate.Apply(state, action)
 	if err := newState.Validate(); err != nil {
 		glog.Errorf("State: %+v", newState)
 		panic(err)
@@ -194,7 +220,7 @@ func newMustDefuseNode(state GameState, player Player, pendingTurns int) *GameNo
 	}
 }
 
-func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *GameNode {
+func newSeeTheFutureNode(state gamestate.GameState, player gamestate.Player, pendingTurns int) *GameNode {
 	glog.V(3).Infof("Building see the future node: player = %v, pending turns = %v",
 		player, pendingTurns)
 	if err := state.Validate(); err != nil {
@@ -209,8 +235,16 @@ func newSeeTheFutureNode(state GameState, player Player, pendingTurns int) *Game
 	}
 }
 
-func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pendingTurns int) ([]*GameNode, []float64) {
-	if state.DrawPile.Len() == 0 {
+func newTerminalGameNode(state gamestate.GameState, winner gamestate.Player) *GameNode {
+	return &GameNode{
+		state:    state,
+		turnType: GameOver,
+		player:   winner,
+	}
+}
+
+func buildDrawCardChildren(state gamestate.GameState, player gamestate.Player, fromBottom bool, pendingTurns int) ([]*GameNode, []float64) {
+	if state.GetDrawPile().Len() == 0 {
 		panic(fmt.Errorf("trying to draw card but no cards in draw pile! %+v", state))
 	}
 
@@ -220,7 +254,7 @@ func buildDrawCardChildren(state GameState, player Player, fromBottom bool, pend
 	var result []*GameNode
 	var probs []float64
 	cumProb := 0.0
-	nextCards := nextCardProbabilities(state.DrawPile, state.FixedDrawPileCards(), fromBottom)
+	nextCards := nextCardProbabilities(state.GetDrawPile(), state.FixedDrawPileCards(), fromBottom)
 	for card, p := range nextCards {
 		cumProb += p
 		nextNode := getNextDrawnCardNode(state, player, card, fromBottom, pendingTurns)
@@ -275,57 +309,48 @@ func nextCardProbabilities(drawPile cards.Set, fixed cards.Stack, fromBottom boo
 	return result
 }
 
-func getNextDrawnCardNode(state GameState, player Player, card cards.Card, fromBottom bool, pendingTurns int) *GameNode {
-	newState := playerDrewCard(state, player, card, fromBottom)
+func getNextDrawnCardNode(state gamestate.GameState, player gamestate.Player, card cards.Card, fromBottom bool, pendingTurns int) *GameNode {
+	position := 0
+	if fromBottom {
+		position = state.GetDrawPile().Len() - 1
+	}
+
+	action := gamestate.Action{Player: player, Type: gamestate.DrawCard, Card: card, PositionInDrawPile: position}
+	newState := gamestate.Apply(state, action)
 	var nextNode *GameNode
 	if card == cards.ExplodingCat {
-		if playerHasDefuseCard(state, player) {
+		if state.HasDefuseCard(player) {
 			// Player has a defuse card, must play it.
 			nextNode = newMustDefuseNode(newState, player, pendingTurns)
 		} else {
 			// Player does not have a defuse card, end game with loss for them.
 			winner := nextPlayer(player)
 			glog.V(3).Infof("Reached terminal node with player %v win", winner)
-			nextNode = &GameNode{turnType: GameOver, player: winner}
+			nextNode = newTerminalGameNode(newState, player)
 		}
 	} else {
 		// Just a normal card, add it to player's hand and continue.
 		nextNode = newPlayTurnNode(newState, player, pendingTurns)
 	}
 
-	nextNode.description = fmt.Sprintf("%v drew %v", player, card)
-	if fromBottom {
-		nextNode.description += " from bottom of draw pile"
-	}
 	return nextNode
 }
 
-func playerDrewCard(state GameState, player Player, card cards.Card, fromBottom bool) GameState {
-	newState := state
-	// Pop card from the draw pile.
-	newState.DrawPile.Remove(card)
-	// Add to player's hand.
-	newState.InfoSet(player).DrawCard(card, fromBottom)
-	newState.InfoSet(1-player).OpponentDrewCard(card, fromBottom)
-	return newState
-}
-
-func buildSeeTheFutureChildren(state GameState, player Player, pendingTurns int) ([]*GameNode, []float64) {
+func buildSeeTheFutureChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) ([]*GameNode, []float64) {
 	var result []*GameNode
 	var cumulativeProbs []float64
 
-	cards, probs := enumerateTopNCards(state.DrawPile, state.FixedDrawPileCards(), 3)
+	cards, probs := enumerateTopNCards(state.GetDrawPile(), state.FixedDrawPileCards(), 3)
 	var cumProb float64
 	for i, top3 := range cards {
 		cumProb += probs[i]
 		cumulativeProbs = append(cumulativeProbs, cumProb)
 
-		newState := state
-		newState.InfoSet(player).SeeTopCards(top3)
+		action := gamestate.Action{Player: player, Type: gamestate.SeeTheFuture, Cards: top3}
+		newState := gamestate.Apply(state, action)
 		// FIXME: How do we represent the second-order knowledge for 1-player
 		// that player now knows the top 3 cards?
 		newNode := newPlayTurnNode(newState, player, pendingTurns)
-		newNode.description = fmt.Sprintf("%v saw top 3 cards: %v", player, top3)
 		result = append(result, newNode)
 	}
 
@@ -359,13 +384,9 @@ func enumerateTopNCards(drawPile cards.Set, fixed cards.Stack, n int) ([][]cards
 	return result, resultProbs
 }
 
-func playerHasDefuseCard(state GameState, player Player) bool {
-	return state.InfoSet(player).OurHand.CountOf(cards.Defuse) > 0
-}
-
-func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*GameNode {
+func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []*GameNode {
 	// Choose whether to play a card or draw.
-	cardChoices := state.InfoSet(player).OurHand.Distinct()
+	cardChoices := state.GetPlayerHand(player).Distinct()
 	result := make([]*GameNode, 0, len(cardChoices)+1)
 
 	// Play one of the cards in our hand.
@@ -374,9 +395,8 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 		//   1) Removing card from our hand,
 		//   2) Updating opponent's view of the world to reflect played card,
 		//   3) Updating game state based on action in card.
-		newGameState := state
-		newGameState.InfoSet(player).PlayCard(card)
-		newGameState.InfoSet(1 - player).OpponentPlayedCard(card)
+		action := gamestate.Action{Player: player, Type: gamestate.PlayCard, Card: card}
+		newGameState := gamestate.Apply(state, action)
 
 		var nextNode *GameNode
 		glog.V(3).Infof("Player %v playing %v card", player, card)
@@ -407,7 +427,7 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 			// We see the top 3 cards in the draw pile.
 			nextNode = newSeeTheFutureNode(newGameState, player, pendingTurns)
 		case cards.Shuffle:
-			newGameState = shuffleDrawPile(newGameState)
+			newGameState = gamestate.ShuffleDrawPile(newGameState)
 			nextNode = newPlayTurnNode(newGameState, player, pendingTurns)
 		case cards.DrawFromTheBottom:
 			nextNode = newDrawCardNode(newGameState, player, true, pendingTurns)
@@ -423,27 +443,18 @@ func buildPlayTurnChildren(state GameState, player Player, pendingTurns int) []*
 			panic(fmt.Errorf("Player playing unsupported %v card", card))
 		}
 
-		nextNode.description = fmt.Sprintf("%v chose to play %v card", player, card)
 		result = append(result, nextNode)
 	}
 
 	// End our turn by drawing a card.
 	nextNode := newDrawCardNode(state, player, false, pendingTurns)
-	nextNode.description = fmt.Sprintf("%v chose to draw card", player)
 	result = append(result, nextNode)
 
 	glog.V(3).Infof("Built %d play turn children", len(result))
 	return result
 }
 
-func shuffleDrawPile(state GameState) GameState {
-	result := state
-	result.Player0Info.KnownDrawPileCards = cards.NewStack()
-	result.Player1Info.KnownDrawPileCards = cards.NewStack()
-	return result
-}
-
-func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*GameNode {
+func buildGiveCardChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []*GameNode {
 	cardChoices := state.GetPlayerHand(player).Distinct()
 	result := make([]*GameNode, 0, len(cardChoices))
 	for _, card := range cardChoices {
@@ -452,25 +463,10 @@ func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*
 		//   1) Removing card from our hand,
 		//   2) Adding card to opponent's hand,
 		//   3) Returning to opponent's turn.
-		newGameState := state
-
-		ourInfo := newGameState.InfoSet(player)
-		ourInfo.OurHand.Remove(card)
-		ourInfo.OpponentHand.Add(card)
-
-		opponentInfo := newGameState.InfoSet(1 - player)
-		opponentInfo.OurHand.Add(card)
-		if opponentInfo.OpponentHand.CountOf(card) > 0 {
-			// If opponent already knew we had one of these cards
-			opponentInfo.OpponentHand.Remove(card)
-		} else {
-			// Otherwise it was one of the Unknown cards in our hand.
-			opponentInfo.OpponentHand.Remove(cards.Unknown)
-		}
+		newGameState := gamestate.GiveCard(state, player, card)
 
 		// Game play returns to other player (with the given card in their hand).
 		nextNode := newPlayTurnNode(newGameState, nextPlayer(player), pendingTurns)
-		nextNode.description = fmt.Sprintf("%v gave %v card to %v", player, card, nextPlayer(player))
 		result = append(result, nextNode)
 	}
 
@@ -478,47 +474,29 @@ func buildGiveCardChildren(state GameState, player Player, pendingTurns int) []*
 	return result
 }
 
-func buildMustDefuseChildren(state GameState, player Player, pendingTurns int) []*GameNode {
+func buildMustDefuseChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []*GameNode {
 	result := make([]*GameNode, 0)
-	nCardsInDrawPile := int(state.DrawPile.Len())
+	nCardsInDrawPile := int(state.GetDrawPile().Len())
 	nOptions := min(nCardsInDrawPile, 5)
 	for i := 0; i <= nOptions; i++ {
-		newState := insertExplodingCat(state, player, i)
+		newState := gamestate.InsertExplodingCat(state, player, i)
 		// Defusing the exploding cat ends a turn.
 		nextNode := newPlayTurnNode(newState, player, pendingTurns-1)
-		nextNode.description = fmt.Sprintf("%v put the exploding cat in position %d", player, i)
 		result = append(result, nextNode)
 	}
 
 	// Place exploding cat on the bottom of the draw pile.
 	if nCardsInDrawPile > 5 {
-		bottom := state.DrawPile.Len()
-		newState := insertExplodingCat(state, player, bottom)
+		bottom := state.GetDrawPile().Len()
+		newState := gamestate.InsertExplodingCat(state, player, bottom)
 		// Defusing the exploding cat ends a turn.
 		nextNode := newPlayTurnNode(newState, player, pendingTurns-1)
-		nextNode.description = fmt.Sprintf("%v put the exploding cat on the bottom", player)
 		result = append(result, nextNode)
 	}
 
 	// TODO: Place randomly?
 	glog.V(3).Infof("Built %d defuse children", len(result))
 	return result
-}
-
-func insertExplodingCat(state GameState, player Player, position int) GameState {
-	newState := state
-	// Place exploding cat card in the Nth position in draw pile.
-	newState.DrawPile.Add(cards.ExplodingCat)
-	newState.InfoSet(player).OurHand.Remove(cards.ExplodingCat)
-	newState.InfoSet(player).KnownDrawPileCards.InsertCard(cards.ExplodingCat, position)
-	newState.InfoSet(1 - player).OpponentHand.Remove(cards.ExplodingCat)
-	// FIXME: How do we represent the second-order knowledge that the other
-	// player now knows the position of the exploding cat?
-	// FIXME: Known draw pile cards is not completely reset,
-	// just reset until we get to the cat. Player's knowledge beneath the
-	// insertion should be retained!
-	newState.InfoSet(1 - player).KnownDrawPileCards = cards.NewStack()
-	return newState
 }
 
 func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Card, desired int, result []cards.Set) []cards.Set {
@@ -543,8 +521,8 @@ func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Ca
 	return result
 }
 
-func nextPlayer(p Player) Player {
-	if p != Player0 && p != Player1 {
+func nextPlayer(p gamestate.Player) gamestate.Player {
+	if p != gamestate.Player0 && p != gamestate.Player1 {
 		panic(fmt.Sprintf("cannot call nextPlayer with player %v", p))
 	}
 

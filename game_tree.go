@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
-	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/internal/gamestate"
 
 	"github.com/golang/glog"
 )
 
 // turnType represents the kind of turn at a given point in the game.
-type TurnType uint8
+type turnType uint8
 
 const (
-	_ TurnType = iota
+	_ turnType = iota
 	DrawCard
 	DrawCardFromBottom
 	Deal
@@ -35,11 +35,11 @@ var turnTypeStr = [...]string{
 	"GameOver",
 }
 
-func (tt TurnType) IsChance() bool {
+func (tt turnType) IsChance() bool {
 	return tt == DrawCard || tt == Deal || tt == SeeTheFuture
 }
 
-func (tt TurnType) String() string {
+func (tt turnType) String() string {
 	return turnTypeStr[tt]
 }
 
@@ -47,7 +47,7 @@ func (tt TurnType) String() string {
 type GameNode struct {
 	state    gamestate.GameState
 	player   gamestate.Player
-	turnType TurnType
+	turnType turnType
 	// pendingTurns is the number of turns the player has outstanding
 	// to play. In general this will be 1, except when Slap cards are played.
 	pendingTurns int
@@ -69,6 +69,10 @@ func NewGameTree() *GameNode {
 	}
 	gn.buildChildren()
 	return gn
+}
+
+func (gn *GameNode) IsTerminal() bool {
+	return gn.turnType == GameOver
 }
 
 func (gn *GameNode) GetHistory() []gamestate.Action {
@@ -427,7 +431,6 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 			// We see the top 3 cards in the draw pile.
 			nextNode = newSeeTheFutureNode(newGameState, player, pendingTurns)
 		case cards.Shuffle:
-			newGameState = gamestate.ShuffleDrawPile(newGameState)
 			nextNode = newPlayTurnNode(newGameState, player, pendingTurns)
 		case cards.DrawFromTheBottom:
 			nextNode = newDrawCardNode(newGameState, player, true, pendingTurns)
@@ -463,10 +466,11 @@ func buildGiveCardChildren(state gamestate.GameState, player gamestate.Player, p
 		//   1) Removing card from our hand,
 		//   2) Adding card to opponent's hand,
 		//   3) Returning to opponent's turn.
-		newGameState := gamestate.GiveCard(state, player, card)
+		action := gamestate.Action{Player: player, Type: gamestate.GiveCard, Card: card}
+		newState := gamestate.Apply(state, action)
 
 		// Game play returns to other player (with the given card in their hand).
-		nextNode := newPlayTurnNode(newGameState, nextPlayer(player), pendingTurns)
+		nextNode := newPlayTurnNode(newState, nextPlayer(player), pendingTurns)
 		result = append(result, nextNode)
 	}
 
@@ -479,7 +483,12 @@ func buildMustDefuseChildren(state gamestate.GameState, player gamestate.Player,
 	nCardsInDrawPile := int(state.GetDrawPile().Len())
 	nOptions := min(nCardsInDrawPile, 5)
 	for i := 0; i <= nOptions; i++ {
-		newState := gamestate.InsertExplodingCat(state, player, i)
+		action := gamestate.Action{
+			Player:             player,
+			Type:               gamestate.InsertExplodingCat,
+			PositionInDrawPile: i,
+		}
+		newState := gamestate.Apply(state, action)
 		// Defusing the exploding cat ends a turn.
 		nextNode := newPlayTurnNode(newState, player, pendingTurns-1)
 		result = append(result, nextNode)
@@ -488,7 +497,12 @@ func buildMustDefuseChildren(state gamestate.GameState, player gamestate.Player,
 	// Place exploding cat on the bottom of the draw pile.
 	if nCardsInDrawPile > 5 {
 		bottom := state.GetDrawPile().Len()
-		newState := gamestate.InsertExplodingCat(state, player, bottom)
+		action := gamestate.Action{
+			Player:             player,
+			Type:               gamestate.InsertExplodingCat,
+			PositionInDrawPile: bottom,
+		}
+		newState := gamestate.Apply(state, action)
 		// Defusing the exploding cat ends a turn.
 		nextNode := newPlayTurnNode(newState, player, pendingTurns-1)
 		result = append(result, nextNode)

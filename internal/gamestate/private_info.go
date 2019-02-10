@@ -67,6 +67,9 @@ func (pi *privateInfo) drawCard(card cards.Card, fromPosition int) {
 
 func (pi *privateInfo) playCard(card cards.Card) {
 	pi.ourHand.Remove(card)
+	if card == cards.Shuffle {
+		pi.knownDrawPileCards = cards.NewStack()
+	}
 }
 
 // Modify PrivateInfo to reflect our opponent drawing a card from
@@ -99,6 +102,10 @@ func (pi *privateInfo) opponentPlayedCard(card cards.Card) {
 		// We didn't know they had this card; it was one of the Unknown's
 		// in their hand.
 		pi.opponentHand.Remove(cards.Unknown)
+	}
+
+	if card == cards.Shuffle {
+		pi.knownDrawPileCards = cards.NewStack()
 	}
 }
 

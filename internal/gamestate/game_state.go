@@ -63,7 +63,7 @@ func Apply(state GameState, action Action) GameState {
 func clone(gs GameState) GameState {
 	// Allocate with 1 extra capacity because we will always
 	// be appending a new history item to the cloned state.
-	historyCopy := make([]Action, len(gs.history)+1)
+	historyCopy := make([]Action, 0, len(gs.history)+1)
 	copy(historyCopy, gs.history)
 
 	return GameState{
@@ -210,11 +210,6 @@ func (gs *GameState) insertExplodingCat(player Player, position int) {
 	// just reset until we get to the cat. Player's knowledge beneath the
 	// insertion should be retained!
 	gs.privateInfo(1 - player).knownDrawPileCards = cards.NewStack()
-}
-
-func (gs *GameState) shuffleDrawPile() {
-	gs.player0Info.knownDrawPileCards = cards.NewStack()
-	gs.player1Info.knownDrawPileCards = cards.NewStack()
 }
 
 func (gs *GameState) seeTopNCards(player Player, topN []cards.Card) {

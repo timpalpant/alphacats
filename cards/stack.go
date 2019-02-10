@@ -46,6 +46,10 @@ func NewStackFromCards(cards []Card) Stack {
 	return result
 }
 
+func (s Stack) IsEmpty() bool {
+	return s == 0
+}
+
 // SetNthCard returns a new CardPile with the identity of the Nth card
 // in the stack set to card.
 func (s *Stack) SetNthCard(n int, card Card) {

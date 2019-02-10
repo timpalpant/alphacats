@@ -14,6 +14,20 @@ func TestNewStackFromCards(t *testing.T) {
 	}
 }
 
+func TestIsEmpty(t *testing.T) {
+	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
+	stack := NewStackFromCards(testCards)
+
+	if stack.IsEmpty() {
+		t.Error("stack with known cards should not be empty")
+	}
+
+	stack = NewStack()
+	if !stack.IsEmpty() {
+		t.Error("stack with no cards should be empty")
+	}
+}
+
 func TestSetNthCard(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
 	stack := NewStackFromCards(testCards)

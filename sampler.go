@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"sort"
 
-	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/internal/gamestate"
 )
 
 type Strategy interface {
@@ -13,7 +13,7 @@ type Strategy interface {
 
 func SampleHistory(root *GameNode, s Strategy) []gamestate.Action {
 	node := root
-	for node != nil {
+	for !node.IsTerminal() {
 		node = SampleOne(node, s)
 	}
 

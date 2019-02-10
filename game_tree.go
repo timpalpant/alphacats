@@ -27,6 +27,7 @@ const (
 var turnTypeStr = [...]string{
 	"Invalid",
 	"DrawCard",
+	"DrawCardFromBottom",
 	"Deal",
 	"PlayTurn",
 	"GiveCard",
@@ -80,7 +81,7 @@ func (gn *GameNode) GetHistory() []gamestate.Action {
 }
 
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v", gn.player, gn.turnType)
+	return fmt.Sprintf("%v's turn to %v. State: %s", gn.player, gn.turnType, gn.state.String())
 }
 
 func (gn *GameNode) buildChildren() {
@@ -255,11 +256,17 @@ func buildDrawCardChildren(state gamestate.GameState, player gamestate.Player, f
 	// Drawing a card ends one turn.
 	pendingTurns--
 
+	var nextCardProbs map[cards.Card]float64
+	if fromBottom {
+		nextCardProbs = state.BottomCardProbabilities()
+	} else {
+		nextCardProbs = state.TopCardProbabilities()
+	}
+
 	var result []*GameNode
 	var probs []float64
 	cumProb := 0.0
-	nextCards := nextCardProbabilities(state.GetDrawPile(), state.FixedDrawPileCards(), fromBottom)
-	for card, p := range nextCards {
+	for card, p := range nextCardProbs {
 		cumProb += p
 		nextNode := getNextDrawnCardNode(state, player, card, fromBottom, pendingTurns)
 		result = append(result, nextNode)
@@ -268,49 +275,6 @@ func buildDrawCardChildren(state gamestate.GameState, player gamestate.Player, f
 
 	glog.V(3).Infof("Built %d draw card children with probs: %v", len(result), probs)
 	return result, probs
-}
-
-func nextCardProbabilities(drawPile cards.Set, fixed cards.Stack, fromBottom bool) map[cards.Card]float64 {
-	result := make(map[cards.Card]float64)
-
-	bottom := drawPile.Len() - 1
-	bottomCard := fixed.NthCard(bottom)
-	topCard := fixed.NthCard(0)
-	if fromBottom && bottomCard != cards.Unknown {
-		result[bottomCard] = 1.0
-		return result
-	} else if !fromBottom && topCard != cards.Unknown {
-		result[topCard] = 1.0
-		return result
-	}
-
-	// Note: We need to exclude any cards whose identity is already fixed in a
-	// position known not to be the top (bottom) card.
-	// Loop over all fixed cards NOT in the location we are drawing.
-	var start, end int
-	if fromBottom { // If drawing from the bottom.
-		start = 0
-		end = drawPile.Len() - 1
-	} else { // If drawing from the top.
-		start = 1
-		end = drawPile.Len()
-	}
-
-	candidates := drawPile
-	for i := start; i < end; i++ {
-		if known := fixed.NthCard(i); known != cards.Unknown {
-			candidates.Remove(known)
-		}
-	}
-
-	counts := candidates.Counts()
-	nCandidates := float64(candidates.Len())
-	for card, count := range counts {
-		p := float64(count) / nCandidates
-		result[card] = p
-	}
-
-	return result
 }
 
 func getNextDrawnCardNode(state gamestate.GameState, player gamestate.Player, card cards.Card, fromBottom bool, pendingTurns int) *GameNode {
@@ -344,7 +308,7 @@ func buildSeeTheFutureChildren(state gamestate.GameState, player gamestate.Playe
 	var result []*GameNode
 	var cumulativeProbs []float64
 
-	cards, probs := enumerateTopNCards(state.GetDrawPile(), state.FixedDrawPileCards(), 3)
+	cards, probs := enumerateTopNCards(state, 3)
 	var cumProb float64
 	for i, top3 := range cards {
 		cumProb += probs[i]
@@ -352,40 +316,12 @@ func buildSeeTheFutureChildren(state gamestate.GameState, player gamestate.Playe
 
 		action := gamestate.Action{Player: player, Type: gamestate.SeeTheFuture, Cards: top3}
 		newState := gamestate.Apply(state, action)
-		// FIXME: How do we represent the second-order knowledge for 1-player
-		// that player now knows the top 3 cards?
 		newNode := newPlayTurnNode(newState, player, pendingTurns)
 		result = append(result, newNode)
 	}
 
 	glog.V(3).Infof("Built %d see the future children", len(result))
 	return result, cumulativeProbs
-}
-
-func enumerateTopNCards(drawPile cards.Set, fixed cards.Stack, n int) ([][]cards.Card, []float64) {
-	var result [][]cards.Card
-	var resultProbs []float64
-
-	nextCards := nextCardProbabilities(drawPile, fixed, false)
-	for card, p := range nextCards {
-		if n == 1 || drawPile.Len() == 1 {
-			result = append(result, []cards.Card{card})
-			resultProbs = append(resultProbs, p)
-		} else { // Recurse to enumerate remaining n-1 cards.
-			remainingDrawPile := drawPile
-			remainingDrawPile.Remove(card)
-			remainingFixed := fixed
-			remainingFixed.RemoveCard(0)
-			remainder, probs := enumerateTopNCards(remainingDrawPile, remainingFixed, n-1)
-			for i, remain := range remainder {
-				final := append([]cards.Card{card}, remain...)
-				result = append(result, final)
-				resultProbs = append(resultProbs, p*probs[i])
-			}
-		}
-	}
-
-	return result, resultProbs
 }
 
 func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []*GameNode {
@@ -533,6 +469,31 @@ func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Ca
 	}
 
 	return result
+}
+
+func enumerateTopNCards(state gamestate.GameState, n int) ([][]cards.Card, []float64) {
+	var result [][]cards.Card
+	var resultProbs []float64
+
+	nextCardProbs := state.TopCardProbabilities()
+	drawPile := state.GetDrawPile()
+	for card, p := range nextCardProbs {
+		if n == 1 || drawPile.Len() == 1 {
+			result = append(result, []cards.Card{card})
+			resultProbs = append(resultProbs, p)
+		} else { // Recurse to enumerate remaining n-1 cards.
+			action := gamestate.Action{Player: gamestate.Player0, Type: gamestate.DrawCard, Card: card}
+			remaining := gamestate.Apply(state, action)
+			remainder, probs := enumerateTopNCards(remaining, n-1)
+			for i, remain := range remainder {
+				final := append([]cards.Card{card}, remain...)
+				result = append(result, final)
+				resultProbs = append(resultProbs, p*probs[i])
+			}
+		}
+	}
+
+	return result, resultProbs
 }
 
 func nextPlayer(p gamestate.Player) gamestate.Player {

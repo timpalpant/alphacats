@@ -15,6 +15,9 @@ type privateInfo struct {
 	// Cards that we know in the draw pile. For example, after playing a
 	// SeeTheFuture card we know the identity of the top three cards.
 	knownDrawPileCards cards.Stack
+	// When the other player inserts the exploding kitten into the draw pile,
+	// it disrupts our known draw pile cards until we get to the kitten.
+	pendingKittenInterruption bool
 }
 
 // Return a new PrivateInfo created as if the player is dealt the given
@@ -40,6 +43,21 @@ func newPrivateInfo(deal cards.Set) privateInfo {
 	}
 }
 
+func (pi *privateInfo) String() string {
+	return fmt.Sprintf("{our: %s, opponent: %s, known: %s, pendingKitten: %v}",
+		pi.ourHand, pi.opponentHand, pi.knownDrawPileCards, pi.pendingKittenInterruption)
+}
+
+func (pi *privateInfo) effectiveKnownDrawPileCards() cards.Stack {
+	if pi.pendingKittenInterruption {
+		// Our current knowledge is impeded by the possibility of an
+		// inserted kitten.
+		return cards.NewStack()
+	}
+
+	return pi.knownDrawPileCards
+}
+
 // Verifies that the InfoSet is valid and satisifes all internal constraints.
 func (pi *privateInfo) validate() error {
 	// All cards in our hand must be known.
@@ -52,7 +70,7 @@ func (pi *privateInfo) validate() error {
 
 // Modify InfoSet as if we drew the given Card from the top of the draw pile.
 func (pi *privateInfo) drawCard(card cards.Card, fromPosition int) {
-	known := pi.knownDrawPileCards.NthCard(fromPosition)
+	known := pi.effectiveKnownDrawPileCards().NthCard(fromPosition)
 	if known != cards.Unknown && known != card {
 		panic(fmt.Errorf("drew card %v from position %v but we knew it to be %v",
 			card, fromPosition, known))
@@ -63,12 +81,17 @@ func (pi *privateInfo) drawCard(card cards.Card, fromPosition int) {
 	// since that is backed out from the number of cards in our hand.
 	pi.ourHand.Add(card)
 	pi.knownDrawPileCards.RemoveCard(fromPosition)
+
+	if card == cards.ExplodingCat {
+		pi.observedExplodingKitten(fromPosition)
+	}
 }
 
 func (pi *privateInfo) playCard(card cards.Card) {
 	pi.ourHand.Remove(card)
 	if card == cards.Shuffle {
 		pi.knownDrawPileCards = cards.NewStack()
+		pi.pendingKittenInterruption = false
 	}
 }
 
@@ -77,7 +100,7 @@ func (pi *privateInfo) playCard(card cards.Card) {
 func (pi *privateInfo) opponentDrewCard(card cards.Card, fromPosition int) {
 	// If we knew what the card in the pile was, we now know it is in their hand.
 	// Otherwise an Unknown card is added to their hand.
-	drawnCard := pi.knownDrawPileCards.NthCard(fromPosition)
+	drawnCard := pi.effectiveKnownDrawPileCards().NthCard(fromPosition)
 	if drawnCard != cards.Unknown && drawnCard != card {
 		panic(fmt.Errorf("drew card %v from position %v but we knew it to be %v",
 			card, fromPosition, drawnCard))
@@ -86,6 +109,7 @@ func (pi *privateInfo) opponentDrewCard(card cards.Card, fromPosition int) {
 	// If they drew an exploding cat then we see it either way.
 	if card == cards.ExplodingCat {
 		drawnCard = cards.ExplodingCat
+		pi.observedExplodingKitten(fromPosition)
 	}
 
 	pi.knownDrawPileCards.RemoveCard(fromPosition)
@@ -106,6 +130,7 @@ func (pi *privateInfo) opponentPlayedCard(card cards.Card) {
 
 	if card == cards.Shuffle {
 		pi.knownDrawPileCards = cards.NewStack()
+		pi.pendingKittenInterruption = false
 	}
 }
 
@@ -119,6 +144,20 @@ func (pi *privateInfo) seeTopCards(topN []cards.Card) {
 				i, nthCard, card))
 		}
 
-		pi.knownDrawPileCards.SetNthCard(i, card)
+		if card == cards.ExplodingCat && pi.pendingKittenInterruption {
+			pi.observedExplodingKitten(i)
+		} else {
+			pi.knownDrawPileCards.SetNthCard(i, card)
+		}
+	}
+}
+
+func (pi *privateInfo) observedExplodingKitten(position int) {
+	if pi.pendingKittenInterruption {
+		// Now that we know the position of the cat, our previous known draw pile
+		// info is restored.
+		pi.pendingKittenInterruption = false
+		// Modulo the alteration due to the insertion of the cat.
+		pi.knownDrawPileCards.InsertCard(cards.ExplodingCat, position)
 	}
 }

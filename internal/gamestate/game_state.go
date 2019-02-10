@@ -2,7 +2,6 @@ package gamestate
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -26,7 +25,7 @@ func init() {
 // Any additional fields added to GameState must also be added to clone().
 type GameState struct {
 	// The history of player actions that were taken to reach this state.
-	history []Action
+	history publicHistory
 	// Set of Cards remaining in the draw pile.
 	// Note that the players will not in general have access to this information.
 	drawPile cards.Set
@@ -56,51 +55,27 @@ func New(player0Deal, player1Deal cards.Set) GameState {
 
 // Apply returns the new GameState created by applying the given Action.
 func Apply(state GameState, action Action) GameState {
-	result := clone(state)
-	result.history = append(result.history, action)
-
 	switch action.Type {
 	case DrawCard:
-		result.drawCard(action.Player, action.Card, action.PositionInDrawPile)
+		state.drawCard(action.Player, action.Card, action.PositionInDrawPile)
 	case PlayCard:
-		result.playCard(action.Player, action.Card)
+		state.playCard(action.Player, action.Card)
 	case GiveCard:
-		result.giveCard(action.Player, action.Card)
+		state.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		result.insertExplodingCat(action.Player, action.PositionInDrawPile)
+		state.insertExplodingCat(action.Player, action.PositionInDrawPile)
 	case SeeTheFuture:
-		result.seeTopNCards(action.Player, action.Cards)
+		state.seeTopNCards(action.Player, action.Cards)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
 
-	return result
-}
-
-func clone(gs GameState) GameState {
-	// Allocate with 1 extra capacity because we will always
-	// be appending a new history item to the cloned state.
-	historyCopy := make([]Action, len(gs.history), len(gs.history)+1)
-	copy(historyCopy, gs.history)
-
-	return GameState{
-		history:            historyCopy,
-		drawPile:           gs.drawPile,
-		fixedDrawPileCards: gs.fixedDrawPileCards,
-		discardPile:        gs.discardPile,
-		player0Info:        gs.player0Info,
-		player1Info:        gs.player1Info,
-	}
+	return state
 }
 
 func (gs *GameState) String() string {
-	var lastAction Action
-	if len(gs.history) > 1 {
-		lastAction = gs.history[len(gs.history)-2]
-	}
-
-	return fmt.Sprintf("Last action: %s, draw pile: %s, fixed: %s, discard: %s, p0: %s, p1: %s",
-		lastAction, gs.drawPile, gs.fixedDrawPileCards,
+	return fmt.Sprintf("draw pile: %s, fixed: %s, discard: %s, p0: %s, p1: %s",
+		gs.drawPile, gs.fixedDrawPileCards,
 		gs.discardPile, gs.player0Info.String(), gs.player1Info.String())
 }
 
@@ -178,7 +153,7 @@ func (gs *GameState) Validate() error {
 }
 
 func (gs *GameState) GetHistory() []Action {
-	return gs.history
+	return gs.history.AsSlice()
 }
 
 func (gs *GameState) GetDrawPile() cards.Set {
@@ -197,24 +172,15 @@ func (gs *GameState) HasDefuseCard(p Player) bool {
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
 type InfoSet struct {
-	privateInfo   privateInfo
-	publicHistory string
+	public  publicHistory
+	private privateInfo
 }
 
 func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	return InfoSet{
-		privateInfo:   *gs.privateInfo(player),
-		publicHistory: publicHistoryKey(gs.history),
+		private: *gs.privateInfo(player),
+		public:  gs.history,
 	}
-}
-
-func publicHistoryKey(actions []Action) string {
-	parts := make([]string, len(actions))
-	for i, action := range actions {
-		parts[i] = action.String()
-	}
-
-	return strings.Join(parts, ",")
 }
 
 func (gs *GameState) BottomCardProbabilities() map[cards.Card]float64 {

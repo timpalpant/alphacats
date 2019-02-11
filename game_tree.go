@@ -143,8 +143,9 @@ func buildDealChildren() ([]GameNode, []float64) {
 
 	// All deals are equally likely.
 	probs := allocFloatSlice()
-	for i := 0; i < len(probs); i++ {
-		probs[i] = float64(i+1) / float64(len(probs))
+	for i := 0; i < len(result); i++ {
+		p := float64(i+1) / float64(len(probs))
+		probs = append(probs, p)
 	}
 
 	return result, probs

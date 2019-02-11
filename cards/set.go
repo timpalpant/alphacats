@@ -58,6 +58,16 @@ func (s Set) Counts() map[Card]uint8 {
 	return result
 }
 
+func (s Set) CountsIter(cb func(card Card, count uint8)) {
+	for card := Card(0); s > 0; card++ {
+		count := uint8(s & mask)
+		if count > 0 {
+			cb(card, count)
+		}
+		s >>= bitsPerCardCount
+	}
+}
+
 // Len gets the total number of Cards in the Set.
 func (s Set) Len() int {
 	count := 0

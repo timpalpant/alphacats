@@ -69,6 +69,7 @@ func Apply(state GameState, action Action) GameState {
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
 
+	state.history.Append(action)
 	return state
 }
 

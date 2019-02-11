@@ -66,23 +66,11 @@ func NewGameTree() GameNode {
 		player:   gamestate.Player0,
 		turnType: Deal,
 	}
-	gn.buildChildren()
+	gn.BuildChildren()
 	return gn
 }
 
-func (gn *GameNode) IsTerminal() bool {
-	return gn.turnType == GameOver
-}
-
-func (gn *GameNode) GetHistory() []gamestate.Action {
-	return gn.state.GetHistory()
-}
-
-func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v. State: %s", gn.player, gn.turnType, gn.state.String())
-}
-
-func (gn *GameNode) buildChildren() {
+func (gn *GameNode) BuildChildren() {
 	switch gn.turnType {
 	case DrawCard:
 		children, probs := buildDrawCardChildren(gn.state, gn.player, false, gn.pendingTurns)
@@ -109,12 +97,35 @@ func (gn *GameNode) buildChildren() {
 	}
 }
 
+func (gn *GameNode) Clear() {
+	freeGameNodeSlice(gn.children)
+	gn.children = nil
+	freeFloatSlice(gn.cumulativeProbs)
+	gn.cumulativeProbs = nil
+}
+
+func (gn *GameNode) IsTerminal() bool {
+	return gn.turnType == GameOver
+}
+
+func (gn *GameNode) Winner() gamestate.Player {
+	return gn.player
+}
+
+func (gn *GameNode) GetHistory() []gamestate.Action {
+	return gn.state.GetHistory()
+}
+
+func (gn *GameNode) String() string {
+	return fmt.Sprintf("%v's turn to %v. State: %s", gn.player, gn.turnType, gn.state.String())
+}
+
 func (gn *GameNode) NumChildren() int {
 	return len(gn.children)
 }
 
 func buildDealChildren() ([]GameNode, []float64) {
-	result := make([]GameNode, 0)
+	result := allocGameNodeSlice()
 	// Deal 4 cards to player 0.
 	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
 	for _, p0Deal := range player0Deals {
@@ -131,7 +142,7 @@ func buildDealChildren() ([]GameNode, []float64) {
 	}
 
 	// All deals are equally likely.
-	probs := make([]float64, len(result))
+	probs := allocFloatSlice()
 	for i := 0; i < len(probs); i++ {
 		probs[i] = float64(i+1) / float64(len(probs))
 	}
@@ -224,8 +235,8 @@ func buildDrawCardChildren(state gamestate.GameState, player gamestate.Player, f
 		nextCardProbs = state.TopCardProbabilities()
 	}
 
-	result := make([]GameNode, 0, len(nextCardProbs))
-	probs := make([]float64, 0, len(nextCardProbs))
+	result := allocGameNodeSlice()
+	probs := allocFloatSlice()
 	cumProb := 0.0
 	for card, p := range nextCardProbs {
 		cumProb += p
@@ -265,8 +276,8 @@ func getNextDrawnCardNode(state gamestate.GameState, player gamestate.Player, ca
 
 func buildSeeTheFutureChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) ([]GameNode, []float64) {
 	cards, probs := enumerateTopNCards(state, 3)
-	result := make([]GameNode, 0, len(cards))
-	cumulativeProbs := make([]float64, 0, len(cards))
+	result := allocGameNodeSlice()
+	cumulativeProbs := allocFloatSlice()
 	cumProb := 0.0
 	for i, top3 := range cards {
 		cumProb += probs[i]
@@ -283,11 +294,10 @@ func buildSeeTheFutureChildren(state gamestate.GameState, player gamestate.Playe
 
 func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []GameNode {
 	// Choose whether to play a card or draw.
-	cardChoices := state.GetPlayerHand(player).Distinct()
-	result := make([]GameNode, 0, len(cardChoices)+1)
+	result := allocGameNodeSlice()
 
 	// Play one of the cards in our hand.
-	for _, card := range cardChoices {
+	state.GetPlayerHand(player).CountsIter(func(card cards.Card, count uint8) {
 		// Form child node by:
 		//   1) Removing card from our hand,
 		//   2) Updating opponent's view of the world to reflect played card,
@@ -341,7 +351,7 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 		}
 
 		result = append(result, nextNode)
-	}
+	})
 
 	// End our turn by drawing a card.
 	nextNode := newDrawCardNode(state, player, false, pendingTurns)
@@ -351,9 +361,8 @@ func buildPlayTurnChildren(state gamestate.GameState, player gamestate.Player, p
 }
 
 func buildGiveCardChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []GameNode {
-	cardChoices := state.GetPlayerHand(player).Distinct()
-	result := make([]GameNode, 0, len(cardChoices))
-	for _, card := range cardChoices {
+	result := allocGameNodeSlice()
+	state.GetPlayerHand(player).CountsIter(func(card cards.Card, count uint8) {
 		// Form child node by:
 		//   1) Removing card from our hand,
 		//   2) Adding card to opponent's hand,
@@ -364,13 +373,13 @@ func buildGiveCardChildren(state gamestate.GameState, player gamestate.Player, p
 		// Game play returns to other player (with the given card in their hand).
 		nextNode := newPlayTurnNode(newState, nextPlayer(player), pendingTurns)
 		result = append(result, nextNode)
-	}
+	})
 
 	return result
 }
 
 func buildMustDefuseChildren(state gamestate.GameState, player gamestate.Player, pendingTurns int) []GameNode {
-	result := make([]GameNode, 0)
+	result := allocGameNodeSlice()
 	nCardsInDrawPile := int(state.GetDrawPile().Len())
 	nOptions := min(nCardsInDrawPile, 5)
 	for i := 0; i <= nOptions; i++ {

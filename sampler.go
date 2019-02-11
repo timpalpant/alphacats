@@ -34,9 +34,13 @@ func SampleOne(gn GameNode, s Strategy) GameNode {
 	}
 
 	node := gn.children[selected]
-	node.buildChildren()
+	node.BuildChildren()
 	return node
 }
+
+var totalFound = 0
+var totalP0Win = 0
+var totalP1Win = 0
 
 func CountTerminalNodes(root GameNode) int {
 	return countTerminalNodesDFS(root)
@@ -44,20 +48,29 @@ func CountTerminalNodes(root GameNode) int {
 
 func countTerminalNodesDFS(node GameNode) int {
 	if node.IsTerminal() {
+		totalFound++
+		if node.Winner() == gamestate.Player0 {
+			totalP0Win++
+		} else {
+			totalP1Win++
+		}
+
+		if totalFound%1000000 == 0 {
+			glog.Infof("Found %d terminal nodes (P0 win: %d, P1 win: %d)",
+				totalFound, totalP0Win, totalP1Win)
+			glog.Infof("Last game: %s", node.GetHistory())
+		}
+
 		return 1
 	}
 
-	node.buildChildren()
+	node.BuildChildren()
 	total := 0
 	for _, child := range node.children {
 		total += countTerminalNodesDFS(child)
 	}
 
-	if total%10000 == 0 {
-		glog.Infof("Found %d terminal nodes", total)
-	}
-
 	// Clear children to allow this subtree to be GC'ed.
-	node.children = nil
+	node.Clear()
 	return total
 }

@@ -50,7 +50,10 @@ func (a Action) String() string {
 // Because we know the maximum number of turns in a game, we can
 // pre-allocate an appropriately sized array within the GameState
 // struct, reducing allocations required for the game history.
-type publicHistory [16]uint8
+type publicHistory struct {
+	packed [48]uint8
+	n      int
+}
 
 func newHistoryFromSlice(actions []Action) publicHistory {
 	history := publicHistory{}
@@ -62,12 +65,8 @@ func newHistoryFromSlice(actions []Action) publicHistory {
 
 func (h publicHistory) AsSlice() []Action {
 	var result []Action
-	for i := 0; i < len(h); i++ {
-		if h[i] == 0 {
-			break
-		}
-
-		action := decodeAction(h[i])
+	for i := 0; i < h.n; i++ {
+		action := decodeAction(h.packed[i])
 		result = append(result, action)
 	}
 
@@ -75,17 +74,12 @@ func (h publicHistory) AsSlice() []Action {
 }
 
 func (h *publicHistory) Append(a Action) {
-	if h[len(h)-1] != 0 {
+	if h.n >= len(h.packed) {
 		panic("overflow in public history")
 	}
 
-	// Shift all elements right one.
-	for i := len(h) - 1; i > 0; i++ {
-		h[i] = h[i-1]
-	}
-
-	// Insert new element at the front.
-	h[0] = encodeAction(a)
+	h.packed[h.n] = encodeAction(a)
+	h.n++
 }
 
 func encodeAction(a Action) uint8 {
@@ -102,8 +96,8 @@ func encodeAction(a Action) uint8 {
 
 func decodeAction(bits uint8) Action {
 	return Action{
-		Player: Player(uint8(bits & 0x1)),     // 0b00000001
-		Type:   ActionType(uint8(bits & 0x6)), // 0b00000110
-		Card:   cards.Card(int(bits & 0xf0)),  // 0b11110000
+		Player: Player(uint8(bits & 0x1)),        // 0b00000001
+		Type:   ActionType(uint8(bits&0x6) >> 1), // 0b00000110
+		Card:   cards.Card(int(bits&0xf0) >> 4),  // 0b11110000
 	}
 }

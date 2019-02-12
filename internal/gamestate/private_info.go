@@ -80,15 +80,15 @@ func (pi *privateInfo) drawCard(card cards.Card, fromPosition int) {
 			card, fromPosition, known))
 	}
 
+	if card == cards.ExplodingCat {
+		pi.observedExplodingKitten(fromPosition)
+	}
+
 	// Add card to our hand.
 	// NOTE: Must be after above calculation of # cards in draw pile,
 	// since that is backed out from the number of cards in our hand.
 	pi.ourHand.Add(card)
 	pi.knownDrawPileCards.RemoveCard(fromPosition)
-
-	if card == cards.ExplodingCat {
-		pi.observedExplodingKitten(fromPosition)
-	}
 }
 
 func (pi *privateInfo) playCard(card cards.Card) {

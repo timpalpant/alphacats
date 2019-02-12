@@ -21,8 +21,6 @@ type GameState struct {
 	// Cards in the draw pile whose identity is fixed because one of the player's
 	// knows it.
 	fixedDrawPileCards cards.Stack
-	// The Cards that have been played in the discard pile.
-	discardPile cards.Stack
 	// Private information held from the point of view of either player.
 	player0Info privateInfo
 	player1Info privateInfo
@@ -64,9 +62,9 @@ func Apply(state GameState, action Action) GameState {
 }
 
 func (gs *GameState) String() string {
-	return fmt.Sprintf("draw pile: %s, fixed: %s, discard: %s, p0: %s, p1: %s",
+	return fmt.Sprintf("draw pile: %s, fixed: %s, p0: %s, p1: %s",
 		gs.drawPile, gs.fixedDrawPileCards,
-		gs.discardPile, gs.player0Info.String(), gs.player1Info.String())
+		gs.player0Info.String(), gs.player1Info.String())
 }
 
 // Validate sanity checks the GameState to ensure we have maintained
@@ -235,7 +233,6 @@ func (gs *GameState) privateInfo(p Player) *privateInfo {
 func (gs *GameState) playCard(player Player, card cards.Card) {
 	gs.privateInfo(player).playCard(card)
 	gs.privateInfo(1 - player).opponentPlayedCard(card)
-	gs.discardPile.InsertCard(card, 0)
 }
 
 func (gs *GameState) drawCard(player Player, card cards.Card, position int) {

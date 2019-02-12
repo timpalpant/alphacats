@@ -18,6 +18,14 @@ const (
 	SeeTheFuture
 )
 
+var allActions = []ActionType{
+	DrawCard,
+	PlayCard,
+	GiveCard,
+	InsertExplodingCat,
+	SeeTheFuture,
+}
+
 var actionTypeStr = [...]string{
 	"Invalid",
 	"DrawCard",
@@ -41,7 +49,17 @@ type Action struct {
 }
 
 func (a Action) String() string {
-	return fmt.Sprintf("%s:%s:%s", a.Player, a.Type, a.Card)
+	s := fmt.Sprintf("%s:%s", a.Player, a.Type)
+	if a.Card != cards.Unknown {
+		s += ":" + a.Card.String()
+	}
+	if a.PositionInDrawPile != 0 {
+		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
+	}
+	if len(a.Cards) != 0 {
+		s += fmt.Sprintf(":%v", a.Cards)
+	}
+	return s
 }
 
 // History is a bit-packed representation of a slice of Actions
@@ -88,16 +106,19 @@ func encodeAction(a Action) uint8 {
 	// [4-7]: Next 4 bits are the Card.
 	// PositionInDrawPile and Cards are not encoded,
 	// since they are private information to one of the players.
+	// Card is only encoded if the Type is PlayCard (public).
 	result := uint8(a.Player)
 	result += uint8(a.Type) << 1
-	result += uint8(a.Card) << 4
+	if a.Type == PlayCard {
+		result += uint8(a.Card) << 4
+	}
 	return result
 }
 
 func decodeAction(bits uint8) Action {
 	return Action{
 		Player: Player(uint8(bits & 0x1)),        // 0b00000001
-		Type:   ActionType(uint8(bits&0x6) >> 1), // 0b00000110
+		Type:   ActionType(uint8(bits&0xe) >> 1), // 0b00001110
 		Card:   cards.Card(int(bits&0xf0) >> 4),  // 0b11110000
 	}
 }

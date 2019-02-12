@@ -53,6 +53,8 @@ func CountTerminalNodes(root GameNode) int {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(child GameNode) {
+			child.gnPool = &gameNodeSlicePool{}
+			child.fPool = &floatSlicePool{}
 			myCount := countTerminalNodesDFS(child)
 
 			mu.Lock()

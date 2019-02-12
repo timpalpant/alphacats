@@ -26,19 +26,12 @@ var (
 // Cards that are Unknown are set to zero.
 type Stack uint64
 
-func assertWithinRange(n int) {
-	if n >= maxCapacity {
-		panic(fmt.Errorf("card position %d is out of range for Stack", n))
-	}
-}
-
 func NewStack() Stack {
 	return Stack(0)
 }
 
 // NewStack creates a new Stack from the given slice of Cards.
 func NewStackFromCards(cards []Card) Stack {
-	assertWithinRange(len(cards) - 1)
 	result := Stack(0)
 	for i, card := range cards {
 		result.SetNthCard(i, card)
@@ -53,7 +46,6 @@ func (s Stack) IsEmpty() bool {
 // SetNthCard returns a new CardPile with the identity of the Nth card
 // in the stack set to card.
 func (s *Stack) SetNthCard(n int, card Card) {
-	assertWithinRange(n)
 	shift := uint(n) * bitsPerCard
 	// Zero out the current card in that position.
 	*s &= ^Stack(topCardMask << shift)
@@ -64,14 +56,12 @@ func (s *Stack) SetNthCard(n int, card Card) {
 // NthCard returns the identity of the card in the Nth position of the stack.
 // The Card may be Unknown.
 func (s Stack) NthCard(n int) Card {
-	assertWithinRange(n)
 	shift := uint(n) * bitsPerCard
 	return Card((s >> shift) & topCardMask)
 }
 
 // RemoveCard removes the Card in the Nth position.
 func (s *Stack) RemoveCard(n int) {
-	assertWithinRange(n)
 	nBitsToKeep := uint(n) * bitsPerCard
 	keepMask := Stack(1<<nBitsToKeep) - 1
 	unchanged := (*s) & keepMask
@@ -82,7 +72,6 @@ func (s *Stack) RemoveCard(n int) {
 
 // InsertCard places the given card inserted in the Nth position.
 func (s *Stack) InsertCard(card Card, n int) {
-	assertWithinRange(n)
 	nBitsToKeep := uint(n) * bitsPerCard
 	keepMask := Stack(1<<nBitsToKeep) - 1
 	unchanged := (*s) & keepMask

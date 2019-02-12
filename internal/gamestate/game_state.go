@@ -153,6 +153,11 @@ func (gs *GameState) HasDefuseCard(p Player) bool {
 	return gs.GetPlayerHand(p).Contains(cards.Defuse)
 }
 
+func (gs *GameState) LastActionWasSlap() bool {
+	lastAction := gs.history.Get(gs.history.Len() - 1)
+	return lastAction.Type == PlayCard && (lastAction.Card == cards.Slap1x || lastAction.Card == cards.Slap2x)
+}
+
 // InfoSet represents the state of the game from the point of view of one of the
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.

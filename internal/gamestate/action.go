@@ -91,6 +91,10 @@ func (h publicHistory) AsSlice() []Action {
 	return result
 }
 
+func (h *publicHistory) Len() int {
+	return h.n
+}
+
 func (h *publicHistory) Append(a Action) {
 	if h.n >= len(h.packed) {
 		panic("overflow in public history")
@@ -98,6 +102,14 @@ func (h *publicHistory) Append(a Action) {
 
 	h.packed[h.n] = encodeAction(a)
 	h.n++
+}
+
+func (h *publicHistory) Get(i int) Action {
+	if i >= h.n {
+		panic(fmt.Errorf("%d out of range for history with %d elements", i, h.n))
+	}
+
+	return decodeAction(h.packed[i])
 }
 
 func encodeAction(a Action) uint8 {

@@ -2,23 +2,12 @@ package gamestate
 
 import (
 	"fmt"
-	"sync"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/timpalpant/alphacats/cards"
 )
-
-var (
-	fixedCardProbabilities = make([]map[cards.Card]float64, cards.Cat+1)
-	cardProbabilitiesCache = sync.Map{}
-)
-
-func init() {
-	for card := cards.Card(0); card <= cards.Cat; card++ {
-		fixedCardProbabilities[card] = map[cards.Card]float64{card: 1.0}
-	}
-}
 
 // GameState represents the current state of the game.
 //
@@ -201,7 +190,12 @@ func (gs *GameState) BottomCardProbabilities() map[cards.Card]float64 {
 		}
 	}
 
-	return toProbabilities(candidates)
+	result, ok := cardProbabilitiesCache[candidates]
+	if !ok {
+		panic(fmt.Errorf("missing card probabilities for: %v", candidates))
+	}
+
+	return result
 }
 
 func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
@@ -222,23 +216,11 @@ func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
 		}
 	}
 
-	return toProbabilities(candidates)
-}
-
-func toProbabilities(candidates cards.Set) map[cards.Card]float64 {
-	if result, ok := cardProbabilitiesCache.Load(candidates); ok {
-		return result.(map[cards.Card]float64)
+	result, ok := cardProbabilitiesCache[candidates]
+	if !ok {
+		panic(fmt.Errorf("missing card probabilities for: %v", candidates))
 	}
 
-	counts := candidates.Counts()
-	result := make(map[cards.Card]float64, len(counts))
-	nTotal := float64(candidates.Len())
-	for card, count := range counts {
-		p := float64(count) / nTotal
-		result[card] = p
-	}
-
-	cardProbabilitiesCache.Store(candidates, result)
 	return result
 }
 
@@ -257,6 +239,14 @@ func (gs *GameState) playCard(player Player, card cards.Card) {
 }
 
 func (gs *GameState) drawCard(player Player, card cards.Card, position int) {
+	defer func() {
+		if r := recover(); r != nil {
+			glog.Error(gs.String())
+			glog.Error(gs.history.AsSlice())
+			panic("fatal")
+		}
+	}()
+
 	// Pop card from the draw pile.
 	gs.drawPile.Remove(card)
 	gs.fixedDrawPileCards.RemoveCard(position)

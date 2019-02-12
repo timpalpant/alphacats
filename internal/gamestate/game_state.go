@@ -3,7 +3,6 @@ package gamestate
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -236,14 +235,6 @@ func (gs *GameState) playCard(player Player, card cards.Card) {
 }
 
 func (gs *GameState) drawCard(player Player, card cards.Card, position int) {
-	defer func() {
-		if r := recover(); r != nil {
-			glog.Error(gs.String())
-			glog.Error(gs.history.AsSlice())
-			panic("fatal")
-		}
-	}()
-
 	// Pop card from the draw pile.
 	gs.drawPile.Remove(card)
 	gs.fixedDrawPileCards.RemoveCard(position)

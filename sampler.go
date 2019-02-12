@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	"github.com/golang/glog"
 
@@ -70,8 +71,14 @@ func CountTerminalNodes(root GameNode) int {
 	return result
 }
 
+var totalTerminalNodes int64
+
 func countTerminalNodesDFS(node GameNode) int {
 	if node.IsTerminal() {
+		if n := atomic.AddInt64(&totalTerminalNodes, 1); n%1000000 == 0 {
+			glog.Infof("%d terminal nodes", n)
+		}
+
 		return 1
 	}
 

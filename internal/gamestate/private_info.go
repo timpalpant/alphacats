@@ -3,8 +3,6 @@ package gamestate
 import (
 	"fmt"
 
-	"github.com/golang/glog"
-
 	"github.com/timpalpant/alphacats/cards"
 )
 
@@ -74,8 +72,6 @@ func (pi *privateInfo) validate() error {
 func (pi *privateInfo) drawCard(card cards.Card, fromPosition int) {
 	known := pi.effectiveKnownDrawPileCards().NthCard(fromPosition)
 	if known != cards.Unknown && known != card {
-		glog.Infof("%+v", pi)
-		glog.Infof("%+v", pi.effectiveKnownDrawPileCards())
 		panic(fmt.Errorf("drew card %v from position %v but we knew it to be %v",
 			card, fromPosition, known))
 	}
@@ -142,7 +138,7 @@ func (pi *privateInfo) opponentPlayedCard(card cards.Card) {
 // of the draw pile.
 func (pi *privateInfo) seeTopCards(topN []cards.Card) {
 	for i, card := range topN {
-		nthCard := pi.knownDrawPileCards.NthCard(i)
+		nthCard := pi.effectiveKnownDrawPileCards().NthCard(i)
 		if nthCard != cards.Unknown && nthCard != card {
 			panic(fmt.Errorf("we knew %d th card to be %v, but are now told it is %v",
 				i, nthCard, card))

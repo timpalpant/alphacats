@@ -2,6 +2,7 @@ package gamestate
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/pkg/errors"
 
@@ -10,7 +11,7 @@ import (
 
 var (
 	fixedCardProbabilities = make([]map[cards.Card]float64, cards.Cat+1)
-	cardProbabilitiesCache = map[cards.Set]map[cards.Card]float64{}
+	cardProbabilitiesCache = sync.Map{}
 )
 
 func init() {
@@ -225,8 +226,8 @@ func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
 }
 
 func toProbabilities(candidates cards.Set) map[cards.Card]float64 {
-	if result, ok := cardProbabilitiesCache[candidates]; ok {
-		return result
+	if result, ok := cardProbabilitiesCache.Load(candidates); ok {
+		return result.(map[cards.Card]float64)
 	}
 
 	counts := candidates.Counts()
@@ -237,7 +238,7 @@ func toProbabilities(candidates cards.Set) map[cards.Card]float64 {
 		result[card] = p
 	}
 
-	cardProbabilitiesCache[candidates] = result
+	cardProbabilitiesCache.Store(candidates, result)
 	return result
 }
 

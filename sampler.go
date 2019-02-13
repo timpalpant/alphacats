@@ -57,7 +57,7 @@ func CountTerminalNodes(root GameNode) int {
 		go func(child GameNode) {
 			child.gnPool = &gameNodeSlicePool{}
 			child.fPool = &floatSlicePool{}
-			myCount := countTerminalNodesDFS(child)
+			myCount := countTerminalNodesDFS(&child)
 
 			mu.Lock()
 			nProcessed++
@@ -78,11 +78,11 @@ func CountTerminalNodes(root GameNode) int {
 var startTime time.Time
 var totalTerminalNodes int64
 
-func countTerminalNodesDFS(node GameNode) int {
+func countTerminalNodesDFS(node *GameNode) int {
 	if node.IsTerminal() {
 		if n := atomic.AddInt64(&totalTerminalNodes, 1); n%1000000 == 0 {
-			nps := float64(n) / time.Since(startTime).Seconds()
-			glog.Infof("%d terminal nodes (%.1f nodes/s)", n, nps)
+			gps := float64(n) / time.Since(startTime).Seconds()
+			glog.Infof("%d terminal nodes (%.1f games/s)", n, gps)
 		}
 
 		return 1
@@ -90,11 +90,11 @@ func countTerminalNodesDFS(node GameNode) int {
 
 	node.BuildChildren()
 	total := 0
-	for _, child := range node.children {
-		total += countTerminalNodesDFS(child)
+	for i := range node.children {
+		total += countTerminalNodesDFS(&node.children[i])
 	}
 
 	// Clear children to allow this subtree to be GC'ed.
-	node.Clear()
+	node.Reset()
 	return total
 }

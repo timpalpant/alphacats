@@ -40,24 +40,23 @@ func New(player0Deal, player1Deal cards.Set) GameState {
 }
 
 // Apply returns the new GameState created by applying the given Action.
-func Apply(state GameState, action Action) GameState {
+func (gs *GameState) Apply(action Action) {
 	switch action.Type {
 	case DrawCard:
-		state.drawCard(action.Player, action.Card, action.PositionInDrawPile)
+		gs.drawCard(action.Player, action.Card, action.PositionInDrawPile)
 	case PlayCard:
-		state.playCard(action.Player, action.Card)
+		gs.playCard(action.Player, action.Card)
 	case GiveCard:
-		state.giveCard(action.Player, action.Card)
+		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		state.insertExplodingCat(action.Player, action.PositionInDrawPile)
+		gs.insertExplodingCat(action.Player, action.PositionInDrawPile)
 	case SeeTheFuture:
-		state.seeTopNCards(action.Player, action.Cards)
+		gs.seeTopNCards(action.Player, action.Cards)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
 
-	state.history.Append(action)
-	return state
+	gs.history.Append(action)
 }
 
 func (gs *GameState) String() string {

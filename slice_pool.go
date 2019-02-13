@@ -4,19 +4,19 @@ type gameNodeSlicePool struct {
 	pool [][]GameNode
 }
 
-func (p *gameNodeSlicePool) alloc() []GameNode {
+func (p *gameNodeSlicePool) alloc(n int) []GameNode {
 	if p == nil {
-		return make([]GameNode, 0)
+		return make([]GameNode, n)
 	}
 
 	if len(p.pool) > 0 {
-		n := len(p.pool)
-		next := p.pool[n-1]
-		p.pool = p.pool[:n-1]
-		return next
+		m := len(p.pool)
+		next := p.pool[m-1]
+		p.pool = p.pool[:m-1]
+		return append(next, make([]GameNode, n)...)
 	}
 
-	return make([]GameNode, 0)
+	return make([]GameNode, n)
 }
 
 func (p *gameNodeSlicePool) free(s []GameNode) {
@@ -29,19 +29,19 @@ type floatSlicePool struct {
 	pool [][]float64
 }
 
-func (p *floatSlicePool) alloc() []float64 {
+func (p *floatSlicePool) alloc(n int) []float64 {
 	if p == nil {
-		return make([]float64, 0)
+		return make([]float64, n)
 	}
 
 	if len(p.pool) > 0 {
-		n := len(p.pool)
-		next := p.pool[n-1]
-		p.pool = p.pool[:n-1]
-		return next
+		m := len(p.pool)
+		next := p.pool[m-1]
+		p.pool = p.pool[:m-1]
+		return append(next, make([]float64, n)...)
 	}
 
-	return make([]float64, 0)
+	return make([]float64, n)
 }
 
 func (p *floatSlicePool) free(s []float64) {

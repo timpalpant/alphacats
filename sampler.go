@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -49,6 +50,7 @@ func CountTerminalNodes(root GameNode) int {
 	wg := sync.WaitGroup{}
 	// Limit parallelism to number of CPUs.
 	sem := make(chan struct{}, runtime.NumCPU())
+	startTime = time.Now()
 	for _, child := range root.children {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -73,12 +75,14 @@ func CountTerminalNodes(root GameNode) int {
 	return result
 }
 
+var startTime time.Time
 var totalTerminalNodes int64
 
 func countTerminalNodesDFS(node GameNode) int {
 	if node.IsTerminal() {
 		if n := atomic.AddInt64(&totalTerminalNodes, 1); n%1000000 == 0 {
-			glog.Infof("%d terminal nodes", n)
+			nps := float64(n) / time.Since(startTime).Seconds()
+			glog.Infof("%d terminal nodes (%.1f nodes/s)", n, nps)
 		}
 
 		return 1

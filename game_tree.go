@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
-	"github.com/timpalpant/alphacats/internal/gamestate"
+	"github.com/timpalpant/alphacats/gamestate"
 )
 
 // turnType represents the kind of turn at a given point in the game.

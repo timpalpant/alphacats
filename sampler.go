@@ -10,7 +10,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/timpalpant/alphacats/internal/gamestate"
+	"github.com/timpalpant/alphacats/gamestate"
 )
 
 type Strategy interface {

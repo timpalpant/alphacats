@@ -1,7 +1,11 @@
 package alphacats
 
 import (
+	"encoding/binary"
 	"fmt"
+	"strings"
+
+	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
@@ -42,6 +46,25 @@ func (tt turnType) String() string {
 	return turnTypeStr[tt]
 }
 
+// ExplodingKittens implements cfr.ExtensiveFormGame for 2-player ExplodingKittens.
+type ExplodingKittens struct{}
+
+// Verify that we implement the inteface.
+var _ cfr.ExtensiveFormGame = ExplodingKittens{}
+
+func NewGame() ExplodingKittens {
+	return ExplodingKittens{}
+}
+
+func (ek ExplodingKittens) NumPlayers() int {
+	return 2
+}
+
+func (ek ExplodingKittens) RootNode() cfr.GameTreeNode {
+	return newRootNode()
+}
+
+// GameNode implements cfr.GameTreeNode for Exploding Kittens.
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
 	state    gamestate.GameState
@@ -54,26 +77,120 @@ type GameNode struct {
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
 	children []GameNode
-	// If turnType is Chance, then these are the cumulative probabilities
-	// of selecting each of the children. i.e. to select a child outcome,
-	// draw a random number p \in (0, 1] and then select the first child with
-	// cumulative probability >= p: children[cumulativeProbs >= p][0]
-	cumulativeProbs []float64
+	// If turnType is Chance, then these are the probabilities of selecting
+	// each of the children, i.e. children[i] occurs with probabilities[i].
+	// For non-chance nodes probabilities is nil.
+	probabilities []float64
 
 	gnPool *gameNodeSlicePool
 	fPool  *floatSlicePool
 }
 
-func NewGameTree() GameNode {
-	gn := GameNode{
+// Verify that we implement the inteface.
+var _ cfr.GameTreeNode = &GameNode{}
+
+func newRootNode() *GameNode {
+	return &GameNode{
 		player:   gamestate.Player0,
 		turnType: Deal,
 	}
-	gn.BuildChildren()
-	return gn
 }
 
-func (gn *GameNode) BuildChildren() {
+// Reset clears the space within this GameNode allocated for children.
+// It is not necessary to call Reset, but may be done to free the memory
+// used by the sub-tree rooted at this node. Children will be automatically
+// rebuilt as needed.
+func (gn *GameNode) Reset() {
+	gn.gnPool.free(gn.children)
+	gn.children = nil
+	gn.fPool.free(gn.probabilities)
+	gn.probabilities = nil
+}
+
+// IsChance implements cfr.GameTreeNode.
+func (gn *GameNode) IsChance() bool {
+	return gn.turnType.IsChance()
+}
+
+func (gn *GameNode) IsTerminal() bool {
+	return gn.turnType == GameOver
+}
+
+// Player implements cfr.GameTreeNode.
+func (gn *GameNode) Player() int {
+	return int(gn.player)
+}
+
+// NumChildren implements cfr.GameTreeNode.
+func (gn *GameNode) NumChildren() int {
+	gn.buildChildren()
+	return len(gn.children)
+}
+
+// GetChild implements cfr.GameTreeNode.
+func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
+	gn.buildChildren()
+	return &gn.children[i]
+}
+
+// GetChildProbability implements cfr.GameTreeNode.
+func (gn *GameNode) GetChildProbability(i int) float64 {
+	if !gn.IsChance() {
+		panic("cannot get child probability on non-chance node")
+	}
+
+	gn.buildChildren()
+	return gn.probabilities[i]
+}
+
+// InfoSet implements cfr.GameTreeNode.
+func (gn *GameNode) InfoSet(player int) string {
+	var buf strings.Builder
+	is := gn.state.GetInfoSet(gamestate.Player(gn.player))
+	binary.Write(&buf, binary.LittleEndian, is)
+	return buf.String()
+}
+
+// Utility implements cfr.GameTreeNode.
+func (gn *GameNode) Utility(player int) float64 {
+	if !gn.IsTerminal() {
+		panic("cannot get the utility of a non-terminal node")
+	}
+
+	if int(gn.player) == player {
+		return 1.0
+	}
+
+	return -1.0
+}
+
+func (gn *GameNode) GetHistory() []gamestate.Action {
+	return gn.state.GetHistory()
+}
+
+// String implements fmt.Stringer.
+func (gn *GameNode) String() string {
+	return fmt.Sprintf("%v's turn to %v. State: %s", gn.player, gn.turnType, gn.state.String())
+}
+
+func (gn *GameNode) allocChildren(n int) {
+	gn.children = gn.gnPool.alloc(n)
+	for i := range gn.children {
+		gn.children[i] = *gn
+	}
+
+	if gn.turnType.IsChance() {
+		gn.probabilities = gn.fPool.alloc(n)
+	} else {
+		gn.probabilities = nil
+	}
+}
+
+func (gn *GameNode) buildChildren() {
+	if len(gn.children) > 0 {
+		return
+	}
+
 	switch gn.turnType {
 	case DrawCard:
 		gn.buildDrawCardChildren(false)
@@ -89,46 +206,6 @@ func (gn *GameNode) BuildChildren() {
 		gn.buildMustDefuseChildren()
 	case SeeTheFuture:
 		gn.buildSeeTheFutureChildren()
-	}
-}
-
-func (gn *GameNode) Reset() {
-	gn.gnPool.free(gn.children)
-	gn.children = nil
-	gn.fPool.free(gn.cumulativeProbs)
-	gn.cumulativeProbs = nil
-}
-
-func (gn *GameNode) IsTerminal() bool {
-	return gn.turnType == GameOver
-}
-
-func (gn *GameNode) Winner() gamestate.Player {
-	return gn.player
-}
-
-func (gn *GameNode) GetHistory() []gamestate.Action {
-	return gn.state.GetHistory()
-}
-
-func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v. State: %s", gn.player, gn.turnType, gn.state.String())
-}
-
-func (gn *GameNode) NumChildren() int {
-	return len(gn.children)
-}
-
-func (gn *GameNode) allocChildren(n int) {
-	gn.children = gn.gnPool.alloc(n)
-	for i := range gn.children {
-		gn.children[i] = *gn
-	}
-
-	if gn.turnType.IsChance() {
-		gn.cumulativeProbs = gn.fPool.alloc(n)
-	} else {
-		gn.cumulativeProbs = nil
 	}
 }
 
@@ -151,10 +228,10 @@ func (gn *GameNode) buildDealChildren() {
 	}
 
 	// All deals are equally likely.
-	gn.cumulativeProbs = gn.fPool.alloc(len(gn.children))
-	for i := 0; i < len(gn.children); i++ {
-		p := float64(i+1) / float64(len(gn.children))
-		gn.cumulativeProbs[i] = p
+	gn.probabilities = gn.fPool.alloc(len(gn.children))
+	p := 1.0 / float64(len(gn.probabilities))
+	for i := 0; i < len(gn.probabilities); i++ {
+		gn.probabilities[i] = p
 	}
 }
 
@@ -227,12 +304,10 @@ func (gn *GameNode) buildDrawCardChildren(fromBottom bool) {
 	}
 
 	gn.allocChildren(len(nextCardProbs))
-	cumProb := 0.0
 	i := 0
 	for card, p := range nextCardProbs {
 		gn.buildNextDrawnCardNode(&gn.children[i], card, fromBottom, newPendingTurns)
-		cumProb += p
-		gn.cumulativeProbs[i] = cumProb
+		gn.probabilities[i] = p
 		i++
 	}
 }
@@ -265,12 +340,11 @@ func (gn *GameNode) buildNextDrawnCardNode(node *GameNode, card cards.Card, from
 }
 
 func (gn *GameNode) buildSeeTheFutureChildren() {
+	// TODO(palpant): Eliminate the allocations in enumerateTopNCards here.
 	cards, probs := enumerateTopNCards(gn.state, 3)
-	cumProb := 0.0
 	gn.allocChildren(len(cards))
 	for i, top3 := range cards {
-		cumProb += probs[i]
-		gn.cumulativeProbs[i] = cumProb
+		gn.probabilities[i] = probs[i]
 
 		child := &gn.children[i]
 		child.state.Apply(gamestate.Action{

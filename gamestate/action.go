@@ -70,7 +70,7 @@ func (a Action) String() string {
 // struct, reducing allocations required for the game history.
 type publicHistory struct {
 	packed [48]uint8
-	n      int
+	n      uint8
 }
 
 func newHistoryFromSlice(actions []Action) publicHistory {
@@ -83,7 +83,7 @@ func newHistoryFromSlice(actions []Action) publicHistory {
 
 func (h publicHistory) AsSlice() []Action {
 	var result []Action
-	for i := 0; i < h.n; i++ {
+	for i := uint8(0); i < h.n; i++ {
 		action := decodeAction(h.packed[i])
 		result = append(result, action)
 	}
@@ -92,11 +92,11 @@ func (h publicHistory) AsSlice() []Action {
 }
 
 func (h *publicHistory) Len() int {
-	return h.n
+	return int(h.n)
 }
 
 func (h *publicHistory) Append(a Action) {
-	if h.n >= len(h.packed) {
+	if int(h.n) >= len(h.packed) {
 		panic("overflow in public history")
 	}
 
@@ -105,7 +105,7 @@ func (h *publicHistory) Append(a Action) {
 }
 
 func (h *publicHistory) Get(i int) Action {
-	if i >= h.n {
+	if i >= int(h.n) {
 		panic(fmt.Errorf("%d out of range for history with %d elements", i, h.n))
 	}
 

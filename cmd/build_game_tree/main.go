@@ -7,6 +7,8 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
+	"github.com/timpalpant/go-cfr"
+
 	"github.com/timpalpant/alphacats"
 )
 
@@ -24,12 +26,6 @@ func main() {
 
 	rand.Seed(*seed)
 
-	tree := alphacats.NewGameTree()
-	fmt.Printf("%d terminal nodes.\n", alphacats.CountTerminalNodes(tree))
-
-	s := testStrategy{}
-	history := alphacats.SampleHistory(tree, s)
-	for i, turn := range history {
-		fmt.Printf("Turn %d: %s\n", i, turn)
-	}
+	game := alphacats.NewGame()
+	fmt.Printf("%d terminal nodes.\n", cfr.CountTerminalNodes(game.RootNode()))
 }

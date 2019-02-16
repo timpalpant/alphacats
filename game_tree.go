@@ -1,9 +1,9 @@
 package alphacats
 
 import (
+	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
-	"strings"
 
 	"github.com/timpalpant/go-cfr"
 
@@ -46,24 +46,6 @@ func (tt turnType) String() string {
 	return turnTypeStr[tt]
 }
 
-// ExplodingKittens implements cfr.ExtensiveFormGame for 2-player ExplodingKittens.
-type ExplodingKittens struct{}
-
-// Verify that we implement the inteface.
-var _ cfr.ExtensiveFormGame = ExplodingKittens{}
-
-func NewGame() ExplodingKittens {
-	return ExplodingKittens{}
-}
-
-func (ek ExplodingKittens) NumPlayers() int {
-	return 2
-}
-
-func (ek ExplodingKittens) RootNode() cfr.GameTreeNode {
-	return newRootNode()
-}
-
 // GameNode implements cfr.GameTreeNode for Exploding Kittens.
 // GameNode represents a state of play in the extensive-form game tree.
 type GameNode struct {
@@ -89,10 +71,12 @@ type GameNode struct {
 // Verify that we implement the inteface.
 var _ cfr.GameTreeNode = &GameNode{}
 
-func newRootNode() *GameNode {
+func NewGame() *GameNode {
 	return &GameNode{
 		player:   gamestate.Player0,
 		turnType: Deal,
+		gnPool:   &gameNodeSlicePool{},
+		fPool:    &floatSlicePool{},
 	}
 }
 
@@ -136,19 +120,23 @@ func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 // GetChildProbability implements cfr.GameTreeNode.
 func (gn *GameNode) GetChildProbability(i int) float64 {
 	if !gn.IsChance() {
-		panic("cannot get child probability on non-chance node")
+		panic(fmt.Errorf("cannot get child probability of %v node", gn.turnType))
 	}
 
 	gn.buildChildren()
 	return gn.probabilities[i]
 }
 
+var hash = sha1.New()
+var hashBuf = make([]byte, 0, hash.Size())
+
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) string {
-	var buf strings.Builder
 	is := gn.state.GetInfoSet(gamestate.Player(gn.player))
-	binary.Write(&buf, binary.LittleEndian, is)
-	return buf.String()
+	binary.Write(hash, binary.LittleEndian, is)
+	buf := hash.Sum(hashBuf)
+	hash.Reset()
+	return string(buf)
 }
 
 // Utility implements cfr.GameTreeNode.
@@ -176,7 +164,11 @@ func (gn *GameNode) String() string {
 func (gn *GameNode) allocChildren(n int) {
 	gn.children = gn.gnPool.alloc(n)
 	for i := range gn.children {
+		// Children are initialized as a copy of the current game node,
+		// but without any children (the new node's children must be built).
 		gn.children[i] = *gn
+		gn.children[i].children = nil
+		gn.children[i].probabilities = nil
 	}
 
 	if gn.turnType.IsChance() {
@@ -188,7 +180,7 @@ func (gn *GameNode) allocChildren(n int) {
 
 func (gn *GameNode) buildChildren() {
 	if len(gn.children) > 0 {
-		return
+		return // Already built.
 	}
 
 	switch gn.turnType {
@@ -404,7 +396,7 @@ func (gn *GameNode) buildPlayTurnChildren() {
 		case cards.DrawFromTheBottom:
 			makeDrawCardNode(child, gn.player, true, gn.pendingTurns)
 		case cards.Cat:
-			if child.state.GetPlayerHand(1-gn.player).Len() == 0 {
+			if child.state.GetPlayerHand(nextPlayer(gn.player)).Len() == 0 {
 				// Other player has no cards in their hand, this was a no-op.
 				makePlayTurnNode(child, gn.player, gn.pendingTurns)
 			} else {

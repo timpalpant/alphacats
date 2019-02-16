@@ -81,7 +81,14 @@ func newHistoryFromSlice(actions []Action) publicHistory {
 	return history
 }
 
-func (h publicHistory) AsSlice() []Action {
+// MarshalTo marshals the publicHistory into the first N bytes
+// of the given buffer. It returns the number of bytes written.
+func (h *publicHistory) MarshalTo(buf []byte) int {
+	copy(buf, h.packed[:h.n])
+	return int(h.n)
+}
+
+func (h *publicHistory) AsSlice() []Action {
 	var result []Action
 	for i := uint8(0); i < h.n; i++ {
 		action := decodeAction(h.packed[i])

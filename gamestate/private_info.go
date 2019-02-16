@@ -1,6 +1,7 @@
 package gamestate
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -43,6 +44,22 @@ func newPrivateInfo(deal cards.Set) privateInfo {
 	}
 }
 
+// MarshalTo marshals the privateInfo into the first 13 bytes of
+// the given buffer.
+func (pi *privateInfo) MarshalTo(buf []byte) int {
+	binary.LittleEndian.PutUint64(buf, uint64(pi.ourHand))
+	binary.LittleEndian.PutUint64(buf[4:], uint64(pi.opponentHand))
+	binary.LittleEndian.PutUint64(buf[8:], uint64(pi.knownDrawPileCards))
+	if pi.pendingKittenInterruption {
+		buf[12] = 1
+	} else {
+		buf[12] = 0
+	}
+
+	return 13
+}
+
+// String implements fmt.Stringer.
 func (pi *privateInfo) String() string {
 	return fmt.Sprintf("{our: %s, opponent: %s, known: %s, pendingKitten: %v}",
 		pi.ourHand, pi.opponentHand, pi.knownDrawPileCards, pi.pendingKittenInterruption)

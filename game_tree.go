@@ -2,7 +2,6 @@ package alphacats
 
 import (
 	"crypto/sha1"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/timpalpant/go-cfr"
@@ -127,16 +126,15 @@ func (gn *GameNode) GetChildProbability(i int) float64 {
 	return gn.probabilities[i]
 }
 
-var hash = sha1.New()
-var hashBuf = make([]byte, 0, hash.Size())
+var buf = make([]byte, gamestate.InfoSetSize)
 
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) string {
 	is := gn.state.GetInfoSet(gamestate.Player(gn.player))
-	binary.Write(hash, binary.LittleEndian, is)
-	buf := hash.Sum(hashBuf)
-	hash.Reset()
-	return string(buf)
+	n := is.MarshalTo(buf)
+	// Use the hashing trick to hash the infoset into 20-byte SHA-1.
+	hash := sha1.Sum(buf[:n])
+	return string(hash[:])
 }
 
 // Utility implements cfr.GameTreeNode.

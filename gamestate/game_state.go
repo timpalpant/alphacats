@@ -165,6 +165,18 @@ type InfoSet struct {
 	private privateInfo
 }
 
+// The number of bytes required to marshal an InfoSet.
+const InfoSetSize = 61
+
+// MarshalTo marshals the InfoSet into the first N bytes of
+// the given buffer, which should have length of at least InfoSetSize.
+// It returns the number of bytes written.
+func (s *InfoSet) MarshalTo(buf []byte) int {
+	n := s.private.MarshalTo(buf)
+	m := s.public.MarshalTo(buf[n:])
+	return n + m
+}
+
 func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	return InfoSet{
 		private: *gs.privateInfo(player),

@@ -78,17 +78,6 @@ func NewGame() *GameNode {
 	}
 }
 
-// Reset clears the space within this GameNode allocated for children.
-// It is not necessary to call Reset, but may be done to free the memory
-// used by the sub-tree rooted at this node. Children will be automatically
-// rebuilt as needed.
-func (gn *GameNode) Reset() {
-	gn.gnPool.free(gn.children)
-	gn.children = nil
-	gn.fPool.free(gn.probabilities)
-	gn.probabilities = nil
-}
-
 // Type implements cfr.GameTreeNode.
 func (gn *GameNode) Type() cfr.NodeType {
 	if gn.IsChance() {
@@ -113,26 +102,20 @@ func (gn *GameNode) Player() int {
 	return int(gn.player)
 }
 
-// NumChildren implements cfr.GameTreeNode.
-func (gn *GameNode) NumChildren() int {
+// VisitChildren implements cfr.GameTreeNode.
+func (gn *GameNode) VisitChildren(visitor cfr.Visitor) {
 	gn.buildChildren()
-	return len(gn.children)
-}
 
-// GetChild implements cfr.GameTreeNode.
-func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
-	gn.buildChildren()
-	return &gn.children[i]
-}
+	var p float64
+	for i := range gn.children {
+		if gn.IsChance() {
+			p = gn.probabilities[i]
+		}
 
-// GetChildProbability implements cfr.GameTreeNode.
-func (gn *GameNode) GetChildProbability(i int) float64 {
-	if !gn.IsChance() {
-		panic(fmt.Errorf("cannot get child probability of %v node", gn.turnType))
+		visitor(&gn.children[i], p)
 	}
 
-	gn.buildChildren()
-	return gn.probabilities[i]
+	gn.reset()
 }
 
 var buf = make([]byte, gamestate.InfoSetSize)
@@ -183,6 +166,13 @@ func (gn *GameNode) allocChildren(n int) {
 	} else {
 		gn.probabilities = nil
 	}
+}
+
+func (gn *GameNode) reset() {
+	gn.gnPool.free(gn.children)
+	gn.children = nil
+	gn.fPool.free(gn.probabilities)
+	gn.probabilities = nil
 }
 
 func (gn *GameNode) buildChildren() {

@@ -1,7 +1,6 @@
 package alphacats
 
 import (
-	"crypto/sha1"
 	"fmt"
 
 	"github.com/timpalpant/go-cfr"
@@ -90,7 +89,17 @@ func (gn *GameNode) Reset() {
 	gn.probabilities = nil
 }
 
-// IsChance implements cfr.GameTreeNode.
+// Type implements cfr.GameTreeNode.
+func (gn *GameNode) Type() cfr.NodeType {
+	if gn.IsChance() {
+		return cfr.ChanceNode
+	} else if gn.IsTerminal() {
+		return cfr.TerminalNode
+	}
+
+	return cfr.PlayerNode
+}
+
 func (gn *GameNode) IsChance() bool {
 	return gn.turnType.IsChance()
 }
@@ -132,9 +141,7 @@ var buf = make([]byte, gamestate.InfoSetSize)
 func (gn *GameNode) InfoSet(player int) string {
 	is := gn.state.GetInfoSet(gamestate.Player(gn.player))
 	n := is.MarshalTo(buf)
-	// Use the hashing trick to hash the infoset into 20-byte SHA-1.
-	hash := sha1.Sum(buf[:n])
-	return string(hash[:])
+	return string(buf[:n])
 }
 
 // Utility implements cfr.GameTreeNode.
@@ -156,17 +163,19 @@ func (gn *GameNode) GetHistory() []gamestate.Action {
 
 // String implements fmt.Stringer.
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v. State: %s", gn.player, gn.turnType, gn.state.String())
+	return fmt.Sprintf("%v's turn to %v. State: %s. History: %v",
+		gn.player, gn.turnType, gn.state.String(), gn.GetHistory())
 }
 
 func (gn *GameNode) allocChildren(n int) {
 	gn.children = gn.gnPool.alloc(n)
+	// Children are initialized as a copy of the current game node,
+	// but without any children (the new node's children must be built).
+	childPrototype := *gn
+	childPrototype.children = nil
+	childPrototype.probabilities = nil
 	for i := range gn.children {
-		// Children are initialized as a copy of the current game node,
-		// but without any children (the new node's children must be built).
-		gn.children[i] = *gn
-		gn.children[i].children = nil
-		gn.children[i].probabilities = nil
+		gn.children[i] = childPrototype
 	}
 
 	if gn.turnType.IsChance() {

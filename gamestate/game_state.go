@@ -60,12 +60,8 @@ func (gs *GameState) Apply(action Action) {
 }
 
 func (gs *GameState) String() string {
-	return fmt.Sprintf("draw pile: %s, p0: %s, p1: %s",
-		gs.drawPile, gs.player0Hand, gs.player1Hand)
-}
-
-func (gs *GameState) GetHistory() []Action {
-	return gs.history.AsSlice()
+	return fmt.Sprintf("draw pile: %s, p0: %s, p1: %s. history: %s",
+		gs.drawPile, gs.player0Hand, gs.player1Hand, gs.history.String())
 }
 
 func (gs *GameState) GetDrawPile() DrawPile {

@@ -102,22 +102,6 @@ func (gn *GameNode) Player() int {
 	return int(gn.player)
 }
 
-// VisitChildren implements cfr.GameTreeNode.
-func (gn *GameNode) VisitChildren(visitor cfr.Visitor) {
-	gn.buildChildren()
-
-	var p float64
-	for i := range gn.children {
-		if gn.IsChance() {
-			p = gn.probabilities[i]
-		}
-
-		visitor(&gn.children[i], p)
-	}
-
-	gn.reset()
-}
-
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) string {
 	return gn.state.GetInfoSet(gamestate.Player(player))
@@ -136,14 +120,10 @@ func (gn *GameNode) Utility(player int) float64 {
 	return -1.0
 }
 
-func (gn *GameNode) GetHistory() []gamestate.Action {
-	return gn.state.GetHistory()
-}
-
 // String implements fmt.Stringer.
 func (gn *GameNode) String() string {
 	return fmt.Sprintf("%v's turn to %v. State: %s. History: %v",
-		gn.player, gn.turnType, gn.state.String(), gn.GetHistory())
+		gn.player, gn.turnType, gn.state.String())
 }
 
 func (gn *GameNode) allocChildren(n int) {
@@ -164,14 +144,8 @@ func (gn *GameNode) allocChildren(n int) {
 	}
 }
 
-func (gn *GameNode) reset() {
-	gn.gnPool.free(gn.children)
-	gn.children = nil
-	gn.fPool.free(gn.probabilities)
-	gn.probabilities = nil
-}
-
-func (gn *GameNode) buildChildren() {
+// BuildChildren implements cfr.GameTreeNode.
+func (gn *GameNode) BuildChildren() {
 	if len(gn.children) > 0 {
 		return // Already built.
 	}
@@ -194,6 +168,28 @@ func (gn *GameNode) buildChildren() {
 	}
 }
 
+func (gn *GameNode) NumChildren() int {
+	return len(gn.children)
+}
+
+// GetChild implements cfr.GameTreeNode.
+func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
+	return &gn.children[i]
+}
+
+// GetChildProbability implements cfr.GameTreeNode.
+func (gn *GameNode) GetChildProbability(i int) float64 {
+	return gn.probabilities[i]
+}
+
+// FreeChildren implements cfr.GameTreeNode.
+func (gn *GameNode) FreeChildren() {
+	gn.gnPool.free(gn.children)
+	gn.children = nil
+	gn.fPool.free(gn.probabilities)
+	gn.probabilities = nil
+}
+
 func (gn *GameNode) buildDealChildren() {
 	gn.allocChildren(0)
 	// Deal 4 cards to player 0.
@@ -214,8 +210,8 @@ func (gn *GameNode) buildDealChildren() {
 
 	// All deals are equally likely.
 	gn.probabilities = gn.fPool.alloc(len(gn.children))
-	p := 1.0 / float64(len(gn.probabilities))
-	for i := 0; i < len(gn.probabilities); i++ {
+	p := 1.0 / float64(len(gn.children))
+	for i := range gn.children {
 		gn.probabilities[i] = p
 	}
 }

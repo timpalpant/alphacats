@@ -99,7 +99,7 @@ type InfoSet struct {
 
 func (is *InfoSet) String() string {
 	var builder strings.Builder
-	if err := binary.Write(&builder, binary.LittleEndian, is.hand); err != nil {
+	if err := binary.Write(&builder, binary.LittleEndian, uint64(is.hand)); err != nil {
 		panic(err)
 	}
 

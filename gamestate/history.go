@@ -138,14 +138,8 @@ func isPrivate(packed uint32, p Player) bool {
 
 // Remove Action info that is not privy to the given player.
 func censorAction(packed uint32, player Player) uint32 {
-	action := decodeAction(packed)
-	if action.Player != player && action.Type.IsPrivate() {
-		action.PositionInDrawPile = 0
-		action.Card = cards.Unknown
-		action.Cards = [3]cards.Card{}
-	}
-
-	return encodeAction(action)
+	// Just keep the lowest 4 bits (Player + Type).
+	return (packed & 0xf)
 }
 
 // Action is packed as bits within a uint32:

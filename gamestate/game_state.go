@@ -3,6 +3,7 @@ package gamestate
 import (
 	"encoding/binary"
 	"fmt"
+	"unsafe"
 
 	"github.com/timpalpant/alphacats/cards"
 )
@@ -101,7 +102,11 @@ func (gs *GameState) GetInfoSet(player Player) string {
 	}
 
 	gs.history.EncodeInfoSet(player, buf[8:])
-	return string(buf)
+	return unsafeByteSliceToString(buf)
+}
+
+func unsafeByteSliceToString(bs []byte) string {
+	return *(*string)(unsafe.Pointer(&bs))
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {

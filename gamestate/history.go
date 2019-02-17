@@ -1,6 +1,7 @@
 package gamestate
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -55,6 +56,85 @@ type Action struct {
 	Cards              [3]cards.Card // May be private information.
 }
 
+func (a Action) String() string {
+	s := fmt.Sprintf("%s:%s", a.Player, a.Type)
+	if a.Card != cards.Unknown {
+		s += ":" + a.Card.String()
+	}
+	if a.Type == InsertExplodingCat {
+		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
+	}
+	if a.Type == SeeTheFuture {
+		s += fmt.Sprintf(":%v", a.Cards)
+	}
+	return s
+}
+
+const MaxNumActions = 48
+
+// History records the history of game actions to reach this state.
+// It is bit-packed and pre-sized to avoid allocations.
+type history struct {
+	actions [MaxNumActions]uint32
+	n       int
+}
+
+func (h *history) String() string {
+	return fmt.Sprintf("%v", h.AsSlice())
+}
+
+func (h *history) Len() int {
+	return h.n
+}
+
+func (h *history) Get(i int) Action {
+	if i >= h.n {
+		panic(fmt.Errorf("index out of range: %d %v", i, h))
+	}
+
+	return decodeAction(h.actions[i])
+}
+
+func (h *history) Append(action Action) {
+	if h.n >= len(h.actions) {
+		panic(fmt.Errorf("history exceeded max length: %v", h))
+	}
+
+	h.actions[h.n] = encodeAction(action)
+	h.n++
+}
+
+func (h *history) GetPlayerView(p Player) history {
+	result := history{}
+	for _, packed := range h.actions[:h.n] {
+		action := decodeAction(packed)
+		if action.Player != p && action.Type.IsPrivate() {
+			action.PositionInDrawPile = 0
+			action.Card = cards.Unknown
+			action.Cards = [3]cards.Card{}
+		}
+
+		result.Append(action)
+	}
+	return result
+}
+
+func (h *history) AsSlice() []Action {
+	result := make([]Action, h.n)
+	for i, packed := range h.actions[:h.n] {
+		result[i] = decodeAction(packed)
+	}
+	return result
+}
+
+func (h *history) MarshalTo(buf []byte) int {
+	for i, packed := range h.actions[:h.n] {
+		binary.LittleEndian.PutUint32(buf[4*i:], packed)
+	}
+
+	return 4 * h.n
+}
+
 // Action is packed as bits within a uint32:
 // [0] Player
 // [1-3] Type
@@ -87,71 +167,4 @@ func decodeAction(packed uint32) Action {
 	}
 
 	return action
-}
-
-func (a Action) String() string {
-	s := fmt.Sprintf("%s:%s", a.Player, a.Type)
-	if a.Card != cards.Unknown {
-		s += ":" + a.Card.String()
-	}
-	if a.Type == InsertExplodingCat {
-		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
-	}
-	if a.Type == SeeTheFuture {
-		s += fmt.Sprintf(":%v", a.Cards)
-	}
-	return s
-}
-
-const MaxNumActions = 48
-
-// History records the history of game actions to reach this state.
-// It is pre-sized to avoid allocations.
-type history struct {
-	actions [MaxNumActions]Action
-	n       int
-}
-
-func (h *history) String() string {
-	return fmt.Sprintf("%v", h.AsSlice())
-}
-
-func (h *history) Len() int {
-	return h.n
-}
-
-func (h *history) Get(i int) Action {
-	if i >= h.n {
-		panic(fmt.Errorf("index out of range: %d %v", i, h))
-	}
-
-	return h.actions[i]
-}
-
-func (h *history) Append(action Action) {
-	if h.n >= len(h.actions) {
-		panic(fmt.Errorf("history exceeded max length: %v", h))
-	}
-
-	h.actions[h.n] = action
-	h.n++
-}
-
-func (h *history) GetPlayerView(p Player) history {
-	result := history{}
-	for i := 0; i < h.n; i++ {
-		action := h.actions[i]
-		if action.Player != p && action.Type.IsPrivate() {
-			action.PositionInDrawPile = 0
-			action.Card = cards.Unknown
-			action.Cards = [3]cards.Card{}
-		}
-
-		result.Append(action)
-	}
-	return result
-}
-
-func (h *history) AsSlice() []Action {
-	return h.actions[:h.n]
 }

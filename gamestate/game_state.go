@@ -3,7 +3,6 @@ package gamestate
 import (
 	"encoding/binary"
 	"fmt"
-	"strings"
 
 	"github.com/timpalpant/alphacats/cards"
 )
@@ -97,20 +96,13 @@ type InfoSet struct {
 	hand    cards.Set
 }
 
+const maxInfoSetBytes = 4*MaxNumActions + 8
+
 func (is *InfoSet) String() string {
-	var builder strings.Builder
-	if err := binary.Write(&builder, binary.LittleEndian, uint64(is.hand)); err != nil {
-		panic(err)
-	}
-
-	for _, action := range is.history.AsSlice() {
-		packed := encodeAction(action)
-		if err := binary.Write(&builder, binary.LittleEndian, packed); err != nil {
-			panic(err)
-		}
-	}
-
-	return builder.String()
+	var buf [maxInfoSetBytes]byte
+	binary.LittleEndian.PutUint64(buf[0:], uint64(is.hand))
+	n := is.history.MarshalTo(buf[8:])
+	return string(buf[:n+8])
 }
 
 func (gs *GameState) GetInfoSet(player Player) InfoSet {

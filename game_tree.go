@@ -120,8 +120,7 @@ func (gn *GameNode) VisitChildren(visitor cfr.Visitor) {
 
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) string {
-	is := gn.state.GetInfoSet(gamestate.Player(player))
-	return is.String()
+	return gn.state.GetInfoSet(gamestate.Player(player))
 }
 
 // Utility implements cfr.GameTreeNode.

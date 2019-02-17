@@ -91,25 +91,17 @@ func (gs *GameState) LastActionWasSlap() bool {
 // InfoSet represents the state of the game from the point of view of one of the
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
-type InfoSet struct {
-	history history
-	hand    cards.Set
-}
-
-const maxInfoSetBytes = 4*MaxNumActions + 8
-
-func (is *InfoSet) String() string {
-	var buf [maxInfoSetBytes]byte
-	binary.LittleEndian.PutUint64(buf[0:], uint64(is.hand))
-	n := is.history.MarshalTo(buf[8:])
-	return string(buf[:n+8])
-}
-
-func (gs *GameState) GetInfoSet(player Player) InfoSet {
-	return InfoSet{
-		history: gs.history.GetPlayerView(player),
-		hand:    gs.GetPlayerHand(player),
+func (gs *GameState) GetInfoSet(player Player) string {
+	nBytes := 8 + 4*gs.history.Len()
+	buf := make([]byte, nBytes)
+	if player == Player0 {
+		binary.LittleEndian.PutUint64(buf, uint64(gs.player0Hand))
+	} else {
+		binary.LittleEndian.PutUint64(buf, uint64(gs.player1Hand))
 	}
+
+	gs.history.EncodeInfoSet(player, buf[8:])
+	return string(buf)
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {

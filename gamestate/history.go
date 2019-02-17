@@ -104,21 +104,6 @@ func (h *history) Append(action Action) {
 	h.n++
 }
 
-func (h *history) GetPlayerView(p Player) history {
-	result := history{}
-	for _, packed := range h.actions[:h.n] {
-		action := decodeAction(packed)
-		if action.Player != p && action.Type.IsPrivate() {
-			action.PositionInDrawPile = 0
-			action.Card = cards.Unknown
-			action.Cards = [3]cards.Card{}
-		}
-
-		result.Append(action)
-	}
-	return result
-}
-
 func (h *history) AsSlice() []Action {
 	result := make([]Action, h.n)
 	for i, packed := range h.actions[:h.n] {
@@ -127,12 +112,40 @@ func (h *history) AsSlice() []Action {
 	return result
 }
 
-func (h *history) MarshalTo(buf []byte) int {
+func (h *history) EncodeInfoSet(player Player, buf []byte) int {
 	for i, packed := range h.actions[:h.n] {
+		if isPrivate(packed, player) {
+			packed = censorAction(packed, player)
+		}
+
 		binary.LittleEndian.PutUint32(buf[4*i:], packed)
 	}
 
 	return 4 * h.n
+}
+
+// Helper to discern if a packed Action is private information
+// that Player p does not know, without fully decoding.
+func isPrivate(packed uint32, p Player) bool {
+	player := Player(packed & 0x1)
+	if player == p {
+		return false
+	}
+
+	actionType := ActionType((packed >> 1) & 0x7)
+	return actionType.IsPrivate()
+}
+
+// Remove Action info that is not privy to the given player.
+func censorAction(packed uint32, player Player) uint32 {
+	action := decodeAction(packed)
+	if action.Player != player && action.Type.IsPrivate() {
+		action.PositionInDrawPile = 0
+		action.Card = cards.Unknown
+		action.Cards = [3]cards.Card{}
+	}
+
+	return encodeAction(action)
 }
 
 // Action is packed as bits within a uint32:

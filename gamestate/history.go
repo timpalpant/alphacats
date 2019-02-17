@@ -140,13 +140,14 @@ func (h *history) Append(action Action) {
 func (h *history) GetPlayerView(p Player) history {
 	result := history{}
 	for i := 0; i < h.n; i++ {
-		censored := h.actions[i]
-		if censored.Player != p && censored.Type.IsPrivate() {
-			censored.PositionInDrawPile = 0
-			censored.Card = cards.Unknown
-			censored.Cards = [3]cards.Card{}
+		action := h.actions[i]
+		if action.Player != p && action.Type.IsPrivate() {
+			action.PositionInDrawPile = 0
+			action.Card = cards.Unknown
+			action.Cards = [3]cards.Card{}
 		}
-		result.actions[i] = censored
+
+		result.Append(action)
 	}
 	return result
 }

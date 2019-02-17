@@ -122,7 +122,7 @@ func (gn *GameNode) Utility(player int) float64 {
 
 // String implements fmt.Stringer.
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v. State: %s. History: %v",
+	return fmt.Sprintf("%v's turn to %v. State: %s",
 		gn.player, gn.turnType, gn.state.String())
 }
 

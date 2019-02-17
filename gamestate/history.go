@@ -1,7 +1,6 @@
 package gamestate
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -75,7 +74,7 @@ const MaxNumActions = 48
 // History records the history of game actions to reach this state.
 // It is bit-packed and pre-sized to avoid allocations.
 type history struct {
-	actions [MaxNumActions]uint32
+	actions [MaxNumActions][3]uint8
 	n       int
 }
 
@@ -118,60 +117,61 @@ func (h *history) EncodeInfoSet(player Player, buf []byte) int {
 			packed = censorAction(packed, player)
 		}
 
-		binary.LittleEndian.PutUint32(buf[4*i:], packed)
+		copy(buf[3*i:], packed[:])
 	}
 
-	return 4 * h.n
+	return 3 * h.n
 }
 
 // Helper to discern if a packed Action is private information
 // that Player p does not know, without fully decoding.
-func isPrivate(packed uint32, p Player) bool {
-	player := Player(packed & 0x1)
+func isPrivate(packed [3]uint8, p Player) bool {
+	player := Player(packed[0] & 0x1)
 	if player == p {
 		return false
 	}
 
-	actionType := ActionType((packed >> 1) & 0x7)
+	actionType := ActionType((packed[0] >> 1) & 0x7)
 	return actionType.IsPrivate()
 }
 
 // Remove Action info that is not privy to the given player.
-func censorAction(packed uint32, player Player) uint32 {
+func censorAction(packed [3]uint8, player Player) [3]uint8 {
 	// Just keep the lowest 4 bits (Player + Type).
-	return (packed & 0xf)
+	packed[0] &= 0xf
+	packed[1] = 0
+	packed[2] = 0
+	return packed
 }
 
-// Action is packed as bits within a uint32:
+// Action is packed as bits within a [3]uint8:
 // [0] Player
 // [1-3] Type
 // [4-7] Card
 // [8-11] PositionInDrawPile (0 - 13)
 // [12-24] 3 Cards
-func encodeAction(a Action) uint32 {
-	result := uint32(a.Player)
-	result += uint32(a.Type << 1)
-	result += uint32(a.Card << 4)
-	result += uint32(a.PositionInDrawPile << 8)
-	for i := uint(0); i < 3; i++ {
-		shift := 4*i + 12
-		result += uint32(a.Cards[i] << shift)
-	}
+func encodeAction(a Action) [3]uint8 {
+	var result [3]uint8
+	result[0] = uint8(a.Player)
+	result[0] += uint8(a.Type << 1)
+	result[0] += uint8(a.Card << 4)
+	result[1] = uint8(a.PositionInDrawPile)
+	result[1] += uint8(a.Cards[0] << 4)
+	result[2] = uint8(a.Cards[1])
+	result[2] += uint8(a.Cards[2] << 4)
 	return result
 }
 
-func decodeAction(packed uint32) Action {
-	action := Action{
-		Player:             Player(packed & 0x1),
-		Type:               ActionType((packed >> 1) & 0x7),
-		Card:               cards.Card((packed >> 4) & 0xf),
-		PositionInDrawPile: int((packed >> 8) & 0xf),
+func decodeAction(packed [3]uint8) Action {
+	return Action{
+		Player:             Player(packed[0] & 0x1),
+		Type:               ActionType((packed[0] >> 1) & 0x7),
+		Card:               cards.Card(packed[0] >> 4),
+		PositionInDrawPile: int(packed[1] & 0xf),
+		Cards: [3]cards.Card{
+			cards.Card(packed[1] >> 4),
+			cards.Card(packed[2] & 0xf),
+			cards.Card(packed[2] >> 4),
+		},
 	}
-
-	for i := uint(0); i < 3; i++ {
-		shift := 4*i + 12
-		action.Cards[i] = cards.Card((packed >> shift) & 0xf)
-	}
-
-	return action
 }

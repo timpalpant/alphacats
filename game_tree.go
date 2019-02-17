@@ -118,13 +118,10 @@ func (gn *GameNode) VisitChildren(visitor cfr.Visitor) {
 	gn.reset()
 }
 
-var buf = make([]byte, gamestate.InfoSetSize)
-
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) string {
-	is := gn.state.GetInfoSet(gamestate.Player(gn.player))
-	n := is.MarshalTo(buf)
-	return string(buf[:n])
+	is := gn.state.GetInfoSet(gamestate.Player(player))
+	return is.String()
 }
 
 // Utility implements cfr.GameTreeNode.
@@ -311,7 +308,7 @@ func (gn *GameNode) buildNextDrawnCardNode(node *GameNode, card cards.Card, from
 		Player:             gn.player,
 		Type:               gamestate.DrawCard,
 		Card:               card,
-		PositionInDrawPile: position,
+		PositionInDrawPile: uint8(position),
 	})
 	if card == cards.ExplodingCat {
 		if gn.state.HasDefuseCard(gn.player) {
@@ -330,7 +327,7 @@ func (gn *GameNode) buildNextDrawnCardNode(node *GameNode, card cards.Card, from
 
 func (gn *GameNode) buildSeeTheFutureChildren() {
 	// TODO(palpant): Eliminate the allocations in enumerateTopNCards here.
-	cards, probs := enumerateTopNCards(gn.state, 3)
+	cards, probs := enumerateTop3Cards(gn.state)
 	gn.allocChildren(len(cards))
 	for i, top3 := range cards {
 		gn.probabilities[i] = probs[i]
@@ -447,7 +444,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: i,
+			PositionInDrawPile: uint8(i),
 		})
 
 		// Defusing the exploding cat ends a turn.
@@ -461,7 +458,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: bottom,
+			PositionInDrawPile: uint8(bottom),
 		})
 
 		// Defusing the exploding cat ends a turn.
@@ -495,25 +492,19 @@ func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Ca
 	return result
 }
 
-func enumerateTopNCards(state gamestate.GameState, n int) ([][]cards.Card, []float64) {
-	var result [][]cards.Card
+func enumerateTop3Cards(state gamestate.GameState) ([][3]cards.Card, []float64) {
+	var result [][3]cards.Card
 	var resultProbs []float64
-
-	nextCardProbs := state.TopCardProbabilities()
-	drawPile := state.GetDrawPile()
-	for card, p := range nextCardProbs {
-		if n == 1 || drawPile.Len() == 1 {
-			result = append(result, []cards.Card{card})
-			resultProbs = append(resultProbs, p)
-		} else { // Recurse to enumerate remaining n-1 cards.
-			action := gamestate.Action{Player: gamestate.Player0, Type: gamestate.DrawCard, Card: card}
-			remaining := state
-			remaining.Apply(action)
-			remainder, probs := enumerateTopNCards(remaining, n-1)
-			for i, remain := range remainder {
-				final := append([]cards.Card{card}, remain...)
-				result = append(result, final)
-				resultProbs = append(resultProbs, p*probs[i])
+	for card1, p1 := range state.TopCardProbabilities() {
+		remaining1 := state
+		remaining1.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card1})
+		for card2, p2 := range remaining1.TopCardProbabilities() {
+			remaining2 := state
+			remaining2.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card2})
+			for card3, p3 := range remaining2.TopCardProbabilities() {
+				p := p1 * p2 * p3
+				result = append(result, [3]cards.Card{card1, card2, card3})
+				resultProbs = append(resultProbs, p)
 			}
 		}
 	}

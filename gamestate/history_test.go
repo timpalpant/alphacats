@@ -10,22 +10,11 @@ import (
 func TestEncodeDecode(t *testing.T) {
 	for _, player := range []Player{Player0, Player1} {
 		for _, actionType := range allActions {
-			if actionType == PlayCard { // Should include Card in round trip.
-				for card := cards.Card(0); card <= cards.Cat; card++ {
-					action := Action{Player: player, Type: actionType, Card: card}
-					packed := encodeAction(action)
-					decoded := decodeAction(packed)
-					if !reflect.DeepEqual(action, decoded) {
-						t.Errorf("input: %+v, output: %+v", action, decoded)
-					}
-				}
-			} else { // Other types should not include Card in round trip.
-				action := Action{Player: player, Type: actionType, Card: cards.Shuffle}
+			for card := cards.Card(0); card <= cards.Cat; card++ {
+				action := Action{Player: player, Type: actionType, Card: card}
 				packed := encodeAction(action)
 				decoded := decodeAction(packed)
-				expected := action
-				expected.Card = 0
-				if !reflect.DeepEqual(expected, decoded) {
+				if !reflect.DeepEqual(action, decoded) {
 					t.Errorf("input: %+v, output: %+v", action, decoded)
 				}
 			}
@@ -56,6 +45,14 @@ func TestPackSequences(t *testing.T) {
 			t.Errorf("input: %+v, output: %+v", testCase, result)
 		}
 	}
+}
+
+func newHistoryFromSlice(actions []Action) history {
+	h := history{}
+	for _, action := range actions {
+		h.Append(action)
+	}
+	return h
 }
 
 func TestAppend(t *testing.T) {

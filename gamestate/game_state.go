@@ -1,9 +1,9 @@
 package gamestate
 
 import (
+	"encoding/binary"
 	"fmt"
-
-	"github.com/pkg/errors"
+	"strings"
 
 	"github.com/timpalpant/alphacats/cards"
 )
@@ -13,16 +13,15 @@ import (
 // Any additional fields added to GameState must also be added to clone().
 type GameState struct {
 	// The history of player actions that were taken to reach this state.
-	history publicHistory
+	history history
 	// Set of Cards remaining in the draw pile.
 	// Note that the players will not in general have access to this information.
 	drawPile cards.Set
 	// Cards in the draw pile whose identity is fixed because one of the player's
 	// knows it.
 	fixedDrawPileCards cards.Stack
-	// Private information held from the point of view of either player.
-	player0Info privateInfo
-	player1Info privateInfo
+	player0Hand        cards.Set
+	player1Hand        cards.Set
 }
 
 // New returns a new GameState created by dealing the given sets of cards
@@ -32,26 +31,27 @@ func New(player0Deal, player1Deal cards.Set) GameState {
 	remainingCards.RemoveAll(player0Deal)
 	remainingCards.RemoveAll(player1Deal)
 	remainingCards.Add(cards.ExplodingCat)
+	player0Deal.Add(cards.Defuse)
+	player1Deal.Add(cards.Defuse)
 	return GameState{
 		drawPile:    remainingCards,
-		player0Info: newPrivateInfo(player0Deal),
-		player1Info: newPrivateInfo(player1Deal),
+		player0Hand: player0Deal,
+		player1Hand: player1Deal,
 	}
 }
 
 // Apply returns the new GameState created by applying the given Action.
 func (gs *GameState) Apply(action Action) {
 	switch action.Type {
-	case DrawCard:
-		gs.drawCard(action.Player, action.Card, action.PositionInDrawPile)
 	case PlayCard:
-		gs.playCard(action.Player, action.Card)
+	case DrawCard:
+		gs.drawCard(action.Player, action.Card, int(action.PositionInDrawPile))
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		gs.insertExplodingCat(action.Player, action.PositionInDrawPile)
+		gs.insertExplodingCat(action.Player, int(action.PositionInDrawPile))
 	case SeeTheFuture:
-		gs.seeTopNCards(action.Player, action.Cards)
+		gs.seeTop3Cards(action.Player, action.Cards)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
@@ -62,78 +62,7 @@ func (gs *GameState) Apply(action Action) {
 func (gs *GameState) String() string {
 	return fmt.Sprintf("draw pile: %s, fixed: %s, p0: %s, p1: %s",
 		gs.drawPile, gs.fixedDrawPileCards,
-		gs.player0Info.String(), gs.player1Info.String())
-}
-
-// Validate sanity checks the GameState to ensure we have maintained
-// internal consistency in the game tree.
-func (gs *GameState) Validate() error {
-	if err := gs.player0Info.validate(); err != nil {
-		return errors.Wrapf(err, "player %v info invalid", Player0)
-	}
-
-	if err := gs.player1Info.validate(); err != nil {
-		return errors.Wrapf(err, "player %v info invalid", Player1)
-	}
-
-	// Both players should know the correct total number of cards in each other's hand.
-	if gs.player0Info.opponentHand.Len() != gs.player1Info.ourHand.Len() {
-		return fmt.Errorf("Player %v thinks %v has %d cards, but they have %d",
-			Player0, Player1, gs.player0Info.opponentHand.Len(), gs.player1Info.ourHand.Len())
-	}
-	if gs.player1Info.opponentHand.Len() != gs.player0Info.ourHand.Len() {
-		return fmt.Errorf("Player %v thinks %v has %d cards, but they have %d",
-			Player1, Player0, gs.player1Info.opponentHand.Len(), gs.player0Info.ourHand.Len())
-	}
-
-	// All fixed draw pile cards must be in the draw pile.
-	for i := 0; i < gs.drawPile.Len(); i++ {
-		card := gs.fixedDrawPileCards.NthCard(i)
-		if card != cards.Unknown && !gs.drawPile.Contains(card) {
-			return fmt.Errorf("card %v fixed at position %v in draw pile but not in set %v",
-				card, i, gs.drawPile)
-		}
-	}
-
-	// Players must not have fixed card info that contradicts reality.
-	p0Known := gs.player0Info.effectiveKnownDrawPileCards()
-	p1Known := gs.player1Info.effectiveKnownDrawPileCards()
-	for i := 0; i < gs.drawPile.Len(); i++ {
-		card := gs.fixedDrawPileCards.NthCard(i)
-		p0Card := p0Known.NthCard(i)
-		if p0Card != cards.Unknown && p0Card != card {
-			return fmt.Errorf("player %v thinks %dth card is %v but is actually %v",
-				Player0, i, p0Card, card)
-		}
-
-		p1Card := p1Known.NthCard(i)
-		if p1Card != cards.Unknown && p1Card != card {
-			return fmt.Errorf("player %v thinks %dth card is %v but is actually %v",
-				Player1, i, p1Card, card)
-		}
-	}
-
-	// If a player knows a card in the other player's hand, they must
-	// actually have it. Note: They may have more (that are Unknown top opponent).
-	p0Unknown := gs.player0Info.opponentHand.CountOf(cards.Unknown)
-	p1Unknown := gs.player1Info.opponentHand.CountOf(cards.Unknown)
-	for card := cards.Unknown + 1; card <= cards.Cat; card++ {
-		n := gs.player0Info.opponentHand.CountOf(card)
-		m := gs.player1Info.ourHand.CountOf(card)
-		if m < n || m > n+p0Unknown {
-			return fmt.Errorf("player 0 thinks player 1 has %d of %v, but they actually have %d",
-				n, card, m)
-		}
-
-		n = gs.player1Info.opponentHand.CountOf(card)
-		m = gs.player0Info.ourHand.CountOf(card)
-		if m < n || m > n+p1Unknown {
-			return fmt.Errorf("player 1 thinks player 0 has %d of %v, but they actually have %d",
-				n, card, m)
-		}
-	}
-
-	return nil
+		gs.player0Hand, gs.player1Hand)
 }
 
 func (gs *GameState) GetHistory() []Action {
@@ -145,7 +74,11 @@ func (gs *GameState) GetDrawPile() cards.Set {
 }
 
 func (gs *GameState) GetPlayerHand(p Player) cards.Set {
-	return gs.privateInfo(p).ourHand
+	if p == Player0 {
+		return gs.player0Hand
+	}
+
+	return gs.player1Hand
 }
 
 func (gs *GameState) HasDefuseCard(p Player) bool {
@@ -161,26 +94,30 @@ func (gs *GameState) LastActionWasSlap() bool {
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
 type InfoSet struct {
-	public  publicHistory
-	private privateInfo
+	history history
+	hand    cards.Set
 }
 
-// The number of bytes required to marshal an InfoSet.
-const InfoSetSize = 61
+func (is *InfoSet) String() string {
+	var builder strings.Builder
+	if err := binary.Write(&builder, binary.LittleEndian, is.hand); err != nil {
+		panic(err)
+	}
 
-// MarshalTo marshals the InfoSet into the first N bytes of
-// the given buffer, which should have length of at least InfoSetSize.
-// It returns the number of bytes written.
-func (s *InfoSet) MarshalTo(buf []byte) int {
-	n := s.private.MarshalTo(buf)
-	m := s.public.MarshalTo(buf[n:])
-	return n + m
+	for _, action := range is.history.AsSlice() {
+		packed := encodeAction(action)
+		if err := binary.Write(&builder, binary.LittleEndian, packed); err != nil {
+			panic(err)
+		}
+	}
+
+	return builder.String()
 }
 
 func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	return InfoSet{
-		private: *gs.privateInfo(player),
-		public:  gs.history,
+		history: gs.history.GetPlayerView(player),
+		hand:    gs.GetPlayerHand(player),
 	}
 }
 
@@ -237,42 +174,20 @@ func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
 	return result
 }
 
-func (gs *GameState) privateInfo(p Player) *privateInfo {
-	if p == Player0 {
-		return &gs.player0Info
-	}
-
-	return &gs.player1Info
-}
-
-func (gs *GameState) playCard(player Player, card cards.Card) {
-	gs.privateInfo(player).playCard(card)
-	gs.privateInfo(1 - player).opponentPlayedCard(card)
-}
-
 func (gs *GameState) drawCard(player Player, card cards.Card, position int) {
 	// Pop card from the draw pile.
 	gs.drawPile.Remove(card)
 	gs.fixedDrawPileCards.RemoveCard(position)
-	// Add to player's hand.
-	gs.privateInfo(player).drawCard(card, position)
-	gs.privateInfo(1-player).opponentDrewCard(card, position)
 }
 
 func (gs *GameState) insertExplodingCat(player Player, position int) {
 	// Place exploding cat card in the Nth position in draw pile.
 	gs.drawPile.Add(cards.ExplodingCat)
 	gs.fixedDrawPileCards.InsertCard(cards.ExplodingCat, position)
-	gs.privateInfo(player).ourHand.Remove(cards.ExplodingCat)
-	gs.privateInfo(player).knownDrawPileCards.InsertCard(cards.ExplodingCat, position)
-	gs.privateInfo(1 - player).opponentHand.Remove(cards.ExplodingCat)
-	gs.privateInfo(1 - player).pendingKittenInterruption = true
 }
 
-func (gs *GameState) seeTopNCards(player Player, topN []cards.Card) {
-	gs.privateInfo(player).seeTopCards(topN)
-
-	for i, card := range topN {
+func (gs *GameState) seeTop3Cards(player Player, top3 [3]cards.Card) {
+	for i, card := range top3 {
 		nthCard := gs.fixedDrawPileCards.NthCard(i)
 		if nthCard != cards.Unknown && nthCard != card {
 			panic(fmt.Errorf("we knew %d th card to be %v, but are now told it is %v",
@@ -284,17 +199,11 @@ func (gs *GameState) seeTopNCards(player Player, topN []cards.Card) {
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {
-	pInfo := gs.privateInfo(player)
-	pInfo.ourHand.Remove(card)
-	pInfo.opponentHand.Add(card)
-
-	opponentInfo := gs.privateInfo(1 - player)
-	opponentInfo.ourHand.Add(card)
-	if opponentInfo.opponentHand.CountOf(card) > 0 {
-		// If opponent already knew we had one of these cards
-		opponentInfo.opponentHand.Remove(card)
+	if player == Player0 {
+		gs.player0Hand.Remove(card)
+		gs.player1Hand.Add(card)
 	} else {
-		// Otherwise it was one of the Unknown cards in our hand.
-		opponentInfo.opponentHand.Remove(cards.Unknown)
+		gs.player1Hand.Remove(card)
+		gs.player0Hand.Add(card)
 	}
 }

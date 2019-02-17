@@ -50,7 +50,7 @@ func (s *Stack) SetNthCard(n int, card Card) {
 	// Zero out the current card in that position.
 	*s &= ^Stack(topCardMask << shift)
 	// Set the new card in that position
-	*s |= Stack(card << shift)
+	*s |= Stack(uint64(card) << shift)
 }
 
 // NthCard returns the identity of the card in the Nth position of the stack.

@@ -498,7 +498,7 @@ func enumerateTop3Cards(state gamestate.GameState) ([][3]cards.Card, []float64) 
 		remaining1 := state
 		remaining1.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card1})
 		for card2, p2 := range remaining1.GetDrawPile().TopCardProbabilities() {
-			remaining2 := state
+			remaining2 := remaining1
 			remaining2.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card2})
 			for card3, p3 := range remaining2.GetDrawPile().TopCardProbabilities() {
 				p := p1 * p2 * p3

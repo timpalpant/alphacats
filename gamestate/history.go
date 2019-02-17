@@ -94,10 +94,10 @@ func (a Action) String() string {
 	if a.Card != cards.Unknown {
 		s += ":" + a.Card.String()
 	}
-	if a.PositionInDrawPile != 0 {
+	if a.Type == InsertExplodingCat {
 		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
 	}
-	if len(a.Cards) != 0 {
+	if a.Type == SeeTheFuture {
 		s += fmt.Sprintf(":%v", a.Cards)
 	}
 	return s
@@ -112,15 +112,27 @@ type history struct {
 	n       int
 }
 
+func (h *history) String() string {
+	return fmt.Sprintf("%v", h.AsSlice())
+}
+
 func (h *history) Len() int {
 	return h.n
 }
 
 func (h *history) Get(i int) Action {
+	if i >= h.n {
+		panic(fmt.Errorf("index out of range: %d %v", i, h))
+	}
+
 	return h.actions[i]
 }
 
 func (h *history) Append(action Action) {
+	if h.n >= len(h.actions) {
+		panic(fmt.Errorf("history exceeded max length: %v", h))
+	}
+
 	h.actions[h.n] = action
 	h.n++
 }

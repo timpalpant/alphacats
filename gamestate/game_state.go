@@ -41,6 +41,7 @@ func New(player0Deal, player1Deal cards.Set) GameState {
 func (gs *GameState) Apply(action Action) {
 	switch action.Type {
 	case PlayCard:
+		gs.playCard(action.Player, action.Card)
 	case DrawCard:
 		gs.drawPile.drawCard(action.Card)
 	case DrawCardFromBottom:
@@ -126,5 +127,13 @@ func (gs *GameState) giveCard(player Player, card cards.Card) {
 	} else {
 		gs.player1Hand.Remove(card)
 		gs.player0Hand.Add(card)
+	}
+}
+
+func (gs *GameState) playCard(player Player, card cards.Card) {
+	if player == Player0 {
+		gs.player0Hand.Remove(card)
+	} else {
+		gs.player1Hand.Remove(card)
 	}
 }

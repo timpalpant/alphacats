@@ -66,8 +66,8 @@ func (dp DrawPile) BottomCardProbabilities() map[cards.Card]float64 {
 	// position known *not* to be the bottom card.
 	candidates := dp.remaining
 	for i := 0; i < bottom; i++ {
-		if known := dp.fixed.NthCard(i); known != cards.Unknown {
-			candidates.Remove(known)
+		if card := dp.fixed.NthCard(i); card != cards.Unknown {
+			candidates.Remove(card)
 		}
 	}
 
@@ -91,8 +91,8 @@ func (dp DrawPile) TopCardProbabilities() map[cards.Card]float64 {
 	end := dp.remaining.Len()
 	candidates := dp.remaining
 	for i := start; i < end; i++ {
-		if known := dp.fixed.NthCard(i); known != cards.Unknown {
-			candidates.Remove(known)
+		if card := dp.fixed.NthCard(i); card != cards.Unknown {
+			candidates.Remove(card)
 		}
 	}
 

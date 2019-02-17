@@ -1,7 +1,7 @@
 package cards
 
 // Card represents one card from the Exploding Kittens game deck.
-type Card int
+type Card uint8
 
 const (
 	Unknown Card = iota

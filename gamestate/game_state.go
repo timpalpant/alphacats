@@ -16,12 +16,9 @@ type GameState struct {
 	history history
 	// Set of Cards remaining in the draw pile.
 	// Note that the players will not in general have access to this information.
-	drawPile cards.Set
-	// Cards in the draw pile whose identity is fixed because one of the player's
-	// knows it.
-	fixedDrawPileCards cards.Stack
-	player0Hand        cards.Set
-	player1Hand        cards.Set
+	drawPile    DrawPile
+	player0Hand cards.Set
+	player1Hand cards.Set
 }
 
 // New returns a new GameState created by dealing the given sets of cards
@@ -34,7 +31,7 @@ func New(player0Deal, player1Deal cards.Set) GameState {
 	player0Deal.Add(cards.Defuse)
 	player1Deal.Add(cards.Defuse)
 	return GameState{
-		drawPile:    remainingCards,
+		drawPile:    NewDrawPile(remainingCards),
 		player0Hand: player0Deal,
 		player1Hand: player1Deal,
 	}
@@ -45,13 +42,15 @@ func (gs *GameState) Apply(action Action) {
 	switch action.Type {
 	case PlayCard:
 	case DrawCard:
-		gs.drawCard(action.Player, action.Card, int(action.PositionInDrawPile))
+		gs.drawPile.drawCard(action.Card)
+	case DrawCardFromBottom:
+		gs.drawPile.drawCardFromBottom(action.Card)
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		gs.insertExplodingCat(action.Player, int(action.PositionInDrawPile))
+		gs.drawPile.insert(cards.ExplodingCat, action.PositionInDrawPile)
 	case SeeTheFuture:
-		gs.seeTop3Cards(action.Player, action.Cards)
+		gs.drawPile.fixTop3Cards(action.Cards)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
@@ -60,16 +59,15 @@ func (gs *GameState) Apply(action Action) {
 }
 
 func (gs *GameState) String() string {
-	return fmt.Sprintf("draw pile: %s, fixed: %s, p0: %s, p1: %s",
-		gs.drawPile, gs.fixedDrawPileCards,
-		gs.player0Hand, gs.player1Hand)
+	return fmt.Sprintf("draw pile: %s, p0: %s, p1: %s",
+		gs.drawPile, gs.player0Hand, gs.player1Hand)
 }
 
 func (gs *GameState) GetHistory() []Action {
 	return gs.history.AsSlice()
 }
 
-func (gs *GameState) GetDrawPile() cards.Set {
+func (gs *GameState) GetDrawPile() DrawPile {
 	return gs.drawPile
 }
 
@@ -118,83 +116,6 @@ func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	return InfoSet{
 		history: gs.history.GetPlayerView(player),
 		hand:    gs.GetPlayerHand(player),
-	}
-}
-
-func (gs *GameState) BottomCardProbabilities() map[cards.Card]float64 {
-	bottom := gs.drawPile.Len() - 1
-	bottomCard := gs.fixedDrawPileCards.NthCard(bottom)
-	if bottomCard != cards.Unknown {
-		// Identity of the bottom card is fixed.
-		return fixedCardProbabilities[bottomCard]
-	}
-
-	// Note: We need to exclude any cards whose identity is already fixed in a
-	// position known *not* to be the bottom card.
-	start := 0
-	end := gs.drawPile.Len() - 1
-	candidates := gs.drawPile
-	for i := start; i < end; i++ {
-		if known := gs.fixedDrawPileCards.NthCard(i); known != cards.Unknown {
-			candidates.Remove(known)
-		}
-	}
-
-	result, ok := cardProbabilitiesCache[candidates]
-	if !ok {
-		panic(fmt.Errorf("missing card probabilities for: %v", candidates))
-	}
-
-	return result
-}
-
-func (gs *GameState) TopCardProbabilities() map[cards.Card]float64 {
-	topCard := gs.fixedDrawPileCards.NthCard(0)
-	if topCard != cards.Unknown {
-		return fixedCardProbabilities[topCard]
-	}
-
-	// Note: We need to exclude any cards whose identity is already fixed in a
-	// position known *not* to be the top card.
-	start := 1
-	end := gs.drawPile.Len()
-
-	candidates := gs.drawPile
-	for i := start; i < end; i++ {
-		if known := gs.fixedDrawPileCards.NthCard(i); known != cards.Unknown {
-			candidates.Remove(known)
-		}
-	}
-
-	result, ok := cardProbabilitiesCache[candidates]
-	if !ok {
-		panic(fmt.Errorf("missing card probabilities for: %v", candidates))
-	}
-
-	return result
-}
-
-func (gs *GameState) drawCard(player Player, card cards.Card, position int) {
-	// Pop card from the draw pile.
-	gs.drawPile.Remove(card)
-	gs.fixedDrawPileCards.RemoveCard(position)
-}
-
-func (gs *GameState) insertExplodingCat(player Player, position int) {
-	// Place exploding cat card in the Nth position in draw pile.
-	gs.drawPile.Add(cards.ExplodingCat)
-	gs.fixedDrawPileCards.InsertCard(cards.ExplodingCat, position)
-}
-
-func (gs *GameState) seeTop3Cards(player Player, top3 [3]cards.Card) {
-	for i, card := range top3 {
-		nthCard := gs.fixedDrawPileCards.NthCard(i)
-		if nthCard != cards.Unknown && nthCard != card {
-			panic(fmt.Errorf("we knew %d th card to be %v, but are now told it is %v",
-				i, nthCard, card))
-		}
-
-		gs.fixedDrawPileCards.SetNthCard(i, card)
 	}
 }
 

@@ -12,6 +12,7 @@ type ActionType uint8
 const (
 	_ ActionType = iota
 	DrawCard
+	DrawCardFromBottom
 	PlayCard
 	GiveCard
 	InsertExplodingCat
@@ -20,6 +21,7 @@ const (
 
 var allActions = []ActionType{
 	DrawCard,
+	DrawCardFromBottom,
 	PlayCard,
 	GiveCard,
 	InsertExplodingCat,
@@ -29,6 +31,7 @@ var allActions = []ActionType{
 var actionTypeStr = [...]string{
 	"Invalid",
 	"DrawCard",
+	"DrawCardFromBottom",
 	"PlayCard",
 	"GiveCard",
 	"InsertExplodingCat",
@@ -48,7 +51,7 @@ type Action struct {
 	Player             Player
 	Type               ActionType
 	Card               cards.Card    // May be private information.
-	PositionInDrawPile uint8         // May be private information.
+	PositionInDrawPile int           // May be private information.
 	Cards              [3]cards.Card // May be private information.
 }
 
@@ -75,7 +78,7 @@ func decodeAction(packed uint32) Action {
 		Player:             Player(packed & 0x1),
 		Type:               ActionType((packed >> 1) & 0x7),
 		Card:               cards.Card((packed >> 4) & 0xf),
-		PositionInDrawPile: uint8((packed >> 8) & 0xf),
+		PositionInDrawPile: int((packed >> 8) & 0xf),
 	}
 
 	for i := uint(0); i < 3; i++ {

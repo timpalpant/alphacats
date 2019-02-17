@@ -275,7 +275,8 @@ func makeTerminalGameNode(node *GameNode, winner gamestate.Player) {
 }
 
 func (gn *GameNode) buildDrawCardChildren(fromBottom bool) {
-	if gn.state.GetDrawPile().Len() == 0 {
+	drawPile := gn.state.GetDrawPile()
+	if drawPile.Len() == 0 {
 		panic(fmt.Errorf("trying to draw card but no cards in draw pile! %+v", gn.state))
 	}
 
@@ -284,9 +285,9 @@ func (gn *GameNode) buildDrawCardChildren(fromBottom bool) {
 
 	var nextCardProbs map[cards.Card]float64
 	if fromBottom {
-		nextCardProbs = gn.state.BottomCardProbabilities()
+		nextCardProbs = drawPile.BottomCardProbabilities()
 	} else {
-		nextCardProbs = gn.state.TopCardProbabilities()
+		nextCardProbs = drawPile.TopCardProbabilities()
 	}
 
 	gn.allocChildren(len(nextCardProbs))
@@ -299,16 +300,15 @@ func (gn *GameNode) buildDrawCardChildren(fromBottom bool) {
 }
 
 func (gn *GameNode) buildNextDrawnCardNode(node *GameNode, card cards.Card, fromBottom bool, newPendingTurns int) {
-	position := 0
+	actionType := gamestate.DrawCard
 	if fromBottom {
-		position = gn.state.GetDrawPile().Len() - 1
+		actionType = gamestate.DrawCardFromBottom
 	}
 
 	node.state.Apply(gamestate.Action{
-		Player:             gn.player,
-		Type:               gamestate.DrawCard,
-		Card:               card,
-		PositionInDrawPile: uint8(position),
+		Player: gn.player,
+		Type:   actionType,
+		Card:   card,
 	})
 	if card == cards.ExplodingCat {
 		if gn.state.HasDefuseCard(gn.player) {
@@ -436,15 +436,15 @@ func (gn *GameNode) buildGiveCardChildren() {
 }
 
 func (gn *GameNode) buildMustDefuseChildren() {
-	nCardsInDrawPile := int(gn.state.GetDrawPile().Len())
-	nOptions := min(nCardsInDrawPile, 5)
+	drawPile := gn.state.GetDrawPile()
+	nOptions := min(drawPile.Len(), 5)
 	gn.allocChildren(nOptions + 1)
 	for i := 0; i < nOptions; i++ {
 		child := &gn.children[i]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: uint8(i),
+			PositionInDrawPile: i,
 		})
 
 		// Defusing the exploding cat ends a turn.
@@ -452,13 +452,12 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	}
 
 	// Place exploding cat on the bottom of the draw pile.
-	if nCardsInDrawPile > 5 {
-		bottom := gn.state.GetDrawPile().Len()
+	if drawPile.Len() > 5 {
 		child := &gn.children[len(gn.children)-1]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: uint8(bottom),
+			PositionInDrawPile: drawPile.Len(), // bottom
 		})
 
 		// Defusing the exploding cat ends a turn.
@@ -495,13 +494,13 @@ func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Ca
 func enumerateTop3Cards(state gamestate.GameState) ([][3]cards.Card, []float64) {
 	var result [][3]cards.Card
 	var resultProbs []float64
-	for card1, p1 := range state.TopCardProbabilities() {
+	for card1, p1 := range state.GetDrawPile().TopCardProbabilities() {
 		remaining1 := state
 		remaining1.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card1})
-		for card2, p2 := range remaining1.TopCardProbabilities() {
+		for card2, p2 := range remaining1.GetDrawPile().TopCardProbabilities() {
 			remaining2 := state
 			remaining2.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card2})
-			for card3, p3 := range remaining2.TopCardProbabilities() {
+			for card3, p3 := range remaining2.GetDrawPile().TopCardProbabilities() {
 				p := p1 * p2 * p3
 				result = append(result, [3]cards.Card{card1, card2, card3})
 				resultProbs = append(resultProbs, p)

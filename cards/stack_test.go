@@ -28,6 +28,27 @@ func TestIsEmpty(t *testing.T) {
 	}
 }
 
+func TestStackLen(t *testing.T) {
+	testCases := []struct {
+		cards    []Card
+		expected int
+	}{
+		{[]Card{Skip, Shuffle, SeeTheFuture}, 3},
+		// Unknowns on the end of the stack are not distinguishable.
+		{[]Card{Skip, Shuffle, SeeTheFuture, Unknown, Unknown}, 3},
+		// But at the beginning and in the middle they are.
+		{[]Card{Unknown, Skip, Shuffle, SeeTheFuture, Unknown, Unknown}, 4},
+		{[]Card{Skip, Shuffle, Unknown, SeeTheFuture, Unknown, Unknown}, 4},
+	}
+
+	for _, tc := range testCases {
+		stack := NewStackFromCards(tc.cards)
+		if stack.Len() != tc.expected {
+			t.Errorf("stack: %v, expected: %v, got: %v", stack, tc.expected, stack.Len())
+		}
+	}
+}
+
 func TestSetNthCard(t *testing.T) {
 	testCards := []Card{Unknown, Unknown, Skip, Shuffle, SeeTheFuture, SeeTheFuture}
 	stack := NewStackFromCards(testCards)

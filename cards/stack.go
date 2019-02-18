@@ -43,6 +43,18 @@ func (s Stack) IsEmpty() bool {
 	return s == 0
 }
 
+// Len is the number of cards in the Stack.
+// Note that Unknown cards on the ends of the stack are not counted.
+func (s Stack) Len() int {
+	n := 0
+	for !s.IsEmpty() {
+		n++
+		s >>= bitsPerCard
+	}
+
+	return n
+}
+
 // SetNthCard returns a new CardPile with the identity of the Nth card
 // in the stack set to card.
 func (s *Stack) SetNthCard(n int, card Card) {

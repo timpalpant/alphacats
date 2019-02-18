@@ -63,8 +63,8 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		// Player0 always goes first.
 		player:   gamestate.Player0,
 		turnType: PlayTurn,
-		//gnPool:   &gameNodeSlicePool{},
-		//fPool:    &floatSlicePool{},
+		gnPool:   &gameNodeSlicePool{},
+		fPool:    &floatSlicePool{},
 	}
 }
 
@@ -110,7 +110,10 @@ func (gn *GameNode) String() string {
 }
 
 func (gn *GameNode) allocChildren(n int) {
-	glog.V(2).Infof("[%s] Allocating slice for %d children. State: %s", gn.turnType, n, gn.state.String())
+	if n > 1024 {
+		glog.V(2).Infof("[%s] Allocating slice for %d children. State: %s",
+			gn.turnType, n, gn.state.String())
+	}
 	gn.children = gn.gnPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).

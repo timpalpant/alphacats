@@ -3,6 +3,7 @@ package alphacats
 import (
 	"fmt"
 
+	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -109,6 +110,7 @@ func (gn *GameNode) String() string {
 }
 
 func (gn *GameNode) allocChildren(n int) {
+	glog.V(2).Infof("[%s] Allocating slice for %d children. State: %s", gn.turnType, n, gn.state.String())
 	gn.children = gn.gnPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
@@ -278,6 +280,7 @@ func (gn *GameNode) buildShuffleChildren() {
 	enumerateShuffles(drawPile, func(shuffle cards.Stack) {
 		child := &gn.children[i]
 		child.state = gamestate.NewShuffled(child.state, shuffle)
+		child.turnType = PlayTurn
 		gn.probabilities[i] = p
 		i++
 	})

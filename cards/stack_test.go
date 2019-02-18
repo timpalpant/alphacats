@@ -157,3 +157,20 @@ func TestInsertCard(t *testing.T) {
 		}
 	}
 }
+
+func TestStackToSet(t *testing.T) {
+	testCases := [][]Card{
+		{Skip, Shuffle, SeeTheFuture, Cat},
+		{Unknown, Skip, Shuffle, SeeTheFuture, Cat},
+		{Skip, Unknown, Unknown, Shuffle, SeeTheFuture, Cat},
+	}
+
+	for _, tc := range testCases {
+		stack := NewStackFromCards(tc)
+		set := stack.ToSet()
+		result := set.AsSlice()
+		if !setEqual(tc, result) {
+			t.Errorf("input = %v, output = %v", tc, result)
+		}
+	}
+}

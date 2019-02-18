@@ -47,18 +47,13 @@ func (s Set) Contains(card Card) bool {
 // Counts returns a map of the number of each type of card in this Set.
 func (s Set) Counts() map[Card]uint8 {
 	result := make(map[Card]uint8)
-	for card := Card(0); s > 0; card++ {
-		count := uint8(s & mask)
-		if count > 0 {
-			result[card] = count
-		}
-		s >>= bitsPerCardCount
-	}
-
+	s.Iter(func(card Card, count uint8) {
+		result[card] = count
+	})
 	return result
 }
 
-func (s Set) CountsIter(cb func(card Card, count uint8)) {
+func (s Set) Iter(cb func(card Card, count uint8)) {
 	for card := Card(0); s > 0; card++ {
 		count := uint8(s & mask)
 		if count > 0 {
@@ -70,27 +65,19 @@ func (s Set) CountsIter(cb func(card Card, count uint8)) {
 
 // Len gets the total number of Cards in the Set.
 func (s Set) Len() int {
-	count := 0
-	for s > 0 {
-		count += int(s & mask)
-		s >>= bitsPerCardCount
-	}
-
-	return count
+	n := 0
+	s.Iter(func(card Card, count uint8) {
+		n += int(count)
+	})
+	return n
 }
 
 // Distinct gets a slice of the distinct Cards in the Set.
 func (s Set) Distinct() []Card {
 	var result []Card
-	for card := Card(0); s > 0; card++ {
-		count := int(s & mask)
-		if count > 0 {
-			result = append(result, card)
-		}
-
-		s >>= bitsPerCardCount
-	}
-
+	s.Iter(func(card Card, count uint8) {
+		result = append(result, card)
+	})
 	return result
 }
 
@@ -98,14 +85,11 @@ func (s Set) Distinct() []Card {
 // Card as found in this Set.
 func (s Set) AsSlice() []Card {
 	var result []Card
-	for card := Card(0); s > 0; card++ {
-		count := int(s & mask)
-		for i := 0; i < count; i++ {
+	s.Iter(func(card Card, count uint8) {
+		for i := uint8(0); i < count; i++ {
 			result = append(result, card)
 		}
-
-		s >>= bitsPerCardCount
-	}
+	})
 
 	return result
 }
@@ -156,16 +140,10 @@ func (s *Set) RemoveAll(cards Set) {
 // String implements Stringer.
 func (s Set) String() string {
 	result := make([]string, 0)
-	for card := Card(0); s > 0; card++ {
-		count := uint8(s & mask)
-		s >>= bitsPerCardCount
-		if count == 0 {
-			continue
-		}
-
+	s.Iter(func(card Card, count uint8) {
 		cardCount := fmt.Sprintf("%d %v", count, card)
 		result = append(result, cardCount)
-	}
+	})
 
 	return "{" + strings.Join(result, ", ") + "}"
 }

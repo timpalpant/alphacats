@@ -47,11 +47,7 @@ func (s Stack) IsEmpty() bool {
 // Note that Unknown cards on the ends of the stack are not counted.
 func (s Stack) Len() int {
 	n := 0
-	for !s.IsEmpty() {
-		n++
-		s >>= bitsPerCard
-	}
-
+	s.Iter(func(card Card) { n++ })
 	return n
 }
 
@@ -93,14 +89,26 @@ func (s *Stack) InsertCard(card Card, n int) {
 	(*s).SetNthCard(n, card)
 }
 
+func (s Stack) Iter(cb func(card Card)) {
+	for !s.IsEmpty() {
+		card := Card(s & topCardMask)
+		cb(card)
+		s >>= bitsPerCard
+	}
+}
+
+func (s *Stack) ToSet() Set {
+	set := NewSet()
+	s.Iter(func(card Card) { set.Add(card) })
+	return set
+}
+
 // String implements Stringer.
 func (s Stack) String() string {
 	cards := make([]string, 0)
-	for s > 0 {
-		c := Card(s & topCardMask)
-		cards = append(cards, fmt.Sprintf("%v", c))
-		s >>= bitsPerCard
-	}
+	s.Iter(func(card Card) {
+		cards = append(cards, fmt.Sprintf("%v", card))
+	})
 
 	return "[" + strings.Join(cards, ", ") + "]"
 }

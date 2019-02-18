@@ -91,13 +91,13 @@ func (gs *GameState) LastActionWasSlap() bool {
 func (gs *GameState) GetInfoSet(player Player) string {
 	nBytes := 8 + 4*gs.history.Len()
 	buf := make([]byte, nBytes)
+	n := gs.history.EncodeInfoSet(player, buf)
 	if player == Player0 {
-		binary.LittleEndian.PutUint64(buf, uint64(gs.player0Hand))
+		binary.LittleEndian.PutUint64(buf[n:], uint64(gs.player0Hand))
 	} else {
-		binary.LittleEndian.PutUint64(buf, uint64(gs.player1Hand))
+		binary.LittleEndian.PutUint64(buf[n:], uint64(gs.player1Hand))
 	}
 
-	gs.history.EncodeInfoSet(player, buf[8:])
 	return unsafeByteSliceToString(buf)
 }
 

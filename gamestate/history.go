@@ -12,34 +12,24 @@ type ActionType uint8
 const (
 	_ ActionType = iota
 	DrawCard
-	DrawCardFromBottom
 	PlayCard
 	GiveCard
 	InsertExplodingCat
-	SeeTheFuture
 )
 
 var allActions = []ActionType{
 	DrawCard,
-	DrawCardFromBottom,
 	PlayCard,
 	GiveCard,
 	InsertExplodingCat,
-	SeeTheFuture,
 }
 
 var actionTypeStr = [...]string{
 	"Invalid",
 	"DrawCard",
-	"DrawCardFromBottom",
 	"PlayCard",
 	"GiveCard",
 	"InsertExplodingCat",
-	"SeeTheFuture",
-}
-
-func (t ActionType) IsPrivate() bool {
-	return t == DrawCard || t == InsertExplodingCat || t == SeeTheFuture
 }
 
 func (t ActionType) String() string {
@@ -50,9 +40,9 @@ func (t ActionType) String() string {
 type Action struct {
 	Player             Player
 	Type               ActionType
-	Card               cards.Card    // May be private information.
-	PositionInDrawPile int           // May be private information.
-	Cards              [3]cards.Card // May be private information.
+	Card               cards.Card
+	PositionInDrawPile int           // Private information.
+	CardsSeen          [3]cards.Card // Private information.
 }
 
 func (a Action) String() string {
@@ -63,8 +53,8 @@ func (a Action) String() string {
 	if a.Type == InsertExplodingCat {
 		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
 	}
-	if a.Type == SeeTheFuture {
-		s += fmt.Sprintf(":%v", a.Cards)
+	if a.CardsSeen[0] != cards.Unknown {
+		s += fmt.Sprintf(":%s", a.CardsSeen)
 	}
 	return s
 }
@@ -113,34 +103,27 @@ func (h *history) AsSlice() []Action {
 
 func (h *history) EncodeInfoSet(player Player, buf []byte) int {
 	for i, packed := range h.actions[:h.n] {
-		if isPrivate(packed, player) {
-			packed = censorAction(packed, player)
-		}
-
+		packed = censorAction(packed, player)
 		copy(buf[3*i:], packed[:])
 	}
 
 	return 3 * h.n
 }
 
-// Helper to discern if a packed Action is private information
-// that Player p does not know, without fully decoding.
-func isPrivate(packed [3]uint8, p Player) bool {
+// Remove Action info that is not privy to the given player.
+func censorAction(packed [3]uint8, p Player) [3]uint8 {
 	player := Player(packed[0] & 0x1)
-	if player == p {
-		return false
+	if player == p { // Action was by this player, return unchanged.
+		return packed
 	}
 
 	actionType := ActionType((packed[0] >> 1) & 0x7)
-	return actionType.IsPrivate()
-}
+	if actionType == PlayCard || actionType == DrawCard || actionType == InsertExplodingCat {
+		// Just keep first byte (public info: Player + Type + Card played)
+		packed[1] = 0
+		packed[2] = 0
+	}
 
-// Remove Action info that is not privy to the given player.
-func censorAction(packed [3]uint8, player Player) [3]uint8 {
-	// Just keep the lowest 4 bits (Player + Type).
-	packed[0] &= 0xf
-	packed[1] = 0
-	packed[2] = 0
 	return packed
 }
 
@@ -156,9 +139,9 @@ func encodeAction(a Action) [3]uint8 {
 	result[0] += uint8(a.Type << 1)
 	result[0] += uint8(a.Card << 4)
 	result[1] = uint8(a.PositionInDrawPile)
-	result[1] += uint8(a.Cards[0] << 4)
-	result[2] = uint8(a.Cards[1])
-	result[2] += uint8(a.Cards[2] << 4)
+	result[1] += uint8(a.CardsSeen[0] << 4)
+	result[2] = uint8(a.CardsSeen[1])
+	result[2] += uint8(a.CardsSeen[2] << 4)
 	return result
 }
 
@@ -168,7 +151,7 @@ func decodeAction(packed [3]uint8) Action {
 		Type:               ActionType((packed[0] >> 1) & 0x7),
 		Card:               cards.Card(packed[0] >> 4),
 		PositionInDrawPile: int(packed[1] & 0xf),
-		Cards: [3]cards.Card{
+		CardsSeen: [3]cards.Card{
 			cards.Card(packed[1] >> 4),
 			cards.Card(packed[2] & 0xf),
 			cards.Card(packed[2] >> 4),

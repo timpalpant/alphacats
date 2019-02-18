@@ -97,7 +97,7 @@ func (s Stack) Iter(cb func(card Card)) {
 	}
 }
 
-func (s *Stack) ToSet() Set {
+func (s Stack) ToSet() Set {
 	set := NewSet()
 	s.Iter(func(card Card) { set.Add(card) })
 	return set

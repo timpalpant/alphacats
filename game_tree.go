@@ -14,30 +14,20 @@ type turnType uint8
 
 const (
 	_ turnType = iota
-	DrawCard
-	DrawCardFromBottom
-	Deal
 	PlayTurn
 	GiveCard
+	ShuffleDrawPile
 	MustDefuse
-	SeeTheFuture
 	GameOver
 )
 
 var turnTypeStr = [...]string{
 	"Invalid",
-	"DrawCard",
-	"DrawCardFromBottom",
-	"Deal",
 	"PlayTurn",
 	"GiveCard",
+	"ShuffleDrawPile",
 	"MustDefuse",
-	"SeeTheFuture",
 	"GameOver",
-}
-
-func (tt turnType) IsChance() bool {
-	return tt == DrawCard || tt == DrawCardFromBottom || tt == Deal || tt == SeeTheFuture
 }
 
 func (tt turnType) String() string {
@@ -56,23 +46,22 @@ type GameNode struct {
 
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
-	children []GameNode
-	// If turnType is Chance, then these are the probabilities of selecting
-	// each of the children, i.e. children[i] occurs with probabilities[i].
-	// For non-chance nodes probabilities is nil.
+	children      []GameNode
 	probabilities []float64
 
 	gnPool *gameNodeSlicePool
 	fPool  *floatSlicePool
 }
 
-// Verify that we implement the inteface.
+// Verify that we implement the interface.
 var _ cfr.GameTreeNode = &GameNode{}
 
-func NewGame() *GameNode {
+func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 	return &GameNode{
+		state: gamestate.New(drawPile, p0Deal, p1Deal),
+		// Player0 always goes first.
 		player:   gamestate.Player0,
-		turnType: Deal,
+		turnType: PlayTurn,
 		gnPool:   &gameNodeSlicePool{},
 		fPool:    &floatSlicePool{},
 	}
@@ -80,21 +69,14 @@ func NewGame() *GameNode {
 
 // Type implements cfr.GameTreeNode.
 func (gn *GameNode) Type() cfr.NodeType {
-	if gn.IsChance() {
+	switch gn.turnType {
+	case ShuffleDrawPile:
 		return cfr.ChanceNode
-	} else if gn.IsTerminal() {
+	case GameOver:
 		return cfr.TerminalNode
+	default:
+		return cfr.PlayerNode
 	}
-
-	return cfr.PlayerNode
-}
-
-func (gn *GameNode) IsChance() bool {
-	return gn.turnType.IsChance()
-}
-
-func (gn *GameNode) IsTerminal() bool {
-	return gn.turnType == GameOver
 }
 
 // Player implements cfr.GameTreeNode.
@@ -109,7 +91,7 @@ func (gn *GameNode) InfoSet(player int) string {
 
 // Utility implements cfr.GameTreeNode.
 func (gn *GameNode) Utility(player int) float64 {
-	if !gn.IsTerminal() {
+	if gn.Type() != cfr.TerminalNode {
 		panic("cannot get the utility of a non-terminal node")
 	}
 
@@ -137,10 +119,8 @@ func (gn *GameNode) allocChildren(n int) {
 		gn.children[i] = childPrototype
 	}
 
-	if gn.turnType.IsChance() {
+	if gn.Type() == cfr.ChanceNode {
 		gn.probabilities = gn.fPool.alloc(n)
-	} else {
-		gn.probabilities = nil
 	}
 }
 
@@ -151,20 +131,14 @@ func (gn *GameNode) BuildChildren() {
 	}
 
 	switch gn.turnType {
-	case DrawCard:
-		gn.buildDrawCardChildren(false)
-	case DrawCardFromBottom:
-		gn.buildDrawCardChildren(true)
-	case Deal:
-		gn.buildDealChildren()
 	case PlayTurn:
 		gn.buildPlayTurnChildren()
 	case GiveCard:
 		gn.buildGiveCardChildren()
+	case ShuffleDrawPile:
+		gn.buildShuffleChildren()
 	case MustDefuse:
 		gn.buildMustDefuseChildren()
-	case SeeTheFuture:
-		gn.buildSeeTheFutureChildren()
 	}
 }
 
@@ -190,61 +164,34 @@ func (gn *GameNode) FreeChildren() {
 	gn.probabilities = nil
 }
 
-func (gn *GameNode) buildDealChildren() {
-	gn.allocChildren(0)
-	// Deal 4 cards to player 0.
-	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
-	for _, p0Deal := range player0Deals {
-		remainingCards := cards.CoreDeck
-		remainingCards.RemoveAll(p0Deal)
-		// Deal 4 cards to player 1.
-		player1Deals := enumerateInitialDeals(remainingCards, cards.NewSet(), cards.Unknown, 4, nil)
-		for _, p1Deal := range player1Deals {
-			// Player0 always goes first.
-			gn.children = append(gn.children, *gn)
-			child := &gn.children[len(gn.children)-1]
-			child.state = gamestate.New(p0Deal, p1Deal)
-			makePlayTurnNode(child, gamestate.Player0, 1)
-		}
-	}
-
-	// All deals are equally likely.
-	gn.probabilities = gn.fPool.alloc(len(gn.children))
-	p := 1.0 / float64(len(gn.children))
-	for i := range gn.children {
-		gn.probabilities[i] = p
-	}
-}
-
-// Chance node where the given player is drawing a card from the draw pile.
-// If fromBottom == true, then the player is drawing from the bottom of the pile.
-func makeDrawCardNode(node *GameNode, player gamestate.Player, fromBottom bool, pendingTurns int) {
-	tt := DrawCard
-	if fromBottom {
-		tt = DrawCardFromBottom
-	}
-
-	node.player = player
-	node.turnType = tt
-	node.pendingTurns = pendingTurns
-}
-
 func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int) {
-	if pendingTurns == 0 {
-		// Player's turn is done, next player.
-		player = nextPlayer(player)
-		pendingTurns = 1
-	}
+	if node.state.GetPlayerHand(player).Contains(cards.ExplodingCat) {
+		// Player drew an exploding kitten, must defuse it before continuing.
+		if node.state.GetPlayerHand(player).Contains(cards.Defuse) {
+			// Player has a defuse card, must play it.
+			makeMustDefuseNode(node, player, pendingTurns)
+		} else {
+			// Player does not have a defuse card, end game with loss for them.
+			winner := nextPlayer(player)
+			makeTerminalGameNode(node, winner)
+		}
+	} else {
+		// Just a normal card, add it to player's hand and continue.
+		if pendingTurns == 0 {
+			// Player's turn is done, next player.
+			player = nextPlayer(player)
+			pendingTurns = 1
+		}
 
-	node.player = player
-	node.turnType = PlayTurn
-	node.pendingTurns = pendingTurns
+		node.player = player
+		node.turnType = PlayTurn
+		node.pendingTurns = pendingTurns
+	}
 }
 
-func makeGiveCardNode(node *GameNode, player gamestate.Player, pendingTurns int) {
+func makeGiveCardNode(node *GameNode, player gamestate.Player) {
 	node.player = player
 	node.turnType = GiveCard
-	node.pendingTurns = pendingTurns
 }
 
 func makeMustDefuseNode(node *GameNode, player gamestate.Player, pendingTurns int) {
@@ -258,96 +205,18 @@ func makeMustDefuseNode(node *GameNode, player gamestate.Player, pendingTurns in
 	})
 }
 
-func makeSeeTheFutureNode(node *GameNode, player gamestate.Player, pendingTurns int) {
-	node.player = player
-	node.turnType = SeeTheFuture
-	node.pendingTurns = pendingTurns
-}
-
 func makeTerminalGameNode(node *GameNode, winner gamestate.Player) {
 	node.player = winner
 	node.turnType = GameOver
 }
 
-func (gn *GameNode) buildDrawCardChildren(fromBottom bool) {
-	drawPile := gn.state.GetDrawPile()
-	if drawPile.Len() == 0 {
-		panic(fmt.Errorf("trying to draw card but no cards in draw pile! %+v", gn.state))
-	}
-
-	// Drawing a card ends one turn.
-	newPendingTurns := gn.pendingTurns - 1
-
-	var nextCardProbs map[cards.Card]float64
-	if fromBottom {
-		nextCardProbs = drawPile.BottomCardProbabilities()
-	} else {
-		nextCardProbs = drawPile.TopCardProbabilities()
-	}
-
-	gn.allocChildren(len(nextCardProbs))
-	i := 0
-	for card, p := range nextCardProbs {
-		gn.buildNextDrawnCardNode(&gn.children[i], card, fromBottom, newPendingTurns)
-		gn.probabilities[i] = p
-		i++
-	}
-}
-
-func (gn *GameNode) buildNextDrawnCardNode(node *GameNode, card cards.Card, fromBottom bool, newPendingTurns int) {
-	actionType := gamestate.DrawCard
-	if fromBottom {
-		actionType = gamestate.DrawCardFromBottom
-	}
-
-	node.state.Apply(gamestate.Action{
-		Player: gn.player,
-		Type:   actionType,
-		Card:   card,
-	})
-	if card == cards.ExplodingCat {
-		if gn.state.HasDefuseCard(gn.player) {
-			// Player has a defuse card, must play it.
-			makeMustDefuseNode(node, gn.player, newPendingTurns)
-		} else {
-			// Player does not have a defuse card, end game with loss for them.
-			winner := nextPlayer(gn.player)
-			makeTerminalGameNode(node, winner)
-		}
-	} else {
-		// Just a normal card, add it to player's hand and continue.
-		makePlayTurnNode(node, gn.player, newPendingTurns)
-	}
-}
-
-func (gn *GameNode) buildSeeTheFutureChildren() {
-	// TODO(palpant): Eliminate the allocations in enumerateTopNCards here.
-	cards, probs := enumerateTop3Cards(gn.state)
-	gn.allocChildren(len(cards))
-	for i, top3 := range cards {
-		gn.probabilities[i] = probs[i]
-
-		child := &gn.children[i]
-		child.state.Apply(gamestate.Action{
-			Player: gn.player,
-			Type:   gamestate.SeeTheFuture,
-			Cards:  top3,
-		})
-		makePlayTurnNode(child, gn.player, gn.pendingTurns)
-	}
-}
-
 func (gn *GameNode) buildPlayTurnChildren() {
 	hand := gn.state.GetPlayerHand(gn.player)
 	gn.allocChildren(hand.Len() + 1)
-	// Play one of the cards in our hand.
 	i := 0
-	hand.CountsIter(func(card cards.Card, count uint8) {
+	// Play one of the cards in our hand.
+	hand.Iter(func(card cards.Card, count uint8) {
 		child := &gn.children[i]
-		// Form child node by:
-		//   1) Removing card from our hand,
-		//   2) Updating opponent's view of the world to reflect played card,
-		//   3) Updating game state based on action in card.
 		child.state.Apply(gamestate.Action{
 			Player: gn.player,
 			Type:   gamestate.PlayCard,
@@ -355,42 +224,33 @@ func (gn *GameNode) buildPlayTurnChildren() {
 		})
 
 		switch card {
-		case cards.Defuse:
-			// No action besides losing card.
+		case cards.Defuse, cards.SeeTheFuture:
 			makePlayTurnNode(child, gn.player, gn.pendingTurns)
-		case cards.Skip:
-			// Ends our current turn (without drawing a card).
+		case cards.Skip, cards.DrawFromTheBottom:
+			// Ends our current turn (with/without drawing a card).
 			makePlayTurnNode(child, gn.player, gn.pendingTurns-1)
-		case cards.Slap1x:
-			// Ends our turn (and all pending turns). Goes to next player with
-			// any pending turns + 1.
-			if gn.state.LastActionWasSlap() {
-				makePlayTurnNode(child, nextPlayer(gn.player), gn.pendingTurns+1)
-			} else {
-				makePlayTurnNode(child, nextPlayer(gn.player), 1)
-			}
-		case cards.Slap2x:
-			// Ends our turn (and all pending turns). Goes to next player with
-			// any pending turns + 2.
-			if gn.state.LastActionWasSlap() {
-				makePlayTurnNode(child, nextPlayer(gn.player), gn.pendingTurns+2)
-			} else {
-				makePlayTurnNode(child, nextPlayer(gn.player), 2)
-			}
-		case cards.SeeTheFuture:
-			// We see the top 3 cards in the draw pile.
-			makeSeeTheFutureNode(child, gn.player, gn.pendingTurns)
 		case cards.Shuffle:
-			makePlayTurnNode(child, gn.player, gn.pendingTurns)
-		case cards.DrawFromTheBottom:
-			makeDrawCardNode(child, gn.player, true, gn.pendingTurns)
+			child.turnType = ShuffleDrawPile
+		case cards.Slap1x, cards.Slap2x:
+			// Ends our turn (and all pending turns). Goes to next player with
+			// any pending turns + slap.
+			pendingTurns := 1
+			if card == cards.Slap2x {
+				pendingTurns = 2
+			}
+
+			if gn.state.LastActionWasSlap() { // Slap back.
+				pendingTurns += gn.pendingTurns
+			}
+
+			makePlayTurnNode(child, nextPlayer(gn.player), pendingTurns)
 		case cards.Cat:
 			if child.state.GetPlayerHand(nextPlayer(gn.player)).Len() == 0 {
 				// Other player has no cards in their hand, this was a no-op.
 				makePlayTurnNode(child, gn.player, gn.pendingTurns)
 			} else {
 				// Other player must give us a card.
-				makeGiveCardNode(child, nextPlayer(gn.player), gn.pendingTurns)
+				makeGiveCardNode(child, nextPlayer(gn.player))
 			}
 		default:
 			panic(fmt.Errorf("Player playing unsupported %v card", card))
@@ -402,14 +262,32 @@ func (gn *GameNode) buildPlayTurnChildren() {
 	gn.children = gn.children[:i+1]
 	// End our turn by drawing a card.
 	lastChild := &gn.children[i]
-	makeDrawCardNode(lastChild, gn.player, false, gn.pendingTurns)
+	lastChild.state.Apply(gamestate.Action{
+		Player: gn.player,
+		Type:   gamestate.DrawCard,
+	})
+	makePlayTurnNode(lastChild, gn.player, gn.pendingTurns-1)
+}
+
+func (gn *GameNode) buildShuffleChildren() {
+	drawPile := gn.state.GetDrawPile().ToSet()
+	nShuffles := countDistinctShuffles(drawPile)
+	gn.allocChildren(nShuffles)
+	i := 0
+	p := 1.0 / float64(nShuffles) // All shuffles are equally likely.
+	enumerateShuffles(drawPile, func(shuffle cards.Stack) {
+		child := &gn.children[i]
+		child.state = gamestate.NewShuffled(child.state, shuffle)
+		gn.probabilities[i] = p
+		i++
+	})
 }
 
 func (gn *GameNode) buildGiveCardChildren() {
 	hand := gn.state.GetPlayerHand(gn.player)
 	gn.allocChildren(hand.Len())
 	i := 0
-	hand.CountsIter(func(card cards.Card, count uint8) {
+	hand.Iter(func(card cards.Card, count uint8) {
 		// Form child node by:
 		//   1) Removing card from our hand,
 		//   2) Adding card to opponent's hand,
@@ -431,8 +309,7 @@ func (gn *GameNode) buildGiveCardChildren() {
 }
 
 func (gn *GameNode) buildMustDefuseChildren() {
-	drawPile := gn.state.GetDrawPile()
-	nOptions := min(drawPile.Len(), 5)
+	nOptions := min(gn.state.GetDrawPile().Len(), 5)
 	gn.allocChildren(nOptions + 1)
 	for i := 0; i < nOptions; i++ {
 		child := &gn.children[i]
@@ -447,12 +324,12 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	}
 
 	// Place exploding cat on the bottom of the draw pile.
-	if drawPile.Len() > 5 {
+	if gn.state.GetDrawPile().Len() > 5 {
 		child := &gn.children[len(gn.children)-1]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: drawPile.Len(), // bottom
+			PositionInDrawPile: gn.state.GetDrawPile().Len(), // bottom
 		})
 
 		// Defusing the exploding cat ends a turn.
@@ -462,48 +339,6 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	}
 
 	// FIXME: Place randomly?
-}
-
-func enumerateInitialDeals(available cards.Set, current cards.Set, card cards.Card, desired int, result []cards.Set) []cards.Set {
-	if card > cards.Cat {
-		return result
-	}
-
-	nRemaining := desired - current.Len()
-	if nRemaining == 0 || nRemaining > available.Len() {
-		return append(result, current)
-	}
-
-	count := int(available.CountOf(card))
-	for i := 0; i <= min(count, nRemaining); i++ {
-		current.AddN(card, i)
-		available.RemoveN(card, i)
-		result = enumerateInitialDeals(available, current, card+1, desired, result)
-		current.RemoveN(card, i)
-		available.AddN(card, i)
-	}
-
-	return result
-}
-
-func enumerateTop3Cards(state gamestate.GameState) ([][3]cards.Card, []float64) {
-	var result [][3]cards.Card
-	var resultProbs []float64
-	for card1, p1 := range state.GetDrawPile().TopCardProbabilities() {
-		remaining1 := state
-		remaining1.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card1})
-		for card2, p2 := range remaining1.GetDrawPile().TopCardProbabilities() {
-			remaining2 := remaining1
-			remaining2.Apply(gamestate.Action{Type: gamestate.DrawCard, Card: card2})
-			for card3, p3 := range remaining2.GetDrawPile().TopCardProbabilities() {
-				p := p1 * p2 * p3
-				result = append(result, [3]cards.Card{card1, card2, card3})
-				resultProbs = append(resultProbs, p)
-			}
-		}
-	}
-
-	return result, resultProbs
 }
 
 func nextPlayer(p gamestate.Player) gamestate.Player {
@@ -520,4 +355,41 @@ func min(i, j int) int {
 	}
 
 	return j
+}
+
+func enumerateShuffles(deck cards.Set, cb func(shuffle cards.Stack)) {
+	enumerateShufflesHelper(deck, cards.NewStack(), 0, cb)
+}
+
+func enumerateShufflesHelper(deck cards.Set, result cards.Stack, n int, cb func(shuffle cards.Stack)) {
+	if deck.Len() == 0 { // All cards have been used, complete shuffle.
+		cb(result)
+		return
+	}
+
+	deck.Iter(func(card cards.Card, count uint8) {
+		// Take one of card from deck and append to result.
+		remaining := deck
+		remaining.Remove(card)
+		newResult := result
+		newResult.InsertCard(card, n)
+		// Recurse with remaining deck and new result.
+		enumerateShufflesHelper(remaining, newResult, n+1, cb)
+	})
+}
+
+func countDistinctShuffles(deck cards.Set) int {
+	result := factorial(deck.Len())
+	deck.Iter(func(card cards.Card, count uint8) {
+		result /= factorial(int(count))
+	})
+	return result
+}
+
+func factorial(k int) int {
+	result := 1
+	for i := 2; i <= k; i++ {
+		result *= i
+	}
+	return result
 }

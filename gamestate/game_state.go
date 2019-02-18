@@ -9,49 +9,44 @@ import (
 )
 
 // GameState represents the current state of the game.
-//
-// Any additional fields added to GameState must also be added to clone().
 type GameState struct {
 	// The history of player actions that were taken to reach this state.
 	history history
 	// Set of Cards remaining in the draw pile.
-	// Note that the players will not in general have access to this information.
-	drawPile    DrawPile
+	drawPile    cards.Stack
 	player0Hand cards.Set
 	player1Hand cards.Set
 }
 
-// New returns a new GameState created by dealing the given sets of cards
-// to each player at the beginning of the game.
-func New(player0Deal, player1Deal cards.Set) GameState {
-	remainingCards := cards.CoreDeck
-	remainingCards.RemoveAll(player0Deal)
-	remainingCards.RemoveAll(player1Deal)
-	remainingCards.Add(cards.ExplodingCat)
-	player0Deal.Add(cards.Defuse)
-	player1Deal.Add(cards.Defuse)
+// New returns a new GameState created with the given draw pile and deals
+// of cards to each of the players.
+func New(drawPile cards.Stack, player0Deal, player1Deal cards.Set) GameState {
 	return GameState{
-		drawPile:    NewDrawPile(remainingCards),
+		drawPile:    drawPile,
 		player0Hand: player0Deal,
 		player1Hand: player1Deal,
 	}
+}
+
+// NewShuffled returns a new GameState created by applying the given shuffling
+// of the draw pile to an existing GameState.
+func NewShuffled(prevState GameState, newDrawPile cards.Stack) GameState {
+	result := prevState
+	result.drawPile = newDrawPile
+	return result
 }
 
 // Apply returns the new GameState created by applying the given Action.
 func (gs *GameState) Apply(action Action) {
 	switch action.Type {
 	case PlayCard:
-		gs.playCard(action.Player, action.Card)
+		action = gs.playCard(action)
 	case DrawCard:
-		gs.drawPile.drawCard(action.Card)
-	case DrawCardFromBottom:
-		gs.drawPile.drawCardFromBottom(action.Card)
+		action = gs.drawCard(action)
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		gs.drawPile.insert(cards.ExplodingCat, action.PositionInDrawPile)
-	case SeeTheFuture:
-		gs.drawPile.fixTop3Cards(action.Cards)
+		gs.drawPile.InsertCard(cards.ExplodingCat, action.PositionInDrawPile)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
@@ -64,7 +59,7 @@ func (gs *GameState) String() string {
 		gs.drawPile, gs.player0Hand, gs.player1Hand, gs.history.String())
 }
 
-func (gs *GameState) GetDrawPile() DrawPile {
+func (gs *GameState) GetDrawPile() cards.Stack {
 	return gs.drawPile
 }
 
@@ -74,10 +69,6 @@ func (gs *GameState) GetPlayerHand(p Player) cards.Set {
 	}
 
 	return gs.player1Hand
-}
-
-func (gs *GameState) HasDefuseCard(p Player) bool {
-	return gs.GetPlayerHand(p).Contains(cards.Defuse)
 }
 
 func (gs *GameState) LastActionWasSlap() bool {
@@ -115,10 +106,42 @@ func (gs *GameState) giveCard(player Player, card cards.Card) {
 	}
 }
 
-func (gs *GameState) playCard(player Player, card cards.Card) {
-	if player == Player0 {
-		gs.player0Hand.Remove(card)
+func (gs *GameState) playCard(action Action) Action {
+	if action.Player == Player0 {
+		gs.player0Hand.Remove(action.Card)
 	} else {
-		gs.player1Hand.Remove(card)
+		gs.player1Hand.Remove(action.Card)
 	}
+
+	switch action.Card {
+	case cards.SeeTheFuture:
+		action.CardsSeen = [3]cards.Card{
+			gs.drawPile.NthCard(0),
+			gs.drawPile.NthCard(1),
+			gs.drawPile.NthCard(2),
+		}
+	case cards.DrawFromTheBottom:
+		drawn := gs.drawPile.NthCard(gs.drawPile.Len() - 1)
+		action.CardsSeen[0] = drawn
+		gs.drawPile.RemoveCard(gs.drawPile.Len() - 1)
+		if action.Player == Player0 {
+			gs.player0Hand.Add(drawn)
+		} else {
+			gs.player1Hand.Add(drawn)
+		}
+	}
+
+	return action
+}
+
+func (gs *GameState) drawCard(action Action) Action {
+	drawn := gs.drawPile.NthCard(0)
+	gs.drawPile.RemoveCard(0)
+	if action.Player == Player0 {
+		gs.player0Hand.Add(drawn)
+	} else {
+		gs.player1Hand.Add(drawn)
+	}
+	action.CardsSeen[0] = drawn
+	return action
 }

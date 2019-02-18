@@ -33,6 +33,11 @@ func NewSetFromCards(cards []Card) Set {
 	return result
 }
 
+// IsEmpty returns whether this Set contains any Cards.
+func (s Set) IsEmpty() bool {
+	return s == 0
+}
+
 // CountOf gets the number of the given type of Card in the Set.
 func (s Set) CountOf(card Card) uint8 {
 	shift := uint(card) * bitsPerCardCount

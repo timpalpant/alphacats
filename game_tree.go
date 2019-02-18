@@ -62,8 +62,8 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		// Player0 always goes first.
 		player:   gamestate.Player0,
 		turnType: PlayTurn,
-		gnPool:   &gameNodeSlicePool{},
-		fPool:    &floatSlicePool{},
+		//gnPool:   &gameNodeSlicePool{},
+		//fPool:    &floatSlicePool{},
 	}
 }
 
@@ -362,7 +362,7 @@ func enumerateShuffles(deck cards.Set, cb func(shuffle cards.Stack)) {
 }
 
 func enumerateShufflesHelper(deck cards.Set, result cards.Stack, n int, cb func(shuffle cards.Stack)) {
-	if deck.Len() == 0 { // All cards have been used, complete shuffle.
+	if deck.IsEmpty() { // All cards have been used, complete shuffle.
 		cb(result)
 		return
 	}

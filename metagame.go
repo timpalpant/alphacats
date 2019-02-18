@@ -4,7 +4,7 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 )
 
-func EnumerateGames(cb func(root *GameNode)) {
+func EnumerateGames(cb func(drawPile cards.Stack, p0Deal, p1Deal cards.Set)) {
 	// Deal 4 cards to player 0.
 	player0Deals := enumerateInitialDeals(cards.CoreDeck, cards.NewSet(), cards.Unknown, 4, nil)
 	for _, p0Deal := range player0Deals {
@@ -23,8 +23,7 @@ func EnumerateGames(cb func(root *GameNode)) {
 			p1.Add(cards.Defuse)
 
 			enumerateShuffles(drawPile, func(shuffle cards.Stack) {
-				game := NewGame(shuffle, p0Deal, p1Deal)
-				cb(game)
+				cb(shuffle, p0Deal, p1Deal)
 			})
 		}
 	}

@@ -2,6 +2,7 @@ package alphacats
 
 import (
 	"fmt"
+	"math/rand"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
@@ -66,6 +67,22 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		gnPool:   &gameNodeSlicePool{},
 		fPool:    &floatSlicePool{},
 	}
+}
+
+func NewRandomGame() *GameNode {
+	deck := cards.CoreDeck.AsSlice()
+	rand.Shuffle(len(deck), func(i, j int) {
+		deck[i], deck[j] = deck[j], deck[i]
+	})
+
+	p0Deal := cards.NewSetFromCards(deck[:4])
+	p0Deal.Add(cards.Defuse)
+	p1Deal := cards.NewSetFromCards(deck[4:8])
+	p1Deal.Add(cards.Defuse)
+	drawPile := cards.NewStackFromCards(deck[8:])
+	randPos := rand.Intn(drawPile.Len() + 1)
+	drawPile.InsertCard(cards.ExplodingCat, randPos)
+	return NewGame(drawPile, p0Deal, p1Deal)
 }
 
 // Type implements cfr.GameTreeNode.

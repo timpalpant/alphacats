@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats/cards"

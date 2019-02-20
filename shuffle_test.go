@@ -36,9 +36,8 @@ func TestNthShuffle(t *testing.T) {
 	n := factorial(stack.Len())
 	allShuffles := make([]cards.Stack, n)
 	for i := 0; i < n; i++ {
-		code := lehmerCode(stack.Len(), i)
 		shuffle := nthShuffle(stack, i)
-		t.Logf("i = %d, code = %v, shuffle = %v", i, code, shuffle)
+		t.Logf("i = %d, shuffle = %v", i, shuffle)
 		allShuffles[i] = shuffle
 	}
 }

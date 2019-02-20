@@ -45,6 +45,8 @@ func (s Stack) IsEmpty() bool {
 
 // Len is the number of cards in the Stack.
 // Note that Unknown cards on the ends of the stack are not counted.
+//
+// Len is O(n) for the number of Cards in the Stack.
 func (s Stack) Len() int {
 	n := 0
 	s.Iter(func(card Card) { n++ })

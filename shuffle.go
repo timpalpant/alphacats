@@ -33,27 +33,22 @@ func enumerateShufflesHelper(deck cards.Set, result cards.Stack, n int, cb func(
 	})
 }
 
-func nthShuffle(drawPile cards.Stack, i int) cards.Stack {
-	result := cards.NewStack()
-	code := lehmerCode(drawPile.Len(), i)
-	for i, k := range code {
-		result.SetNthCard(i, drawPile.NthCard(k))
-		drawPile.RemoveCard(k)
-	}
-	return result
-}
-
-// Return the kth permutation of n items using factorial number system.
+// Return the nth permutation of deck using factorial number system.
 // See: https://en.wikipedia.org/wiki/Lehmer_code
-func lehmerCode(n, k int) []int {
-	if n <= 1 {
-		return []int{0}
+func nthShuffle(deck cards.Stack, n int) cards.Stack {
+	result := cards.NewStack()
+	l := deck.Len()
+	for i := 0; i < l-1; i++ {
+		radix := factorial(l - i - 1)
+		k := int(n / radix)
+		n %= radix
+
+		result.SetNthCard(i, deck.NthCard(k))
+		deck.RemoveCard(k)
 	}
 
-	radix := factorial(n - 1)
-	digit := int(k / radix)
-	remainder := k % radix
-	return append([]int{digit}, lehmerCode(n-1, remainder)...)
+	result.SetNthCard(l-1, deck.NthCard(0))
+	return result
 }
 
 func factorial(k int) int {

@@ -17,6 +17,7 @@ func EnumerateGames(cb func(drawPile cards.Stack, p0Deal, p1Deal cards.Set)) {
 			drawPile.RemoveAll(p0Deal)
 			drawPile.RemoveAll(p1Deal)
 			drawPile.Add(cards.ExplodingCat)
+			drawPile.Add(cards.Defuse)
 			p0 := p0Deal
 			p0.Add(cards.Defuse)
 			p1 := p1Deal

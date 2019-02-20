@@ -82,6 +82,8 @@ func NewRandomGame() *GameNode {
 	drawPile := cards.NewStackFromCards(deck[8:])
 	randPos := rand.Intn(drawPile.Len() + 1)
 	drawPile.InsertCard(cards.ExplodingCat, randPos)
+	randPos = rand.Intn(drawPile.Len() + 1)
+	drawPile.InsertCard(cards.Defuse, randPos)
 	return NewGame(drawPile, p0Deal, p1Deal)
 }
 
@@ -127,10 +129,6 @@ func (gn *GameNode) String() string {
 }
 
 func (gn *GameNode) allocChildren(n int) {
-	if n > 1024 {
-		glog.V(2).Infof("[%s] Allocating slice for %d children. State: %s",
-			gn.turnType, n, gn.state.String())
-	}
 	gn.children = gn.gnPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
@@ -158,23 +156,53 @@ func (gn *GameNode) BuildChildren() {
 	case GiveCard:
 		gn.buildGiveCardChildren()
 	case ShuffleDrawPile:
-		gn.buildShuffleChildren()
+		// Shuffle children are lazily generated since the
+		// number of children may be large and in chance sampling
+		// CFR we are only going to choose one of them.
 	case MustDefuse:
 		gn.buildMustDefuseChildren()
+	case GameOver:
+	default:
+		panic("unimplemented turn type!")
 	}
 }
 
 func (gn *GameNode) NumChildren() int {
+	// Shuffle children are lazily generated but we can easily
+	// compute how many there will be.
+	if gn.turnType == ShuffleDrawPile {
+		return factorial(gn.state.GetDrawPile().Len())
+	}
+
 	return len(gn.children)
 }
 
 // GetChild implements cfr.GameTreeNode.
 func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
+	if gn.turnType == ShuffleDrawPile {
+		return gn.getNthShuffleChild(i)
+	}
+
 	return &gn.children[i]
+}
+
+func (gn *GameNode) getNthShuffleChild(i int) *GameNode {
+	shuffle := nthShuffle(gn.state.GetDrawPile(), i)
+	result := *gn
+	result.state = gamestate.NewShuffled(result.state, shuffle)
+	result.children = nil
+	result.probabilities = nil
+	result.turnType = PlayTurn
+	return &result
 }
 
 // GetChildProbability implements cfr.GameTreeNode.
 func (gn *GameNode) GetChildProbability(i int) float64 {
+	if gn.turnType == ShuffleDrawPile {
+		nShuffles := gn.NumChildren()
+		return 1.0 / float64(nShuffles)
+	}
+
 	return gn.probabilities[i]
 }
 
@@ -291,21 +319,6 @@ func (gn *GameNode) buildPlayTurnChildren() {
 	makePlayTurnNode(lastChild, gn.player, gn.pendingTurns-1)
 }
 
-func (gn *GameNode) buildShuffleChildren() {
-	drawPile := gn.state.GetDrawPile().ToSet()
-	nShuffles := countDistinctShuffles(drawPile)
-	gn.allocChildren(nShuffles)
-	i := 0
-	p := 1.0 / float64(nShuffles) // All shuffles are equally likely.
-	enumerateShuffles(drawPile, func(shuffle cards.Stack) {
-		child := &gn.children[i]
-		child.state = gamestate.NewShuffled(child.state, shuffle)
-		child.turnType = PlayTurn
-		gn.probabilities[i] = p
-		i++
-	})
-}
-
 func (gn *GameNode) buildGiveCardChildren() {
 	hand := gn.state.GetPlayerHand(gn.player)
 	gn.allocChildren(hand.Len())
@@ -378,41 +391,4 @@ func min(i, j int) int {
 	}
 
 	return j
-}
-
-func enumerateShuffles(deck cards.Set, cb func(shuffle cards.Stack)) {
-	enumerateShufflesHelper(deck, cards.NewStack(), 0, cb)
-}
-
-func enumerateShufflesHelper(deck cards.Set, result cards.Stack, n int, cb func(shuffle cards.Stack)) {
-	if deck.IsEmpty() { // All cards have been used, complete shuffle.
-		cb(result)
-		return
-	}
-
-	deck.Iter(func(card cards.Card, count uint8) {
-		// Take one of card from deck and append to result.
-		remaining := deck
-		remaining.Remove(card)
-		newResult := result
-		newResult.InsertCard(card, n)
-		// Recurse with remaining deck and new result.
-		enumerateShufflesHelper(remaining, newResult, n+1, cb)
-	})
-}
-
-func countDistinctShuffles(deck cards.Set) int {
-	result := factorial(deck.Len())
-	deck.Iter(func(card cards.Card, count uint8) {
-		result /= factorial(int(count))
-	})
-	return result
-}
-
-func factorial(k int) int {
-	result := 1
-	for i := 2; i <= k; i++ {
-		result *= i
-	}
-	return result
 }

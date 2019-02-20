@@ -101,6 +101,8 @@ func (h *history) AsSlice() []Action {
 	return result
 }
 
+// InfoSet is encoded with public history first, so that we
+// can compress all private states with the same public prefix.
 func (h *history) EncodeInfoSet(player Player, buf []byte) int {
 	for i, packed := range h.actions[:h.n] {
 		packed = censorAction(packed, player)

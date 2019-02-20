@@ -25,11 +25,11 @@ func main() {
 	game := alphacats.NewRandomGame()
 	total := 0
 	start := time.Now()
-	tree.Visit(game, func(node cfr.GameTreeNode) {
+	tree.VisitInfoSets(game, func(player int, infoSet string) {
 		total++
-		if total%10000000 == 0 {
-			nps := float64(total) / time.Since(start).Seconds()
-			glog.Infof("Visited %d nodes (%.1f nodes/sec)", total, nps)
+		if total%10000 == 0 {
+			isps := float64(total) / time.Since(start).Seconds()
+			glog.Infof("Visited %d infosets (%.1f infosets/sec)", total, isps)
 		}
 	})
 

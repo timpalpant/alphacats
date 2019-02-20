@@ -72,6 +72,10 @@ func (gs *GameState) GetPlayerHand(p Player) cards.Set {
 }
 
 func (gs *GameState) LastActionWasSlap() bool {
+	if gs.history.Len() == 0 {
+		return false
+	}
+
 	lastAction := gs.history.Get(gs.history.Len() - 1)
 	return lastAction.Type == PlayCard && (lastAction.Card == cards.Slap1x || lastAction.Card == cards.Slap2x)
 }

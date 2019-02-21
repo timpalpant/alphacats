@@ -3,8 +3,6 @@ package gamestate
 import (
 	"fmt"
 
-	"github.com/timpalpant/go-cfr"
-
 	"github.com/timpalpant/alphacats/cards"
 )
 
@@ -46,12 +44,21 @@ func (gs *GameState) Apply(action Action) {
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		gs.drawPile.InsertCard(cards.ExplodingCat, int(action.PositionInDrawPile))
+		gs.insertExplodingCat(action.Player, int(action.PositionInDrawPile))
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
 
 	gs.history.Append(action)
+}
+
+func (gs *GameState) insertExplodingCat(player Player, position int) {
+	if player == Player0 {
+		gs.player0Hand.Remove(cards.ExplodingCat)
+	} else {
+		gs.player1Hand.Remove(cards.ExplodingCat)
+	}
+	gs.drawPile.InsertCard(cards.ExplodingCat, position)
 }
 
 func (gs *GameState) String() string {
@@ -83,7 +90,7 @@ func (gs *GameState) LastActionWasSlap() bool {
 // InfoSet represents the state of the game from the point of view of one of the
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
-func (gs *GameState) GetInfoSet(player Player) cfr.InfoSet {
+func (gs *GameState) GetInfoSet(player Player) string {
 	hand := gs.player0Hand
 	if player == Player1 {
 		hand = gs.player1Hand

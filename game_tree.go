@@ -104,7 +104,7 @@ func (gn *GameNode) Player() int {
 }
 
 // InfoSet implements cfr.GameTreeNode.
-func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
+func (gn *GameNode) InfoSet(player int) string {
 	return gn.state.GetInfoSet(gamestate.Player(player))
 }
 
@@ -357,9 +357,9 @@ func (gn *GameNode) buildGiveCardChildren() {
 
 func (gn *GameNode) buildMustDefuseChildren() {
 	nCardsInDrawPile := gn.state.GetDrawPile().Len()
-	nOptions := min(nCardsInDrawPile, 5)
+	nOptions := min(nCardsInDrawPile+1, 6)
 	gn.allocChildren(nOptions + 1)
-	for i := 0; i < nOptions; i++ {
+	for i := 0; i <= nCardsInDrawPile; i++ {
 		child := &gn.children[i]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,

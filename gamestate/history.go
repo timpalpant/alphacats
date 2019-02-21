@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/timpalpant/go-cfr"
-
 	"github.com/timpalpant/alphacats/cards"
 )
 
@@ -58,7 +56,7 @@ func (a Action) String() string {
 		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
 	}
 	if a.CardsSeen[0] != cards.Unknown {
-		s += fmt.Sprintf(":%s", a.CardsSeen)
+		s += fmt.Sprintf(":%s", a.CardsSeen[0])
 	}
 	return s
 }
@@ -104,37 +102,33 @@ func (h *history) AsSlice() []Action {
 	return h.actions[:h.n]
 }
 
-func (h *history) GetInfoSet(player Player, hand cards.Set) cfr.InfoSet {
-	var public [MaxNumActions]byte
-	var private [2*MaxNumActions + 8]byte
+func (h *history) GetInfoSet(player Player, hand cards.Set) string {
+	var buf [3*MaxNumActions + 8]byte
 	for i := 0; i < h.n; i++ {
 		action := h.actions[i]
 		packed := encodeAction(action)
-		public[i] = packed[0]
+		buf[i] = packed[0]
 		if action.Player == player {
-			private[2*i] = packed[1]
-			private[2*i+1] = packed[2]
+			buf[i+1] = packed[1]
+			buf[i+2] = packed[2]
 		}
 	}
 
 	// Player's hand is appended to private game history.
-	binary.LittleEndian.PutUint64(private[2*h.n:], uint64(hand))
+	binary.LittleEndian.PutUint64(buf[3*h.n:], uint64(hand))
 
-	// Private info is hashed into smaller bitstring since it is sparse.
-	hash := md5.Sum(private[:2*h.n+8])
-
-	return cfr.InfoSet{
-		Public:  string(public[:h.n]),
-		Private: string(hash[:]),
-	}
+	// Hash into smaller bitstring since it is sparse.
+	// We'll hope for no collisions :)
+	hash := md5.Sum(buf[:3*h.n+8])
+	return string(hash[:])
 }
 
 // Action is packed as bits within a [3]uint8:
-//   [0] Player
-//   [1-3] Type
-//   [4-7] Card
+//   [0] Player (0 or 1)
+//   [1-3] Type (1 - 4)
+//   [4-7] Card (1 - 10)
 //   [8-11] PositionInDrawPile (0 - 13)
-//   [12-24] 3 Cards
+//   [12-24] 3 Cards (1 - 10)
 // Thus the first byte is public info, the second two bytes are private info.
 func encodeAction(a Action) [3]uint8 {
 	var result [3]uint8

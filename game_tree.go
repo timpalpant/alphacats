@@ -356,14 +356,15 @@ func (gn *GameNode) buildGiveCardChildren() {
 }
 
 func (gn *GameNode) buildMustDefuseChildren() {
-	nOptions := min(gn.state.GetDrawPile().Len(), 5)
+	nCardsInDrawPile := gn.state.GetDrawPile().Len()
+	nOptions := min(nCardsInDrawPile, 5)
 	gn.allocChildren(nOptions + 1)
 	for i := 0; i < nOptions; i++ {
 		child := &gn.children[i]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: i,
+			PositionInDrawPile: uint8(i),
 		})
 
 		// Defusing the exploding cat ends a turn.
@@ -371,12 +372,12 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	}
 
 	// Place exploding cat on the bottom of the draw pile.
-	if gn.state.GetDrawPile().Len() > 5 {
+	if nCardsInDrawPile > 5 {
 		child := &gn.children[len(gn.children)-1]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: gn.state.GetDrawPile().Len(), // bottom
+			PositionInDrawPile: uint8(nCardsInDrawPile), // bottom
 		})
 
 		// Defusing the exploding cat ends a turn.

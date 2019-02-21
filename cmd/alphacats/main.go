@@ -11,7 +11,6 @@ import (
 	"github.com/timpalpant/go-cfr/tree"
 
 	"github.com/timpalpant/alphacats"
-	"github.com/timpalpant/alphacats/cards"
 )
 
 func main() {
@@ -22,26 +21,13 @@ func main() {
 	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	drawPile := cards.NewStackFromCards([]cards.Card{
-		cards.ExplodingCat, cards.Slap1x, cards.Slap2x,
+	opt := cfr.New(cfr.Params{
+		SampleChanceNodes: true,
 	})
-	p0Hand := cards.NewSetFromCards([]cards.Card{
-		cards.Cat, cards.Defuse,
-	})
-	p1Hand := cards.NewSetFromCards([]cards.Card{
-		cards.Skip, cards.Defuse,
-	})
-	opt := cfr.New(cfr.Params{})
 	var game cfr.GameTreeNode
 	var expectedValue float64
 	for i := 0; i < *iter; i++ {
-		rand.Shuffle(drawPile.Len(), func(i, j int) {
-			tmp := drawPile.NthCard(i)
-			drawPile.SetNthCard(i, drawPile.NthCard(j))
-			drawPile.SetNthCard(j, tmp)
-		})
-
-		game = alphacats.NewGame(drawPile, p0Hand, p1Hand)
+		game = alphacats.NewRandomGame()
 		expectedValue += opt.Run(game)
 	}
 

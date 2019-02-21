@@ -1,7 +1,11 @@
 package gamestate
 
 import (
+	"crypto/md5"
+	"encoding/binary"
 	"fmt"
+
+	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats/cards"
 )
@@ -41,7 +45,7 @@ type Action struct {
 	Player             Player
 	Type               ActionType
 	Card               cards.Card
-	PositionInDrawPile int           // Private information.
+	PositionInDrawPile uint8         // Private information.
 	CardsSeen          [3]cards.Card // Private information.
 }
 
@@ -67,7 +71,7 @@ const MaxNumActions = 48
 // information to the player that performed the action.
 // History is presized, rather than a slice, to reduce allocations.
 type history struct {
-	actions [MaxNumActions][3]uint8
+	actions [MaxNumActions]Action
 	n       int
 }
 
@@ -84,7 +88,7 @@ func (h *history) Get(i int) Action {
 		panic(fmt.Errorf("index out of range: %d %v", i, h))
 	}
 
-	return decodeAction(h.actions[i])
+	return h.actions[i]
 }
 
 func (h *history) Append(action Action) {
@@ -92,52 +96,46 @@ func (h *history) Append(action Action) {
 		panic(fmt.Errorf("history exceeded max length: %v", h))
 	}
 
-	h.actions[h.n] = encodeAction(action)
+	h.actions[h.n] = action
 	h.n++
 }
 
 func (h *history) AsSlice() []Action {
-	result := make([]Action, h.n)
-	for i, packed := range h.actions[:h.n] {
-		result[i] = decodeAction(packed)
-	}
-	return result
+	return h.actions[:h.n]
 }
 
-// InfoSet is encoded with public history first, so that we
-// can compress all private states with the same public prefix.
-func (h *history) EncodeInfoSet(player Player, buf []byte) int {
-	for i, packed := range h.actions[:h.n] {
-		packed = censorAction(packed, player)
-		copy(buf[3*i:], packed[:])
+func (h *history) GetInfoSet(player Player, hand cards.Set) cfr.InfoSet {
+	var public [MaxNumActions]byte
+	var private [2*MaxNumActions + 8]byte
+	for i := 0; i < h.n; i++ {
+		action := h.actions[i]
+		packed := encodeAction(action)
+		public[i] = packed[0]
+		if action.Player == player {
+			private[2*i] = packed[1]
+			private[2*i+1] = packed[2]
+		}
 	}
 
-	return 3 * h.n
-}
+	// Player's hand is appended to private game history.
+	binary.LittleEndian.PutUint64(private[2*h.n:], uint64(hand))
 
-// Remove Action info that is not privy to the given player.
-func censorAction(packed [3]uint8, p Player) [3]uint8 {
-	player := Player(packed[0] & 0x1)
-	if player == p { // Action was by this player, return unchanged.
-		return packed
+	// Private info is hashed into smaller bitstring since it is sparse.
+	hash := md5.Sum(private[:2*h.n+8])
+
+	return cfr.InfoSet{
+		Public:  string(public[:h.n]),
+		Private: string(hash[:]),
 	}
-
-	actionType := ActionType((packed[0] >> 1) & 0x7)
-	if actionType == PlayCard || actionType == DrawCard || actionType == InsertExplodingCat {
-		// Just keep first byte (public info: Player + Type + Card played)
-		packed[1] = 0
-		packed[2] = 0
-	}
-
-	return packed
 }
 
 // Action is packed as bits within a [3]uint8:
-// [0] Player
-// [1-3] Type
-// [4-7] Card
-// [8-11] PositionInDrawPile (0 - 13)
-// [12-24] 3 Cards
+//   [0] Player
+//   [1-3] Type
+//   [4-7] Card
+//   [8-11] PositionInDrawPile (0 - 13)
+//   [12-24] 3 Cards
+// Thus the first byte is public info, the second two bytes are private info.
 func encodeAction(a Action) [3]uint8 {
 	var result [3]uint8
 	result[0] = uint8(a.Player)
@@ -155,7 +153,7 @@ func decodeAction(packed [3]uint8) Action {
 		Player:             Player(packed[0] & 0x1),
 		Type:               ActionType((packed[0] >> 1) & 0x7),
 		Card:               cards.Card(packed[0] >> 4),
-		PositionInDrawPile: int(packed[1] & 0xf),
+		PositionInDrawPile: uint8(packed[1] & 0xf),
 		CardsSeen: [3]cards.Card{
 			cards.Card(packed[1] >> 4),
 			cards.Card(packed[2] & 0xf),

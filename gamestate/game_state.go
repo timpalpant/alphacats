@@ -1,7 +1,6 @@
 package gamestate
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/timpalpant/go-cfr"
@@ -47,7 +46,7 @@ func (gs *GameState) Apply(action Action) {
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		gs.drawPile.InsertCard(cards.ExplodingCat, action.PositionInDrawPile)
+		gs.drawPile.InsertCard(cards.ExplodingCat, int(action.PositionInDrawPile))
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
@@ -85,27 +84,12 @@ func (gs *GameState) LastActionWasSlap() bool {
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
 func (gs *GameState) GetInfoSet(player Player) cfr.InfoSet {
-	var public [MaxNumActions]byte
-	for i := 0; i < gs.history.Len(); i++ {
-		public[i] = gs.history.actions[i][0]
+	hand := gs.player0Hand
+	if player == Player1 {
+		hand = gs.player1Hand
 	}
 
-	var private [2*MaxNumActions + 8]byte
-	if player == Player0 {
-		binary.LittleEndian.PutUint64(private[0:], uint64(gs.player0Hand))
-	} else {
-		binary.LittleEndian.PutUint64(private[0:], uint64(gs.player1Hand))
-	}
-
-	for i := 0; i < gs.history.Len(); i++ {
-		private[2*i+8] = gs.history.actions[i][1]
-		private[2*i+9] = gs.history.actions[i][2]
-	}
-
-	return cfr.InfoSet{
-		Public:  string(public[:gs.history.Len()]),
-		Private: string(private[:2*gs.history.Len()+8]),
-	}
+	return gs.history.GetInfoSet(player, hand)
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {

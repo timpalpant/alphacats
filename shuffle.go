@@ -5,9 +5,9 @@ import (
 )
 
 func countDistinctShuffles(deck cards.Set) int {
-	result := factorial(deck.Len())
+	result := factorial[deck.Len()]
 	deck.Iter(func(card cards.Card, count uint8) {
-		result /= factorial(int(count))
+		result /= factorial[int(count)]
 	})
 	return result
 }
@@ -39,7 +39,7 @@ func nthShuffle(deck cards.Stack, n int) cards.Stack {
 	result := cards.NewStack()
 	l := deck.Len()
 	for i := 0; i < l-1; i++ {
-		radix := factorial(l - i - 1)
+		radix := factorial[l-i-1]
 		k := int(n / radix)
 		n %= radix
 
@@ -51,10 +51,13 @@ func nthShuffle(deck cards.Stack, n int) cards.Stack {
 	return result
 }
 
-func factorial(k int) int {
-	result := 1
-	for i := 2; i <= k; i++ {
-		result *= i
+// Precomputed factorials up to 15.
+var factorial = func() [15]int {
+	result := [15]int{}
+	result[0] = 1
+	result[1] = 1
+	for i := 2; i < len(result); i++ {
+		result[i] = i * result[i-1]
 	}
 	return result
-}
+}()

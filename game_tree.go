@@ -104,7 +104,7 @@ func (gn *GameNode) Player() int {
 }
 
 // InfoSet implements cfr.GameTreeNode.
-func (gn *GameNode) InfoSet(player int) string {
+func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	return gn.state.GetInfoSet(gamestate.Player(player))
 }
 
@@ -170,7 +170,7 @@ func (gn *GameNode) NumChildren() int {
 	// Shuffle children are lazily generated but we can easily
 	// compute how many there will be.
 	if gn.turnType == ShuffleDrawPile {
-		return factorial(gn.state.GetDrawPile().Len())
+		return factorial[gn.state.GetDrawPile().Len()]
 	}
 
 	return len(gn.children)
@@ -179,16 +179,28 @@ func (gn *GameNode) NumChildren() int {
 // GetChild implements cfr.GameTreeNode.
 func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 	if gn.turnType == ShuffleDrawPile {
-		return gn.getNthShuffleChild(i)
+		shuffle := nthShuffle(gn.state.GetDrawPile(), i)
+		return gn.buildShuffleChild(shuffle)
 	}
 
 	return &gn.children[i]
 }
 
-func (gn *GameNode) getNthShuffleChild(i int) *GameNode {
-	shuffle := nthShuffle(gn.state.GetDrawPile(), i)
+// SampleChild implements cfr.GameTreeNode.
+func (gn *GameNode) SampleChild() cfr.GameTreeNode {
+	deck := gn.state.GetDrawPile()
+	rand.Shuffle(deck.Len(), func(i, j int) {
+		tmp := deck.NthCard(i)
+		deck.SetNthCard(i, deck.NthCard(j))
+		deck.SetNthCard(j, tmp)
+	})
+
+	return gn.buildShuffleChild(deck)
+}
+
+func (gn *GameNode) buildShuffleChild(newDrawPile cards.Stack) *GameNode {
 	result := *gn
-	result.state = gamestate.NewShuffled(result.state, shuffle)
+	result.state = gamestate.NewShuffled(result.state, newDrawPile)
 	result.children = nil
 	result.probabilities = nil
 	result.turnType = PlayTurn

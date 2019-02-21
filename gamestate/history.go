@@ -63,6 +63,9 @@ const MaxNumActions = 48
 
 // History records the history of game actions to reach this state.
 // It is bit-packed and pre-sized to avoid allocations.
+// The first byte is public information. The other two bytes are private
+// information to the player that performed the action.
+// History is presized, rather than a slice, to reduce allocations.
 type history struct {
 	actions [MaxNumActions][3]uint8
 	n       int

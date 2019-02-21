@@ -25,13 +25,13 @@ func main() {
 		SampleChanceNodes: true,
 	})
 	var game cfr.GameTreeNode
-	var expectedValue float64
+	var expectedValue float32
 	for i := 0; i < *iter; i++ {
 		game = alphacats.NewRandomGame()
 		expectedValue += opt.Run(game)
 	}
 
-	expectedValue /= float64(*iter)
+	expectedValue /= float32(*iter)
 	glog.Infof("Expected value is: %v", expectedValue)
 
 	tree.VisitInfoSets(game, func(player int, infoSet cfr.InfoSet) {

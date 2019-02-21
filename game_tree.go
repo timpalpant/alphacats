@@ -48,7 +48,7 @@ type GameNode struct {
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
 	children      []GameNode
-	probabilities []float64
+	probabilities []float32
 
 	gnPool *gameNodeSlicePool
 	fPool  *floatSlicePool
@@ -109,7 +109,7 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 }
 
 // Utility implements cfr.GameTreeNode.
-func (gn *GameNode) Utility(player int) float64 {
+func (gn *GameNode) Utility(player int) float32 {
 	if gn.Type() != cfr.TerminalNode {
 		panic("cannot get the utility of a non-terminal node")
 	}
@@ -208,10 +208,10 @@ func (gn *GameNode) buildShuffleChild(newDrawPile cards.Stack) *GameNode {
 }
 
 // GetChildProbability implements cfr.GameTreeNode.
-func (gn *GameNode) GetChildProbability(i int) float64 {
+func (gn *GameNode) GetChildProbability(i int) float32 {
 	if gn.turnType == ShuffleDrawPile {
 		nShuffles := gn.NumChildren()
-		return 1.0 / float64(nShuffles)
+		return 1.0 / float32(nShuffles)
 	}
 
 	return gn.probabilities[i]

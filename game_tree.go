@@ -356,10 +356,13 @@ func (gn *GameNode) buildGiveCardChildren() {
 }
 
 func (gn *GameNode) buildMustDefuseChildren() {
+	// 1 card in draw pile -> nOptions = 2 -> 3 children -> i in 0, 1 + prune extra child
+	// 5 card in draw pile -> nOptions = 6 -> 7 children -> i in 0..5 + prune extra child
+	// 6 card in draw pile -> nOptions = 6 -> 7 children -> i in 0..5 + use extra child for bottom
 	nCardsInDrawPile := gn.state.GetDrawPile().Len()
 	nOptions := min(nCardsInDrawPile+1, 6)
 	gn.allocChildren(nOptions + 1)
-	for i := 0; i <= nCardsInDrawPile; i++ {
+	for i := 0; i < nOptions; i++ {
 		child := &gn.children[i]
 		child.state.Apply(gamestate.Action{
 			Player:             gn.player,

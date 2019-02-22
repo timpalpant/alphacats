@@ -102,6 +102,75 @@ func (h *history) AsSlice() []Action {
 	return h.actions[:h.n]
 }
 
+// Gets abstracted infoset constructed for the given player.
+func (h *history) GetAbstractedInfoSet(player Player, hand cards.Set, nRemaining int) string {
+	// Build abstracted info set by calculating and appending:
+	//   1. Set of cards in our hand
+	//   2. Stack of cards in discard pile
+	//   3. Set of cards (some may be unknown) in opponent's hand
+	//   4. Next three cards (if we know them).
+	//   5. Number of cards remaining in draw pile
+	//   6. Position of exploding kitten (if we know it).
+	var buf [20]byte
+	binary.LittleEndian.PutUint64(buf[0:], uint64(hand))
+	discardPile := h.getDiscardPile()
+	binary.LittleEndian.PutUint64(buf[8:], uint64(discardPile.ToSet()))
+	next3 := h.getNext3Cards(player)
+	buf[16] = uint8(next3[0])
+	buf[17] = uint8(next3[1])
+	buf[18] = uint8(next3[1])
+	buf[19] = uint8(nRemaining)
+	return string(buf[:])
+}
+
+func (h *history) getNext3Cards(player Player) [3]cards.Card {
+	var result [3]cards.Card
+	offsetKnownExploding := -1
+	for i := 0; i < h.n; i++ {
+		action := h.actions[i]
+		if action.Player == player {
+			if action.Type == PlayCard && action.Card == cards.SeeTheFuture {
+				copy(result[:], action.CardsSeen[:])
+			} else if action.Type == InsertExplodingCat {
+				offsetKnownExploding = int(action.PositionInDrawPile)
+			}
+		}
+
+		if action.Type == DrawCard {
+			result[0] = result[1]
+			result[1] = result[2]
+			result[2] = cards.Unknown
+			offsetKnownExploding--
+		} else if action.Type == PlayCard && action.Card == cards.Shuffle {
+			result = [3]cards.Card{}
+			offsetKnownExploding = -1
+		} else if action.Player != player && action.Type == InsertExplodingCat {
+			// FIXME: This could be less aggressive. When the opponent
+			// inserts the exploding kitten it doesn't completely erase our knowledge.
+			result = [3]cards.Card{}
+			offsetKnownExploding = -1
+		}
+	}
+
+	if offsetKnownExploding >= 0 && offsetKnownExploding < 3 {
+		result[offsetKnownExploding] = cards.ExplodingCat
+	}
+
+	return result
+}
+
+func (h *history) getDiscardPile() cards.Stack {
+	discardPile := cards.NewStack()
+	for i := 0; i < h.n; i++ {
+		if h.actions[i].Type == PlayCard {
+			discardPile.InsertCard(h.actions[i].Card, 0)
+		}
+	}
+
+	return discardPile
+}
+
+// Gets the full, unabstracted infoset (but hashed into md5).
 func (h *history) GetInfoSet(player Player, hand cards.Set) string {
 	var buf [3*MaxNumActions + 8]byte
 	for i := 0; i < h.n; i++ {

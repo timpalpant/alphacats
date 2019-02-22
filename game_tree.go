@@ -143,6 +143,12 @@ func (gn *GameNode) allocChildren(n int) {
 	}
 }
 
+// Get rid of shared references with parent.
+func (gn *GameNode) Liberate() {
+	gn.gnPool = &gameNodeSlicePool{}
+	gn.fPool = &floatSlicePool{}
+}
+
 // BuildChildren implements cfr.GameTreeNode.
 func (gn *GameNode) BuildChildren() {
 	if len(gn.children) > 0 {

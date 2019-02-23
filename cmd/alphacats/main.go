@@ -7,6 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
@@ -25,7 +26,9 @@ func main() {
 	go http.ListenAndServe("localhost:4123", nil)
 
 	opt := cfr.New(cfr.Params{
-		SampleChanceNodes: true,
+		SampleChanceNodes:     true,
+		SampleOpponentActions: true,
+		LinearWeighting:       true,
 	})
 
 	drawPile := cards.NewStackFromCards([]cards.Card{
@@ -44,7 +47,9 @@ func main() {
 	})
 
 	var expectedValue float32
-	for i := 0; i < *iter; i++ {
+	start := time.Now()
+	for i := 1; i <= *iter; i++ {
+		glog.Infof("Running CFR iteration %d", i)
 		rand.Shuffle(drawPile.Len(), func(i, j int) {
 			tmp := drawPile.NthCard(i)
 			drawPile.SetNthCard(i, drawPile.NthCard(j))
@@ -52,6 +57,8 @@ func main() {
 		})
 		game := alphacats.NewGame(drawPile, p0Deal, p1Deal)
 		expectedValue += opt.Run(game)
+		rps := float64(i) / time.Since(start).Seconds()
+		glog.Infof("CFR iteration complete. EV: %.4g (%.1f iter/sec)", expectedValue/float32(i), rps)
 	}
 
 	expectedValue /= float32(*iter)

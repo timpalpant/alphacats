@@ -33,7 +33,7 @@ func TestNthShuffle(t *testing.T) {
 		cards.Cat,
 	})
 
-	n := factorial(stack.Len())
+	n := factorial[stack.Len()]
 	allShuffles := make([]cards.Stack, n)
 	for i := 0; i < n; i++ {
 		shuffle := nthShuffle(stack, i)

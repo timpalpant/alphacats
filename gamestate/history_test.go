@@ -28,7 +28,6 @@ func TestPackSequences(t *testing.T) {
 			{Player: Player0, Type: DrawCard},
 			{Player: Player0, Type: DrawCard},
 			{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
-			{Player: Player0, Type: SeeTheFuture},
 			{Player: Player1, Type: InsertExplodingCat},
 		},
 		{
@@ -47,8 +46,8 @@ func TestPackSequences(t *testing.T) {
 	}
 }
 
-func newHistoryFromSlice(actions []Action) history {
-	h := history{}
+func newHistoryFromSlice(actions []Action) History {
+	h := History{}
 	for _, action := range actions {
 		h.Append(action)
 	}
@@ -60,7 +59,6 @@ func TestAppend(t *testing.T) {
 		{Player: Player0, Type: DrawCard},
 		{Player: Player0, Type: DrawCard},
 		{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
-		{Player: Player0, Type: SeeTheFuture},
 	}
 
 	h := newHistoryFromSlice(testSequence)

@@ -101,7 +101,7 @@ func (gn *GameNode) Player() int {
 }
 
 // InfoSet implements cfr.GameTreeNode.
-func (gn *GameNode) InfoSet(player int) string {
+func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	return gn.state.GetInfoSet(gamestate.Player(player))
 }
 

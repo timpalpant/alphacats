@@ -1,12 +1,10 @@
 package main
 
 import (
-	"compress/gzip"
 	"flag"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
-	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -19,7 +17,6 @@ import (
 func main() {
 	seed := flag.Int64("seed", 123, "Random seed")
 	iter := flag.Int("iter", 100000, "Number of iterations to perform")
-	saveFile := flag.String("output", "", "File to save policy to")
 	flag.Parse()
 
 	rand.Seed(*seed)
@@ -63,16 +60,4 @@ func main() {
 
 	expectedValue /= float32(*iter)
 	glog.Infof("Expected value is: %v", expectedValue)
-
-	glog.Infof("Saving strategy to %v", *saveFile)
-	f, err := os.Create(*saveFile)
-	if err != nil {
-		glog.Fatal(err)
-	}
-	defer f.Close()
-	w := gzip.NewWriter(f)
-	defer w.Close()
-	if err := opt.Save(w); err != nil {
-		glog.Fatal(err)
-	}
 }

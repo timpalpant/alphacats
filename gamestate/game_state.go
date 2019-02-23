@@ -9,7 +9,7 @@ import (
 // GameState represents the current state of the game.
 type GameState struct {
 	// The history of player actions that were taken to reach this state.
-	history history
+	history History
 	// Set of Cards remaining in the draw pile.
 	drawPile    cards.Stack
 	player0Hand cards.Set
@@ -90,7 +90,7 @@ func (gs *GameState) LastActionWasSlap() bool {
 // InfoSet represents the state of the game from the point of view of one of the
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
-func (gs *GameState) GetInfoSet(player Player) string {
+func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	hand := gs.player0Hand
 	if player == Player1 {
 		hand = gs.player1Hand

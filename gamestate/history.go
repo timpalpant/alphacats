@@ -68,20 +68,20 @@ const MaxNumActions = 48
 // The first byte is public information. The other two bytes are private
 // information to the player that performed the action.
 // History is presized, rather than a slice, to reduce allocations.
-type history struct {
+type History struct {
 	actions [MaxNumActions][3]byte
 	n       int
 }
 
-func (h *history) String() string {
+func (h *History) String() string {
 	return fmt.Sprintf("%v", h.AsSlice())
 }
 
-func (h *history) Len() int {
+func (h *History) Len() int {
 	return h.n
 }
 
-func (h *history) Get(i int) Action {
+func (h *History) Get(i int) Action {
 	if i >= h.n {
 		panic(fmt.Errorf("index out of range: %d %v", i, h))
 	}
@@ -89,7 +89,7 @@ func (h *history) Get(i int) Action {
 	return decodeAction(h.actions[i])
 }
 
-func (h *history) Append(action Action) {
+func (h *History) Append(action Action) {
 	if h.n >= len(h.actions) {
 		panic(fmt.Errorf("history exceeded max length: %v", h))
 	}
@@ -98,33 +98,34 @@ func (h *history) Append(action Action) {
 	h.n++
 }
 
-func (h *history) AsSlice() []Action {
+func (h *History) AsSlice() []Action {
 	result := make([]Action, h.n)
-	for i, packed := range h.actions {
+	for i, packed := range h.actions[:h.n] {
 		result[i] = decodeAction(packed)
 	}
 	return result
 }
 
 // Gets the full, unabstracted infoset (but hashed into md5).
-func (h *history) GetInfoSet(player Player, hand cards.Set) string {
-	var buf [3*MaxNumActions + 8]byte
+func (h *History) GetInfoSet(player Player, hand cards.Set) InfoSet {
+	return InfoSet{
+		History: h.asViewedBy(player),
+		Hand:    hand,
+	}
+}
+
+// Censor the given full game history to contain only info available
+// to the given player.
+func (h *History) asViewedBy(player Player) History {
+	result := *h
 	for i := 0; i < h.n; i++ {
-		packed := h.actions[i]
-		buf[i] = packed[0]
-		if Player(packed[0]&0x1) == player { // We don't want to fully decode.
-			buf[i+1] = packed[1]
-			buf[i+2] = packed[2]
+		if Player(result.actions[i][0]&0x1) == player { // We don't want to fully decode.
+			result.actions[i][1] = 0
+			result.actions[i][2] = 0
 		}
 	}
 
-	// Player's hand is appended to private game history.
-	binary.LittleEndian.PutUint64(buf[3*h.n:], uint64(hand))
-
-	// Hash into smaller bitstring since it is sparse.
-	// We'll hope for no collisions :)
-	hash := md5.Sum(buf[:3*h.n+8])
-	return string(hash[:])
+	return result
 }
 
 // Action is packed as bits within a [3]uint8:
@@ -158,4 +159,27 @@ func decodeAction(packed [3]uint8) Action {
 			cards.Card(packed[2] >> 4),
 		},
 	}
+}
+
+type InfoSet struct {
+	History History
+	Hand    cards.Set
+}
+
+func (is InfoSet) Key() string {
+	var buf [3*MaxNumActions + 8]byte
+	for i := 0; i < is.History.Len(); i++ {
+		packed := is.History.actions[i]
+		buf[i] = packed[0]
+		buf[i+1] = packed[1]
+		buf[i+2] = packed[2]
+	}
+
+	// Player's hand is appended to private game history.
+	binary.LittleEndian.PutUint64(buf[3*is.History.Len():], uint64(is.Hand))
+
+	// Hash into smaller bitstring since it is sparse.
+	// We'll hope for no collisions :)
+	hash := md5.Sum(buf[:3*is.History.Len()+8])
+	return string(hash[:])
 }

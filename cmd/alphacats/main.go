@@ -54,8 +54,12 @@ func main() {
 		})
 		game := alphacats.NewGame(drawPile, p0Deal, p1Deal)
 		expectedValue += opt.Run(game)
+
+		currentEV := expectedValue / float32(i)
+		winRate := 0.5 + currentEV/2.0
 		rps := float64(i) / time.Since(start).Seconds()
-		glog.Infof("CFR iteration complete. EV: %.4g (%.1f iter/sec)", expectedValue/float32(i), rps)
+		glog.Infof("CFR iteration complete. EV: %.4g => win rate: %.3f (%.1f iter/sec)",
+			currentEV, winRate, rps)
 	}
 
 	expectedValue /= float32(*iter)

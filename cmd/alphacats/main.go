@@ -64,4 +64,47 @@ func main() {
 
 	expectedValue /= float32(*iter)
 	glog.Infof("Expected value is: %v", expectedValue)
+
+	rand.Shuffle(drawPile.Len(), func(i, j int) {
+		tmp := drawPile.NthCard(i)
+		drawPile.SetNthCard(i, drawPile.NthCard(j))
+		drawPile.SetNthCard(j, tmp)
+	})
+	var game cfr.GameTreeNode = alphacats.NewGame(drawPile, p0Deal, p1Deal)
+	store := opt.GetPolicyStore()
+	glog.Infof("Playing example game")
+	playGame(game, store)
+}
+
+func playGame(game cfr.GameTreeNode, store cfr.PolicyStore) {
+	for game.Type() != cfr.TerminalNode {
+		glog.Info(game)
+		game.BuildChildren()
+		if game.Type() == cfr.ChanceNode {
+			glog.Infof("Chance node, randomly sampling child")
+			game = game.SampleChild()
+		} else {
+			policy := store.GetPolicy(game)
+			strat := policy.GetAverageStrategy()
+			selected, p := sampleOne(strat)
+			glog.Infof("=> Selected action %d with probability %.2f", selected, p)
+			game = game.GetChild(selected)
+		}
+	}
+
+	glog.Infof("Player %v wins!", game.Player())
+}
+
+func sampleOne(p []float32) (int, float32) {
+	x := float32(rand.Float64())
+	var cumProb float32
+	for i := 0; i < len(p); i++ {
+		cumProb += p[i]
+		if cumProb > x {
+			return i, p[i]
+		}
+	}
+
+	n := len(p) - 1
+	return n, p[n]
 }

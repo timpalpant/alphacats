@@ -47,11 +47,9 @@ type GameNode struct {
 
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
-	children      []GameNode
-	probabilities []float32
+	children []GameNode
 
 	gnPool *gameNodeSlicePool
-	fPool  *floatSlicePool
 }
 
 // Verify that we implement the interface.
@@ -64,7 +62,6 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:   gamestate.Player0,
 		turnType: PlayTurn,
 		gnPool:   &gameNodeSlicePool{},
-		fPool:    &floatSlicePool{},
 	}
 }
 
@@ -133,20 +130,14 @@ func (gn *GameNode) allocChildren(n int) {
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
 	childPrototype.children = nil
-	childPrototype.probabilities = nil
 	for i := range gn.children {
 		gn.children[i] = childPrototype
-	}
-
-	if gn.Type() == cfr.ChanceNode {
-		gn.probabilities = gn.fPool.alloc(n)
 	}
 }
 
 // Get rid of shared references with parent.
 func (gn *GameNode) Liberate() {
 	gn.gnPool = &gameNodeSlicePool{}
-	gn.fPool = &floatSlicePool{}
 }
 
 // BuildChildren implements cfr.GameTreeNode.
@@ -164,6 +155,7 @@ func (gn *GameNode) BuildChildren() {
 		// Shuffle children are lazily generated since the
 		// number of children may be large and in chance sampling
 		// CFR we are only going to choose one of them.
+		gn.allocChildren(1)
 	case MustDefuse:
 		gn.buildMustDefuseChildren()
 	case GameOver:
@@ -205,30 +197,27 @@ func (gn *GameNode) SampleChild() cfr.GameTreeNode {
 }
 
 func (gn *GameNode) buildShuffleChild(newDrawPile cards.Stack) *GameNode {
-	result := *gn
+	result := &gn.children[0]
 	result.state = gamestate.NewShuffled(result.state, newDrawPile)
 	result.children = nil
-	result.probabilities = nil
 	result.turnType = PlayTurn
-	return &result
+	return result
 }
 
 // GetChildProbability implements cfr.GameTreeNode.
 func (gn *GameNode) GetChildProbability(i int) float32 {
-	if gn.turnType == ShuffleDrawPile {
-		nShuffles := gn.NumChildren()
-		return 1.0 / float32(nShuffles)
+	if gn.Type() != cfr.ChanceNode {
+		panic("cannot get the probability of a non-chance node")
 	}
 
-	return gn.probabilities[i]
+	nShuffles := gn.NumChildren()
+	return 1.0 / float32(nShuffles)
 }
 
 // FreeChildren implements cfr.GameTreeNode.
 func (gn *GameNode) FreeChildren() {
 	gn.gnPool.free(gn.children)
 	gn.children = nil
-	gn.fPool.free(gn.probabilities)
-	gn.probabilities = nil
 }
 
 func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int) {

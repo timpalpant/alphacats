@@ -1,11 +1,10 @@
 package model
 
 import (
-	"io/ioutil"
 	"os"
 
-	"github.com/DataDog/zstd"
 	"github.com/golang/glog"
+	gzip "github.com/klauspost/pgzip"
 
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
@@ -48,12 +47,12 @@ func (m *LSTM) Train(samples deepcfr.Buffer) {
 	defer os.Remove(tmpFile.Name())
 
 	glog.Infof("Saving training data to: %v", tmpFile.Name())
-	zstdW := zstd.NewWriter(tmpFile)
-	defer zstdW.Close()
-	if err := saveTrainingData(samples.GetSamples(), zstdW); err != nil {
+	gzw := gzip.NewWriter(tmpFile)
+	defer gzw.Close()
+	if err := saveTrainingData(samples.GetSamples(), gzw); err != nil {
 		panic(err)
 	}
-	zstdW.Close()
+	gzw.Close()
 	tmpFile.Close()
 
 	// Shell out to Python for training.

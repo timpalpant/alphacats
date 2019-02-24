@@ -30,18 +30,15 @@ func main() {
 	})
 
 	drawPile := cards.NewStackFromCards([]cards.Card{
-		cards.Shuffle, cards.SeeTheFuture, cards.ExplodingCat,
-		cards.Skip,
+		cards.Skip, cards.Cat, cards.Skip, cards.DrawFromTheBottom, cards.Defuse, cards.ExplodingCat,
 	})
 
 	p0Deal := cards.NewSetFromCards([]cards.Card{
-		cards.Defuse, cards.Skip, cards.Slap2x,
-		cards.DrawFromTheBottom,
+		cards.Defuse, cards.DrawFromTheBottom, cards.SeeTheFuture,
 	})
 
 	p1Deal := cards.NewSetFromCards([]cards.Card{
-		cards.Defuse, cards.Slap1x, cards.Cat,
-		cards.Skip,
+		cards.Defuse, cards.Skip, cards.Slap1x,
 	})
 
 	var expectedValue float32
@@ -118,7 +115,6 @@ func getChoices(node cfr.GameTreeNode) []gamestate.Action {
 	for i := 0; i < node.NumChildren(); i++ {
 		child := node.GetChild(i)
 		action := child.(*alphacats.GameNode).LastAction()
-		action.CardsSeen = [3]cards.Card{} // Hide it
 		choices = append(choices, action)
 	}
 

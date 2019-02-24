@@ -239,7 +239,7 @@ func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int)
 		}
 	} else {
 		// Just a normal card, add it to player's hand and continue.
-		if pendingTurns == 0 {
+		if pendingTurns <= 0 {
 			// Player's turn is done, next player.
 			player = nextPlayer(player)
 			pendingTurns = 1

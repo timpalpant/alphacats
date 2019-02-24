@@ -373,8 +373,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 			PositionInDrawPile: uint8(i),
 		})
 
-		// Defusing the exploding cat ends a turn.
-		makePlayTurnNode(child, gn.player, gn.pendingTurns-1)
+		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	}
 
 	// Place exploding cat on the bottom of the draw pile.
@@ -386,8 +385,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 			PositionInDrawPile: uint8(nCardsInDrawPile), // bottom
 		})
 
-		// Defusing the exploding cat ends a turn.
-		makePlayTurnNode(child, gn.player, gn.pendingTurns-1)
+		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	} else {
 		gn.children = gn.children[:len(gn.children)-1]
 	}

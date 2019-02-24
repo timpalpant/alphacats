@@ -56,7 +56,11 @@ func (a Action) String() string {
 		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
 	}
 	if a.CardsSeen[0] != cards.Unknown {
-		s += fmt.Sprintf(":%s", a.CardsSeen[0])
+		if a.CardsSeen[1] != cards.Unknown || a.CardsSeen[2] != cards.Unknown {
+			s += fmt.Sprintf(":%v", a.CardsSeen)
+		} else {
+			s += fmt.Sprintf(":%v", a.CardsSeen[0])
+		}
 	}
 	return s
 }

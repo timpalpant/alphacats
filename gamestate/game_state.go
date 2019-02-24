@@ -78,13 +78,12 @@ func (gs *GameState) GetPlayerHand(p Player) cards.Set {
 	return gs.player1Hand
 }
 
-func (gs *GameState) LastActionWasSlap() bool {
+func (gs *GameState) LastAction() Action {
 	if gs.history.Len() == 0 {
-		return false
+		return Action{}
 	}
 
-	lastAction := gs.history.Get(gs.history.Len() - 1)
-	return lastAction.Type == PlayCard && (lastAction.Card == cards.Slap1x || lastAction.Card == cards.Slap2x)
+	return gs.history.Get(gs.history.Len() - 1)
 }
 
 // InfoSet represents the state of the game from the point of view of one of the
@@ -96,7 +95,7 @@ func (gs *GameState) GetInfoSet(player Player) InfoSet {
 		hand = gs.player1Hand
 	}
 
-	return gs.history.GetInfoSet(player, hand)
+	return gs.history.GetInfoSet(player, hand, gs.drawPile.Len())
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {

@@ -46,7 +46,6 @@ func main() {
 	var expectedValue float32
 	start := time.Now()
 	for i := 1; i <= *iter; i++ {
-		glog.Infof("Running CFR iteration %d", i)
 		rand.Shuffle(drawPile.Len(), func(i, j int) {
 			tmp := drawPile.NthCard(i)
 			drawPile.SetNthCard(i, drawPile.NthCard(j))
@@ -55,11 +54,13 @@ func main() {
 		game := alphacats.NewGame(drawPile, p0Deal, p1Deal)
 		expectedValue += opt.Run(game)
 
-		currentEV := expectedValue / float32(i)
-		winRate := 0.5 + currentEV/2.0
-		rps := float64(i) / time.Since(start).Seconds()
-		glog.Infof("CFR iteration complete. EV: %.4g => win rate: %.3f (%.1f iter/sec)",
-			currentEV, winRate, rps)
+		if i%100 == 0 {
+			currentEV := expectedValue / float32(i)
+			winRate := 0.5 + currentEV/2.0
+			rps := float64(i) / time.Since(start).Seconds()
+			glog.Infof("CFR iteration %d complete. EV: %.4g => win rate: %.3f (%.1f iter/sec)",
+				i, currentEV, winRate, rps)
+		}
 	}
 
 	expectedValue /= float32(*iter)
@@ -78,17 +79,19 @@ func main() {
 
 func playGame(game cfr.GameTreeNode, store cfr.PolicyStore) {
 	for game.Type() != cfr.TerminalNode {
-		glog.Info(game)
 		game.BuildChildren()
 		if game.Type() == cfr.ChanceNode {
 			glog.Infof("Chance node, randomly sampling child")
 			game = game.SampleChild()
 		} else {
+			glog.Info(game)
 			policy := store.GetPolicy(game)
 			strat := policy.GetAverageStrategy()
 			selected, p := sampleOne(strat)
-			glog.Infof("=> Selected action %d with probability %.2f", selected, p)
 			game = game.GetChild(selected)
+			lastAction := game.(*alphacats.GameNode).LastAction()
+			glog.Infof("=> Selected action %v with probability %.2f",
+				lastAction, p)
 		}
 	}
 

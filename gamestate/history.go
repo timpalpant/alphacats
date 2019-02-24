@@ -107,10 +107,11 @@ func (h *History) AsSlice() []Action {
 }
 
 // Gets the full, unabstracted infoset (but hashed into md5).
-func (h *History) GetInfoSet(player Player, hand cards.Set) InfoSet {
+func (h *History) GetInfoSet(player Player, hand cards.Set, nCardsInDrawPile int) InfoSet {
 	return InfoSet{
-		History: h.asViewedBy(player),
-		Hand:    hand,
+		History:            h.asViewedBy(player),
+		Hand:               hand,
+		NumCardsInDrawPile: nCardsInDrawPile,
 	}
 }
 
@@ -162,8 +163,9 @@ func decodeAction(packed [3]uint8) Action {
 }
 
 type InfoSet struct {
-	History History
-	Hand    cards.Set
+	History            History
+	Hand               cards.Set
+	NumCardsInDrawPile int
 }
 
 func (is InfoSet) Key() string {

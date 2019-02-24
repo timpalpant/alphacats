@@ -100,6 +100,10 @@ func (gn *GameNode) Player() int {
 	return int(gn.player)
 }
 
+func (gn *GameNode) LastAction() gamestate.Action {
+	return gn.state.LastAction()
+}
+
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	return gn.state.GetInfoSet(gamestate.Player(player))
@@ -120,8 +124,9 @@ func (gn *GameNode) Utility(player int) float32 {
 
 // String implements fmt.Stringer.
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v. State: %s",
-		gn.player, gn.turnType, gn.state.String())
+	return fmt.Sprintf("%v's turn to %v. Hand: %s. %d cards in draw pile: %s",
+		gn.player, gn.turnType, gn.state.GetPlayerHand(gn.player),
+		gn.state.GetDrawPile().Len(), gn.state.GetDrawPile())
 }
 
 func (gn *GameNode) allocChildren(n int) {
@@ -295,7 +300,9 @@ func (gn *GameNode) buildPlayTurnChildren() {
 				pendingTurns = 2
 			}
 
-			if gn.state.LastActionWasSlap() { // Slap back.
+			lastAction := gn.state.LastAction()
+			slapBack := lastAction.Type == gamestate.PlayCard && (lastAction.Card == cards.Slap1x || lastAction.Card == cards.Slap2x)
+			if slapBack {
 				pendingTurns += gn.pendingTurns
 			}
 

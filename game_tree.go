@@ -59,9 +59,10 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 	return &GameNode{
 		state: gamestate.New(drawPile, p0Deal, p1Deal),
 		// Player0 always goes first.
-		player:   gamestate.Player0,
-		turnType: PlayTurn,
-		gnPool:   &gameNodeSlicePool{},
+		player:       gamestate.Player0,
+		turnType:     PlayTurn,
+		pendingTurns: 1,
+		gnPool:       &gameNodeSlicePool{},
 	}
 }
 
@@ -124,8 +125,8 @@ func (gn *GameNode) Utility(player int) float32 {
 
 // String implements fmt.Stringer.
 func (gn *GameNode) String() string {
-	return fmt.Sprintf("%v's turn to %v. Hand: %s. %d cards in draw pile: %s",
-		gn.player, gn.turnType, gn.state.GetPlayerHand(gn.player),
+	return fmt.Sprintf("%v's turn to %v (%d remaining). Hand: %s. %d cards in draw pile: %s",
+		gn.player, gn.turnType, gn.pendingTurns, gn.state.GetPlayerHand(gn.player),
 		gn.state.GetDrawPile().Len(), gn.state.GetDrawPile())
 }
 

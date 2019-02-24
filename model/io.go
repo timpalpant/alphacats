@@ -46,7 +46,7 @@ func sampleToProto(sample deepcfr.Sample) *Sample {
 }
 
 func infosetToProto(infoSet cfr.InfoSet) *InfoSet {
-	is := infoSet.(*gamestate.InfoSet)
+	is := infoSet.(gamestate.InfoSet)
 	return &InfoSet{
 		History: historyToProto(is.History),
 		Hand:    cardsToProto(is.Hand),

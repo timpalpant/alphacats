@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/DataDog/zstd"
 	"github.com/golang/glog"
 
 	"github.com/timpalpant/go-cfr"
@@ -37,18 +38,23 @@ func NewLSTM(p Params) *LSTM {
 
 // Train implements deepcfr.Model.
 func (m *LSTM) Train(samples deepcfr.Buffer) {
-	glog.Info("Training network with %d samples", len(samples.GetSamples()))
+	glog.Infof("Training network with %d samples", len(samples.GetSamples()))
 	// Save training data to file.
 	tmpFile, err := ioutil.TempFile("", "alphacats-training-data-")
 	if err != nil {
 		panic(err)
 	}
+	defer tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
 	glog.Infof("Saving training data to: %v", tmpFile.Name())
-	if err := saveTrainingData(samples.GetSamples(), tmpFile); err != nil {
+	zstdW := zstd.NewWriter(tmpFile)
+	defer zstdW.Close()
+	if err := saveTrainingData(samples.GetSamples(), zstdW); err != nil {
 		panic(err)
 	}
+	zstdW.Close()
+	tmpFile.Close()
 
 	// Shell out to Python for training.
 	// Load trained model.

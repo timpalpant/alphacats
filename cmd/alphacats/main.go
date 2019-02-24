@@ -12,6 +12,7 @@ import (
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
+	"github.com/timpalpant/alphacats/gamestate"
 )
 
 func main() {
@@ -88,10 +89,10 @@ func playGame(game cfr.GameTreeNode, store cfr.PolicyStore) {
 			policy := store.GetPolicy(game)
 			strat := policy.GetAverageStrategy()
 			selected, p := sampleOne(strat)
-			game = game.GetChild(selected)
-			lastAction := game.(*alphacats.GameNode).LastAction()
+			choices := getChoices(game)
 			glog.Infof("=> Selected action %v with probability %.2f",
-				lastAction, p)
+				choices[selected], p)
+			game = game.GetChild(selected)
 		}
 	}
 
@@ -110,4 +111,16 @@ func sampleOne(p []float32) (int, float32) {
 
 	n := len(p) - 1
 	return n, p[n]
+}
+
+func getChoices(node cfr.GameTreeNode) []gamestate.Action {
+	var choices []gamestate.Action
+	for i := 0; i < node.NumChildren(); i++ {
+		child := node.GetChild(i)
+		action := child.(*alphacats.GameNode).LastAction()
+		action.CardsSeen = [3]cards.Card{} // Hide it
+		choices = append(choices, action)
+	}
+
+	return choices
 }

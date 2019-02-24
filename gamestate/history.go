@@ -124,7 +124,9 @@ func (h *History) GetInfoSet(player Player, hand cards.Set, nCardsInDrawPile int
 func (h *History) asViewedBy(player Player) History {
 	result := *h
 	for i := 0; i < h.n; i++ {
-		if Player(result.actions[i][0]&0x1) == player { // We don't want to fully decode.
+		actionPlayer := Player(result.actions[i][0] & 0x1) // We don't want to fully decode.
+		if actionPlayer != player {
+			// Hide the non-public information.
 			result.actions[i][1] = 0
 			result.actions[i][2] = 0
 		}

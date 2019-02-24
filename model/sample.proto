@@ -1,0 +1,42 @@
+syntax = "proto3";
+package model;
+
+enum Card {
+  UNKNOWN = 0;
+  EXPLODING_KITTEN = 1;
+  DEFUSE = 2;
+  SKIP = 3;
+  SLAP_1X = 4;
+  SLAP_2X = 5;
+  SEE_THE_FUTURE = 6;
+  SHUFFLE = 7;
+  DRAW_FROM_THE_BOTTOM = 8;
+  CAT = 9;
+}
+
+message Action {
+  enum Type {
+    INVALID = 0;
+    DRAW_CARD = 1;
+    PLAY_CARD = 2;
+    GIVE_CARD = 3;
+    INSERT_EXPLODING_CAT = 4;
+  }
+
+  int32 player = 1;
+  Type type = 2;
+  Card card = 3;
+  int32 position_in_draw_pile = 4;
+  repeated Card cards_seen = 5;
+}
+
+message InfoSet {
+  repeated Action history = 1;
+  repeated Card hand = 2;
+}
+
+message Sample {
+  uint64 iter = 1;
+  InfoSet infoset = 2;
+  repeated float advantages = 3;
+}

@@ -1,6 +1,11 @@
 package model
 
 import (
+	"io/ioutil"
+	"os"
+
+	"github.com/golang/glog"
+
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
 )
@@ -32,6 +37,22 @@ func NewLSTM(p Params) *LSTM {
 
 // Train implements deepcfr.Model.
 func (m *LSTM) Train(samples deepcfr.Buffer) {
+	glog.Info("Training network with %d samples", len(samples.GetSamples()))
+	// Save training data to file.
+	tmpFile, err := ioutil.TempFile("", "alphacats-training-data-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	glog.Infof("Saving training data to: %v", tmpFile.Name())
+	if err := saveTrainingData(samples.GetSamples(), tmpFile); err != nil {
+		panic(err)
+	}
+
+	// Shell out to Python for training.
+	// Load trained model.
+	// https://github.com/galeone/tfgo#tfgo-tensorflow-in-go
 }
 
 // Predict implements deepcfr.Model.

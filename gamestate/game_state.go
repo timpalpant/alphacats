@@ -95,7 +95,7 @@ func (gs *GameState) GetInfoSet(player Player) InfoSet {
 		hand = gs.player1Hand
 	}
 
-	return gs.history.GetInfoSet(player, hand, gs.drawPile.Len())
+	return gs.history.GetInfoSet(player, hand)
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {

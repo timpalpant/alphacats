@@ -11,6 +11,7 @@ import (
 	"github.com/timpalpant/go-cfr/deepcfr"
 
 	"github.com/timpalpant/alphacats"
+	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/model"
 )
 
@@ -33,11 +34,22 @@ func main() {
 		SampleOpponentActions: true,
 	}, deepCFR)
 
+	drawPile := cards.NewStackFromCards([]cards.Card{
+		cards.ExplodingCat, cards.Shuffle, cards.Skip, cards.Slap2x, cards.Cat, cards.Skip, cards.SeeTheFuture,
+	})
+	p0Deal := cards.NewSetFromCards([]cards.Card{
+		cards.Defuse, cards.SeeTheFuture, cards.Skip, cards.Cat, cards.Slap1x,
+	})
+	p1Deal := cards.NewSetFromCards([]cards.Card{
+		cards.Defuse, cards.DrawFromTheBottom, cards.Slap1x, cards.Skip,
+	})
+	game := alphacats.NewGame(drawPile, p0Deal, p1Deal)
+
 	for t := 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting samples", t)
 		for k := 1; k <= *traversalsPerIter; k++ {
 			glog.Infof("[k=%d] Running ES-CFR on random game", k)
-			game := alphacats.NewRandomGame()
+			//game := alphacats.NewRandomGame()
 			opt.Run(game)
 		}
 

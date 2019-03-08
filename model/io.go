@@ -2,8 +2,12 @@ package model
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
+	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
 
@@ -11,11 +15,38 @@ import (
 	"github.com/timpalpant/alphacats/gamestate"
 )
 
+func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int) error {
+	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
+		batchStart := batchNum * batchSize
+		batchEnd := batchStart + batchSize
+		batch := samples[batchStart:batchEnd]
+		batchName := fmt.Sprintf("batch_%08d.pb.gz", batchNum)
+		filename := filepath.Join(directory, batchName)
+
+		f, err := os.Create(filename)
+		if err != nil {
+			return err
+		}
+
+		gzw := gzip.NewWriter(f)
+		if err := saveBatch(batch, gzw); err != nil {
+			gzw.Close()
+			f.Close()
+			return err
+		}
+
+		gzw.Close()
+		f.Close()
+	}
+
+	return nil
+}
+
 // Samples are saved to the writer as a flat list of marshaled protos,
 // prefixed by their size encoded as a Uvarint64:
 //
 //  [size] [Sample proto] [size] [Sample proto] ...
-func saveTrainingData(samples []deepcfr.Sample, w io.Writer) error {
+func saveBatch(samples []deepcfr.Sample, w io.Writer) error {
 	var sizeBuf [binary.MaxVarintLen64]byte
 	for _, sample := range samples {
 		sampleProto := sampleToProto(sample)

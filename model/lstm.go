@@ -1,10 +1,10 @@
 package model
 
 import (
+	"io/ioutil"
 	"os"
 
 	"github.com/golang/glog"
-	gzip "github.com/klauspost/pgzip"
 
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
@@ -38,22 +38,17 @@ func NewLSTM(p Params) *LSTM {
 // Train implements deepcfr.Model.
 func (m *LSTM) Train(samples deepcfr.Buffer) {
 	glog.Infof("Training network with %d samples", len(samples.GetSamples()))
-	// Save training data to file.
-	tmpFile, err := ioutil.TempFile("", "alphacats-training-data-")
+	// Save training data to disk.
+	tmpDir, err := ioutil.TempDir("", "alphacats-training-data-")
 	if err != nil {
 		panic(err)
 	}
-	defer tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+	defer os.RemoveAll(tmpDir)
 
-	glog.Infof("Saving training data to: %v", tmpFile.Name())
-	gzw := gzip.NewWriter(tmpFile)
-	defer gzw.Close()
-	if err := saveTrainingData(samples.GetSamples(), gzw); err != nil {
+	glog.Infof("Saving training data to: %v", tmpDir)
+	if err := saveTrainingData(samples.GetSamples(), tmpDir, m.params.BatchSize); err != nil {
 		panic(err)
 	}
-	gzw.Close()
-	tmpFile.Close()
 
 	// Shell out to Python for training.
 	// Load trained model.

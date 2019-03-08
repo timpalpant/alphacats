@@ -146,8 +146,7 @@ func (gn *GameNode) Liberate() {
 	gn.gnPool = &gameNodeSlicePool{}
 }
 
-// BuildChildren implements cfr.GameTreeNode.
-func (gn *GameNode) BuildChildren() {
+func (gn *GameNode) buildChildren() {
 	if len(gn.children) > 0 {
 		return // Already built.
 	}
@@ -177,6 +176,10 @@ func (gn *GameNode) NumChildren() int {
 		return factorial[gn.state.GetDrawPile().Len()]
 	}
 
+	if gn.children == nil {
+		gn.buildChildren()
+	}
+
 	return len(gn.children)
 }
 
@@ -187,11 +190,19 @@ func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 		return gn.buildShuffleChild(shuffle)
 	}
 
+	if gn.children == nil {
+		gn.buildChildren()
+	}
+
 	return &gn.children[i]
 }
 
 // SampleChild implements cfr.GameTreeNode.
 func (gn *GameNode) SampleChild() cfr.GameTreeNode {
+	if gn.children == nil {
+		gn.buildChildren()
+	}
+
 	deck := gn.state.GetDrawPile()
 	rand.Shuffle(deck.Len(), func(i, j int) {
 		tmp := deck.NthCard(i)
@@ -220,8 +231,8 @@ func (gn *GameNode) GetChildProbability(i int) float32 {
 	return 1.0 / float32(nShuffles)
 }
 
-// FreeChildren implements cfr.GameTreeNode.
-func (gn *GameNode) FreeChildren() {
+// Close implements cfr.GameTreeNode.
+func (gn *GameNode) Close() {
 	gn.gnPool.free(gn.children)
 	gn.children = nil
 }

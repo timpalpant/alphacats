@@ -30,7 +30,7 @@ type Sample struct {
 func main() {
 	seed := flag.Int64("seed", 123, "Random seed")
 	numBatches := flag.Int("batches", 100, "Number of batches of samples to collect")
-	batchSize := flag.Int("batch_size", 1000000, "Number of samples in each batch file")
+	batchSize := flag.Int("batch_size", 65536, "Number of samples in each batch file")
 	output := flag.String("output", "", "Output directory to save collected batches of samples to")
 	flag.Parse()
 

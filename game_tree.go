@@ -55,6 +55,8 @@ type GameNode struct {
 // Verify that we implement the interface.
 var _ cfr.GameTreeNode = &GameNode{}
 
+// NewGame creates a root node for a new game with the given draw pile
+// and hands dealt to each player.
 func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 	return &GameNode{
 		state: gamestate.New(drawPile, p0Deal, p1Deal),
@@ -68,6 +70,9 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 
 var deck = cards.CoreDeck.AsSlice()
 
+// NewRandomGame creates a root node for a new random game, as if the
+// deck were shuffled and each player were dealt a random hand of cards.
+// NOTE: Not thread-safe.
 func NewRandomGame() *GameNode {
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
@@ -131,6 +136,10 @@ func (gn *GameNode) String() string {
 		gn.state.GetDrawPile().Len(), gn.state.GetDrawPile())
 }
 
+func (gn *GameNode) GetDrawPile() cards.Stack {
+	return gn.state.GetDrawPile()
+}
+
 func (gn *GameNode) allocChildren(n int) {
 	gn.children = gn.gnPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
@@ -140,11 +149,6 @@ func (gn *GameNode) allocChildren(n int) {
 	for i := range gn.children {
 		gn.children[i] = childPrototype
 	}
-}
-
-// Get rid of shared references with parent.
-func (gn *GameNode) Liberate() {
-	gn.gnPool = &gameNodeSlicePool{}
 }
 
 func (gn *GameNode) buildChildren() {

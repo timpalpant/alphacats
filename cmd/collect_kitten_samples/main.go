@@ -72,7 +72,12 @@ func collectSamples(game *alphacats.GameNode) []Sample {
 				NumCardsInDrawPile:      drawPile.Len(),
 				ExplodingKittenPosition: getKittenPosition(drawPile),
 			}
-			result = append(result, sample)
+
+			// Kitten may not be in the deck if this is a MustDefuse node
+			// i.e. currently in the player's hand waiting to be replaced.
+			if sample.ExplodingKittenPosition != -1 {
+				result = append(result, sample)
+			}
 
 			// Randomly choose a player action.
 			selected := rand.Intn(game.NumChildren())

@@ -3,12 +3,15 @@ package model
 import (
 	"io/ioutil"
 	"os"
+	"os/exec"
 
 	"github.com/golang/glog"
 
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
 )
+
+const trainingScript = "../../model/run_training.sh"
 
 type Params struct {
 	BatchSize            int
@@ -19,7 +22,7 @@ type Params struct {
 
 func DefaultParams() Params {
 	return Params{
-		BatchSize:            10240,
+		BatchSize:            1000000,
 		Optimizer:            "adam",
 		LearningRate:         0.001,
 		GradientNormClipping: 10.0,
@@ -51,6 +54,11 @@ func (m *LSTM) Train(samples deepcfr.Buffer) {
 	}
 
 	// Shell out to Python for training.
+	cmd := exec.Command(trainingScript, tmpDir, "model.hd5")
+	if err := cmd.Run(); err != nil {
+		panic(err)
+	}
+
 	// Load trained model.
 	// https://github.com/galeone/tfgo#tfgo-tensorflow-in-go
 }

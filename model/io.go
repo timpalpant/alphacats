@@ -18,7 +18,7 @@ import (
 func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int) error {
 	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
 		batchStart := batchNum * batchSize
-		batchEnd := batchStart + batchSize
+		batchEnd := min(batchStart+batchSize, len(samples))
 		batch := samples[batchStart:batchEnd]
 		batchName := fmt.Sprintf("batch_%08d.pb.gz", batchNum)
 		filename := filepath.Join(directory, batchName)
@@ -40,6 +40,14 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 	}
 
 	return nil
+}
+
+func min(i, j int) int {
+	if i < j {
+		return i
+	}
+
+	return j
 }
 
 // Samples are saved to the writer as a flat list of marshaled protos,
@@ -77,7 +85,7 @@ func sampleToProto(sample deepcfr.Sample) *Sample {
 }
 
 func infosetToProto(infoSet cfr.InfoSet) *InfoSet {
-	is := infoSet.(gamestate.InfoSet)
+	is := infoSet.(*gamestate.InfoSet)
 	return &InfoSet{
 		History: historyToProto(is.History),
 		Hand:    cardsToProto(is.Hand),

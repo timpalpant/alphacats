@@ -66,8 +66,9 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 	}
 }
 
+var deck = cards.CoreDeck.AsSlice()
+
 func NewRandomGame() *GameNode {
-	deck := cards.CoreDeck.AsSlice()
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
 	})

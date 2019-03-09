@@ -11,7 +11,6 @@ import (
 	"github.com/timpalpant/go-cfr/deepcfr"
 
 	"github.com/timpalpant/alphacats"
-	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/model"
 )
 
@@ -19,8 +18,10 @@ func main() {
 	seed := flag.Int64("seed", 123, "Random seed")
 	iter := flag.Int("iter", 100, "Number of DeepCFR iterations to perform")
 	bufSize := flag.Int("buf_size", 10000000, "Size of reservoir sample buffer")
-	traversalsPerIter := flag.Int("traversals_per_iter", 10,
+	traversalsPerIter := flag.Int("traversals_per_iter", 10000000,
 		"Number of ES-CFR traversals to perform each iteration")
+	explorationDelta := flag.Float64("exploration_delta", 0.1,
+		"Fraction of time to explore randomly off-policy")
 	flag.Parse()
 
 	rand.Seed(*seed)
@@ -29,27 +30,13 @@ func main() {
 	lstm := model.NewLSTM(model.DefaultParams())
 	buffer := deepcfr.NewReservoirBuffer(*bufSize)
 	deepCFR := deepcfr.New(lstm, buffer)
-	opt := cfr.New(cfr.SamplingParams{
-		SampleChanceNodes:     true,
-		SampleOpponentActions: true,
-	}, deepCFR)
-
-	drawPile := cards.NewStackFromCards([]cards.Card{
-		cards.ExplodingCat, cards.Shuffle, cards.Skip, cards.Slap2x, cards.Cat, cards.Skip, cards.SeeTheFuture,
-	})
-	p0Deal := cards.NewSetFromCards([]cards.Card{
-		cards.Defuse, cards.SeeTheFuture, cards.Skip, cards.Cat, cards.Slap1x,
-	})
-	p1Deal := cards.NewSetFromCards([]cards.Card{
-		cards.Defuse, cards.DrawFromTheBottom, cards.Slap1x, cards.Skip,
-	})
-	game := alphacats.NewGame(drawPile, p0Deal, p1Deal)
+	opt := cfr.NewOutcomeSampling(deepCFR, float32(*explorationDelta))
 
 	for t := 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting samples", t)
 		for k := 1; k <= *traversalsPerIter; k++ {
-			glog.Infof("[k=%d] Running ES-CFR on random game", k)
-			//game := alphacats.NewRandomGame()
+			glog.V(3).Infof("[k=%d] Running ES-CFR on random game", k)
+			game := alphacats.NewRandomGame()
 			opt.Run(game)
 		}
 

@@ -172,7 +172,7 @@ type InfoSet struct {
 	Hand    cards.Set
 }
 
-func (is InfoSet) Key() string {
+func (is *InfoSet) Key() string {
 	var buf [3*MaxNumActions + 8]byte
 	for i := 0; i < is.History.Len(); i++ {
 		packed := is.History.actions[i]

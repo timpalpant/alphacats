@@ -14,6 +14,11 @@ type GameState struct {
 	drawPile    cards.Stack
 	player0Hand cards.Set
 	player1Hand cards.Set
+
+	// These are lazily constructed by calls to GetInfoSet,
+	// but we want to preallocate the memory for them to reduce garbage.
+	player0InfoSet InfoSet
+	player1InfoSet InfoSet
 }
 
 // New returns a new GameState created with the given draw pile and deals
@@ -89,13 +94,27 @@ func (gs *GameState) LastAction() Action {
 // InfoSet represents the state of the game from the point of view of one of the
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
-func (gs *GameState) GetInfoSet(player Player) InfoSet {
+func (gs *GameState) GetInfoSet(player Player) *InfoSet {
 	hand := gs.player0Hand
 	if player == Player1 {
 		hand = gs.player1Hand
 	}
 
-	return gs.history.GetInfoSet(player, hand)
+	// We store the InfoSet on the GameState and return a reference to it,
+	// rather than returning the *InfoSet directly, to reduce garbage
+	// (the InfoSets are allocated inline with the GameState struct).
+	// We can't just return an InfoSet value type because it will have to
+	// be copied to the heap (convT2Inoptr) to satisfy the cfr.InfoSet interface.
+	// https://science.raphael.poss.name/go-calling-convention-x86-64.html#id25
+	// This was measured to be ~10% faster.
+	is := gs.history.GetInfoSet(player, hand)
+	if player == Player0 {
+		gs.player0InfoSet = is
+		return &gs.player0InfoSet
+	} else {
+		gs.player1InfoSet = is
+		return &gs.player1InfoSet
+	}
 }
 
 func (gs *GameState) giveCard(player Player, card cards.Card) {

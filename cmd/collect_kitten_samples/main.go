@@ -2,7 +2,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 
 	"github.com/golang/glog"
-	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats"
@@ -21,20 +19,19 @@ import (
 	"github.com/timpalpant/alphacats/model"
 )
 
+const maxCardsInDrawPile = 13
+
 type Sample struct {
-	InfoSet                 gamestate.InfoSet
-	NumCardsInDrawPile      int
+	History                 gamestate.History
 	ExplodingKittenPosition int
 }
 
 func main() {
-	seed := flag.Int64("seed", 123, "Random seed")
-	numBatches := flag.Int("batches", 100, "Number of batches of samples to collect")
-	batchSize := flag.Int("batch_size", 65536, "Number of samples in each batch file")
+	numBatches := flag.Int("batches", 1000, "Number of batches of samples to collect")
+	batchSize := flag.Int("batch_size", 4096, "Number of samples in each batch file")
 	output := flag.String("output", "", "Output directory to save collected batches of samples to")
 	flag.Parse()
 
-	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
 	if err := os.MkdirAll(*output, 0777); err != nil {
@@ -43,40 +40,39 @@ func main() {
 
 	for i := 0; i < *numBatches; i++ {
 		glog.Infof("Collecting %d samples", *batchSize)
-		samples := make([]Sample, 0)
-		for len(samples) < *batchSize {
+		samples := make([]Sample, *batchSize)
+		for j := 0; j < *batchSize; j++ {
 			game := alphacats.NewRandomGame()
-			samples = append(samples, collectSamples(game)...)
+			samples[j] = collectSample(game)
 		}
-		samples = samples[:*batchSize]
 
-		batchName := fmt.Sprintf("batch_%08d.pb.gz", i)
-		filename := filepath.Join(*output, batchName)
-		glog.Infof("Saving batch of samples to %v", filename)
-		if err := saveSamples(samples, filename); err != nil {
+		batchName := fmt.Sprintf("batch_%08d", i)
+		batchFilename := filepath.Join(*output, batchName+".npz")
+		if err := saveSamples(samples, batchFilename); err != nil {
 			glog.Fatal(err)
 		}
 	}
 }
 
-func collectSamples(game *alphacats.GameNode) []Sample {
-	var result []Sample
+func collectSample(game *alphacats.GameNode) Sample {
+	// Play out the given game to the end, choosing actions uniformly randomly.
+	var terminalHistory []Sample
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
 			game = game.SampleChild().(*alphacats.GameNode)
 		} else {
-			is := game.InfoSet(game.Player()).(gamestate.InfoSet)
+			// All samples are collected from the POV of player 0.
+			is := game.InfoSet(0).(gamestate.InfoSet)
 			drawPile := game.GetDrawPile()
 			sample := Sample{
-				InfoSet:                 is,
-				NumCardsInDrawPile:      drawPile.Len(),
+				History:                 is.History,
 				ExplodingKittenPosition: getKittenPosition(drawPile),
 			}
 
 			// Kitten may not be in the deck if this is a MustDefuse node
 			// i.e. currently in the player's hand waiting to be replaced.
 			if sample.ExplodingKittenPosition != -1 {
-				result = append(result, sample)
+				terminalHistory = append(terminalHistory, sample)
 			}
 
 			// Randomly choose a player action.
@@ -85,7 +81,9 @@ func collectSamples(game *alphacats.GameNode) []Sample {
 		}
 	}
 
-	return result
+	// Choose one point in this game to use as a training sample.
+	selected := rand.Intn(len(terminalHistory))
+	return terminalHistory[selected]
 }
 
 func getKittenPosition(drawPile cards.Stack) int {
@@ -104,86 +102,58 @@ func getKittenPosition(drawPile cards.Stack) int {
 }
 
 func saveSamples(samples []Sample, output string) error {
-	f, err := os.Create(output)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	glog.Infof("Encoding samples and targets")
+	X := encodeSamples(samples)
+	y := encodeTargets(samples)
 
-	w := gzip.NewWriter(f)
-	defer w.Close()
+	glog.Infof("Saving %d samples to %v", len(samples), output)
+	return model.SaveNPZFile(output, map[string]interface{}{
+		"X": X,
+		"y": y,
+	})
+}
 
-	var varintBuf [binary.MaxVarintLen64]byte
+func encodeSamples(samples []Sample) []float32 {
+	var result []float32
 	for _, sample := range samples {
-		// First serialize proto with player's InfoSet.
-		pb := infosetToProto(sample.InfoSet)
-		buf, err := pb.Marshal()
-		if err != nil {
-			return err
-		}
-
-		n := binary.PutUvarint(varintBuf[:], uint64(len(buf)))
-		if _, err := w.Write(varintBuf[:n]); err != nil {
-			return err
-		}
-
-		if _, err := w.Write(buf); err != nil {
-			return err
-		}
-
-		// Then the number of cards currently remaining in the draw pile.
-		n = binary.PutUvarint(varintBuf[:], uint64(sample.NumCardsInDrawPile))
-		if _, err := w.Write(varintBuf[:n]); err != nil {
-			return err
-		}
-
-		// Then the current position of the exploding kitten in the draw pile.
-		n = binary.PutUvarint(varintBuf[:], uint64(sample.ExplodingKittenPosition))
-		if _, err := w.Write(varintBuf[:n]); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func infosetToProto(is gamestate.InfoSet) *model.InfoSet {
-	return &model.InfoSet{
-		History: historyToProto(is.History),
-		Hand:    cardsToProto(is.Hand),
-	}
-}
-
-func historyToProto(h gamestate.History) []*model.Action {
-	result := make([]*model.Action, h.Len())
-	for i, action := range h.AsSlice() {
-		result[i] = actionToProto(action)
+		X := model.EncodeHistory(sample.History)
+		result = append(result, ravel(X)...)
 	}
 
 	return result
 }
 
-func actionToProto(action gamestate.Action) *model.Action {
-	var cardsSeen []model.Card
-	for _, card := range action.CardsSeen {
-		if card != cards.Unknown {
-			cardsSeen = append(cardsSeen, model.Card(card))
-		}
+func encodeTargets(samples []Sample) []float32 {
+	var result []float32
+	for _, sample := range samples {
+		y := oneHot(maxCardsInDrawPile, sample.ExplodingKittenPosition)
+		result = append(result, y...)
 	}
 
-	return &model.Action{
-		Player:             int32(action.Player),
-		Type:               model.Action_Type(action.Type),
-		Card:               model.Card(action.Card),
-		PositionInDrawPile: int32(action.PositionInDrawPile),
-		CardsSeen:          cardsSeen,
-	}
+	return result
 }
 
-func cardsToProto(hand cards.Set) []model.Card {
-	result := make([]model.Card, hand.Len())
-	for i, card := range hand.AsSlice() {
-		result[i] = model.Card(card)
+func oneHot(n, j int) []float32 {
+	result := make([]float32, n)
+	result[j] = 1.0
+	return result
+}
+
+func ravel(X [][]float32) []float32 {
+	if len(X) == 0 {
+		return nil
+	}
+
+	r := len(X)
+	c := len(X[0])
+	result := make([]float32, 0, r*c)
+	for _, row := range X {
+		if len(row) != c {
+			panic(fmt.Errorf("row has invalid length: got %d, expected %d",
+				len(row), c))
+		}
+
+		result = append(result, row...)
 	}
 
 	return result

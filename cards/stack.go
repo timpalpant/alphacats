@@ -8,7 +8,7 @@ import (
 
 // Minimum number of bits required to store the identity of a card.
 var (
-	bitsPerCard = uint(bits.Len(uint(Cat)))
+	bitsPerCard = uint(bits.Len(uint(NumTypes)))
 	topCardMask = Stack(1<<bitsPerCard) - 1
 	maxCapacity = int(64 / bitsPerCard)
 )

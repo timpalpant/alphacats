@@ -13,7 +13,7 @@ const (
 	SeeTheFuture
 	Shuffle
 	DrawFromTheBottom
-	Cat // Must be last since it is used to size CardPile and CardSet
+	Cat
 )
 
 var cardStr = [...]string{
@@ -33,3 +33,6 @@ var cardStr = [...]string{
 func (c Card) String() string {
 	return cardStr[c]
 }
+
+// The number of distinct types of Cards.
+const NumTypes = len(cardStr)

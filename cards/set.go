@@ -132,7 +132,7 @@ func (s *Set) AddAll(cards Set) {
 // RemoveAll removes the given cards from the set.
 // RemoveAll panics if the cards are not present to be removed.
 func (s *Set) RemoveAll(cards Set) {
-	for card := Card(0); card <= Cat; card++ {
+	for card := Card(0); card < Card(NumTypes); card++ {
 		if s.CountOf(card) < cards.CountOf(card) {
 			panic(fmt.Errorf("cannot remove %d %v cards from set with only %d",
 				cards.CountOf(card), card, s.CountOf(card)))

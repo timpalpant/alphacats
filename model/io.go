@@ -27,13 +27,15 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 }
 
 func saveBatch(batch []deepcfr.Sample, filename string) error {
-	X_history := encodeHistories(batch)
-	X_hand := encodeHands(batch)
+	xHistory := encodeHistories(batch)
+	xHand := encodeHands(batch)
 	y := encodeTargets(batch)
+	sampleWeights := encodeSampleWeights(batch)
 	return SaveNPZFile(filename, map[string]interface{}{
-		"X_history": X_history,
-		"X_hand":    X_hand,
-		"y":         y,
+		"X_history":     xHistory,
+		"X_hand":        xHand,
+		"y":             y,
+		"sample_weight": sampleWeights,
 	})
 }
 

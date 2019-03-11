@@ -68,12 +68,9 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 	}
 }
 
-var deck = cards.CoreDeck.AsSlice()
-
 // NewRandomGame creates a root node for a new random game, as if the
 // deck were shuffled and each player were dealt a random hand of cards.
-// NOTE: Not thread-safe.
-func NewRandomGame() *GameNode {
+func NewRandomGame(deck []cards.Card) *GameNode {
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
 	})
@@ -190,32 +187,16 @@ func (gn *GameNode) NumChildren() int {
 
 // GetChild implements cfr.GameTreeNode.
 func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
+	if gn.children == nil {
+		gn.buildChildren()
+	}
+
 	if gn.turnType == ShuffleDrawPile {
 		shuffle := nthShuffle(gn.state.GetDrawPile(), i)
 		return gn.buildShuffleChild(shuffle)
 	}
 
-	if gn.children == nil {
-		gn.buildChildren()
-	}
-
 	return &gn.children[i]
-}
-
-// SampleChild implements cfr.GameTreeNode.
-func (gn *GameNode) SampleChild() cfr.GameTreeNode {
-	if gn.children == nil {
-		gn.buildChildren()
-	}
-
-	deck := gn.state.GetDrawPile()
-	rand.Shuffle(deck.Len(), func(i, j int) {
-		tmp := deck.NthCard(i)
-		deck.SetNthCard(i, deck.NthCard(j))
-		deck.SetNthCard(j, tmp)
-	})
-
-	return gn.buildShuffleChild(deck)
 }
 
 func (gn *GameNode) buildShuffleChild(newDrawPile cards.Stack) *GameNode {

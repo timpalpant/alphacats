@@ -63,10 +63,10 @@ func main() {
 	traversalsPerIter := flag.Int("traversals_per_iter", 10000000,
 		"Number of OS-CFR traversals to perform each iteration")
 	outputDir := flag.String("output_dir", "", "Directory to save policies to")
-	flag.IntVar(&params.BatchSize, "batch_size", 4096,
-		"Size of minibatches to save for training")
+	flag.IntVar(&params.BatchSize, "batch_size", 10000,
+		"Size of minibatches to save for network training")
 	flag.StringVar(&params.ModelOutputDir, "model_dir", "",
-		"Directory to save trained models to")
+		"Directory to save trained network models to")
 	flag.Parse()
 
 	rand.Seed(*seed)

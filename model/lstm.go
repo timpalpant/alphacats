@@ -12,8 +12,6 @@ import (
 	"github.com/timpalpant/go-cfr/deepcfr"
 )
 
-const trainingScript = "../../model/run_training.sh"
-
 type Params struct {
 	BatchSize      int
 	ModelOutputDir string
@@ -47,7 +45,10 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 
 	// Shell out to Python to train the network.
 	outputFilename := fmt.Sprintf("model_%08d.hd5", m.iter)
-	cmd := exec.Command(trainingScript, tmpDir, outputFilename)
+	cmd := exec.Command("python", "model/train.py", tmpDir, outputFilename)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	glog.Infof("Running: %v", cmd)
 	if err := cmd.Run(); err != nil {
 		panic(err)
 	}

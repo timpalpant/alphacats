@@ -20,6 +20,7 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 	var retErr error
 	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
 		sem <- struct{}{}
+		wg.Add(1)
 		go func(batchNum int) {
 			defer func() { <-sem }()
 			defer wg.Done()

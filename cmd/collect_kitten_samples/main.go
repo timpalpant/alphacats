@@ -60,7 +60,7 @@ func collectSample(game *alphacats.GameNode) Sample {
 	var terminalHistory []Sample
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
-			game = cfr.SampleChance(game).(*alphacats.GameNode)
+			game = cfr.SampleChanceNode(game).(*alphacats.GameNode)
 		} else {
 			// All samples are collected from the POV of player 0.
 			is := game.InfoSet(0).(gamestate.InfoSet)

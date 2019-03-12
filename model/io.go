@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
@@ -12,18 +14,33 @@ import (
 
 func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int) error {
 	// Write each batch as npz within the given directory.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	sem := make(chan struct{}, runtime.NumCPU())
+	var retErr error
 	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
-		batchStart := batchNum * batchSize
-		batchEnd := min(batchStart+batchSize, len(samples))
-		batch := samples[batchStart:batchEnd]
-		batchName := fmt.Sprintf("batch_%08d.npz", batchNum)
-		batchFilename := filepath.Join(directory, batchName)
-		if err := saveBatch(batch, batchFilename); err != nil {
-			return err
-		}
+		sem <- struct{}{}
+		go func(batchNum int) {
+			defer func() { <-sem }()
+			defer wg.Done()
+
+			batchStart := batchNum * batchSize
+			batchEnd := min(batchStart+batchSize, len(samples))
+			batch := samples[batchStart:batchEnd]
+			batchName := fmt.Sprintf("batch_%08d.npz", batchNum)
+			batchFilename := filepath.Join(directory, batchName)
+			if err := saveBatch(batch, batchFilename); err != nil {
+				mu.Lock()
+				defer mu.Unlock()
+				if retErr == nil {
+					retErr = err
+				}
+			}
+		}(batchNum)
 	}
 
-	return nil
+	wg.Wait()
+	return retErr
 }
 
 func saveBatch(batch []deepcfr.Sample, filename string) error {

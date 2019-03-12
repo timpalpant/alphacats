@@ -38,11 +38,12 @@ func main() {
 		glog.Fatal(err)
 	}
 
+	deck := cards.CoreDeck.AsSlice()
 	for i := 0; i < *numBatches; i++ {
 		glog.Infof("Collecting %d samples", *batchSize)
 		samples := make([]Sample, *batchSize)
 		for j := 0; j < *batchSize; j++ {
-			game := alphacats.NewRandomGame()
+			game := alphacats.NewRandomGame(deck, 4)
 			samples[j] = collectSample(game)
 		}
 
@@ -59,7 +60,7 @@ func collectSample(game *alphacats.GameNode) Sample {
 	var terminalHistory []Sample
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
-			game = game.SampleChild().(*alphacats.GameNode)
+			game = cfr.SampleChance(game).(*alphacats.GameNode)
 		} else {
 			// All samples are collected from the POV of player 0.
 			is := game.InfoSet(0).(gamestate.InfoSet)

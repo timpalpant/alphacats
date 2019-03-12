@@ -36,8 +36,6 @@ func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
 	default:
 		panic(fmt.Errorf("unknown sampling type: %v", samplingType))
 	}
-
-	return nil
 }
 
 func getPolicy(cfrType string, params model.Params, bufSize int) cfr.StrategyProfile {
@@ -46,8 +44,9 @@ func getPolicy(cfrType string, params model.Params, bufSize int) cfr.StrategyPro
 		return cfr.NewStrategyTable(cfr.DiscountParams{})
 	case "deep":
 		lstm := model.NewLSTM(params)
-		buffer := deepcfr.NewReservoirBuffer(bufSize)
-		return deepcfr.New(lstm, buffer)
+		p0Buffer := deepcfr.NewReservoirBuffer(bufSize)
+		p1Buffer := deepcfr.NewReservoirBuffer(bufSize)
+		return deepcfr.New(lstm, p0Buffer, p1Buffer)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", cfrType))
 	}
@@ -77,31 +76,29 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	deck := []cards.Card{
-		cards.Shuffle, cards.SeeTheFuture, cards.Slap1x, cards.Slap2x,
-		cards.Skip, cards.Cat, cards.Skip, cards.DrawFromTheBottom,
-		cards.Slap1x, cards.Cat, cards.SeeTheFuture,
-	}
-
 	policy := getPolicy(*cfrType, params, *bufSize)
 	opt := getCFRAlgo(policy, *samplingType)
 
+	deck := cards.TestDeck.AsSlice()
+	cardsPerPlayer := (len(deck) / 2) - 1
 	for t := 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting samples", t)
 		for k := 1; k <= *traversalsPerIter; k++ {
-			glog.V(3).Infof("[k=%d] Running ES-CFR on random game", k)
-			game := alphacats.NewRandomGame(deck)
+			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
+			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			opt.Run(game)
 		}
 
 		glog.Infof("[t=%d] Training network", t)
 		policy.Update()
 
-		// TODO(palpant): Implement marshalling for DeepCFR policy,
-		// which should save the current sample buffers + trained models.
-		if policy, ok := policy.(*cfr.StrategyTable); ok {
-			if err := savePolicy(policy, *outputDir, t); err != nil {
-				glog.Fatal(err)
+		if t%(*iter/10) == 0 { // Save 10 snapshots.
+			// TODO(palpant): Implement marshalling for DeepCFR policy,
+			// which should save the current sample buffers + trained models.
+			if policy, ok := policy.(*cfr.StrategyTable); ok {
+				if err := savePolicy(policy, *outputDir, t); err != nil {
+					glog.Fatal(err)
+				}
 			}
 		}
 	}

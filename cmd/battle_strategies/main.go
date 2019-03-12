@@ -24,19 +24,15 @@ func main() {
 
 	go http.ListenAndServe("localhost:4123", nil)
 
-	deck := []cards.Card{
-		cards.Shuffle, cards.SeeTheFuture, cards.Slap1x, cards.Slap2x,
-		cards.Skip, cards.Cat, cards.Skip, cards.DrawFromTheBottom,
-		cards.Slap1x, cards.Cat, cards.SeeTheFuture,
-	}
-
+	deck := cards.TestDeck.AsSlice()
+	cardsPerPlayer := (len(deck) / 2) - 1
 	policy0 := mustLoadPolicy(*strat0)
 	policy1 := mustLoadPolicy(*strat1)
 
 	glog.Infof("Playing %d games", *numGames)
 	var p0Wins int
 	for i := 0; i < *numGames; i++ {
-		game := alphacats.NewRandomGame(deck)
+		game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 		winner := playGame(policy0, policy1, game)
 		if winner == 0 {
 			p0Wins++
@@ -71,7 +67,7 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 func playGame(policy0, policy1 cfr.StrategyProfile, game cfr.GameTreeNode) int {
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
-			game = sampleChance(game)
+			game = cfr.SampleChance(game)
 		} else if game.Player() == 0 {
 			strategy := policy0.GetStrategy(game).GetAverageStrategy()
 			selected := sampleStrategy(strategy)
@@ -84,21 +80,6 @@ func playGame(policy0, policy1 cfr.StrategyProfile, game cfr.GameTreeNode) int {
 	}
 
 	return int(game.Player())
-}
-
-func sampleChance(node cfr.GameTreeNode) cfr.GameTreeNode {
-	x := rand.Float32()
-	var cumProb float32
-	for i := 0; i < node.NumChildren(); i++ {
-		p := node.GetChildProbability(i)
-		cumProb += p
-		if cumProb > x {
-			return node.GetChild(i)
-		}
-	}
-
-	// Shouldn't ever happen unless probability distribution does not sum to 1.
-	return node.GetChild(node.NumChildren() - 1)
 }
 
 func sampleStrategy(strat []float32) int {

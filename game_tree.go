@@ -19,6 +19,7 @@ const (
 	GiveCard
 	ShuffleDrawPile
 	MustDefuse
+	InsertKittenRandom
 	GameOver
 )
 
@@ -28,6 +29,7 @@ var turnTypeStr = [...]string{
 	"GiveCard",
 	"ShuffleDrawPile",
 	"MustDefuse",
+	"InsertKittenRandom",
 	"GameOver",
 }
 
@@ -70,16 +72,16 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 
 // NewRandomGame creates a root node for a new random game, as if the
 // deck were shuffled and each player were dealt a random hand of cards.
-func NewRandomGame(deck []cards.Card) *GameNode {
+func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
 	rand.Shuffle(len(deck), func(i, j int) {
 		deck[i], deck[j] = deck[j], deck[i]
 	})
 
-	p0Deal := cards.NewSetFromCards(deck[:4])
+	p0Deal := cards.NewSetFromCards(deck[:cardsPerPlayer])
 	p0Deal.Add(cards.Defuse)
-	p1Deal := cards.NewSetFromCards(deck[4:8])
+	p1Deal := cards.NewSetFromCards(deck[cardsPerPlayer : 2*cardsPerPlayer])
 	p1Deal.Add(cards.Defuse)
-	drawPile := cards.NewStackFromCards(deck[8:])
+	drawPile := cards.NewStackFromCards(deck[2*cardsPerPlayer:])
 	randPos := rand.Intn(drawPile.Len() + 1)
 	drawPile.InsertCard(cards.ExplodingCat, randPos)
 	randPos = rand.Intn(drawPile.Len() + 1)
@@ -90,7 +92,7 @@ func NewRandomGame(deck []cards.Card) *GameNode {
 // Type implements cfr.GameTreeNode.
 func (gn *GameNode) Type() cfr.NodeType {
 	switch gn.turnType {
-	case ShuffleDrawPile:
+	case ShuffleDrawPile, InsertKittenRandom:
 		return cfr.ChanceNode
 	case GameOver:
 		return cfr.TerminalNode
@@ -163,6 +165,8 @@ func (gn *GameNode) buildChildren() {
 		// number of children may be large and in chance sampling
 		// CFR we are only going to choose one of them.
 		gn.allocChildren(1)
+	case InsertKittenRandom:
+		gn.buildInsertKittenRandomChildren()
 	case MustDefuse:
 		gn.buildMustDefuseChildren()
 	case GameOver:
@@ -172,8 +176,8 @@ func (gn *GameNode) buildChildren() {
 }
 
 func (gn *GameNode) NumChildren() int {
-	// Shuffle children are lazily generated but we can easily
-	// compute how many there will be.
+	// Chance children are lazily generated because we always sample them
+	// but we can easily compute how many there will be.
 	if gn.turnType == ShuffleDrawPile {
 		return factorial[gn.state.GetDrawPile().Len()]
 	}
@@ -197,14 +201,6 @@ func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 	}
 
 	return &gn.children[i]
-}
-
-func (gn *GameNode) buildShuffleChild(newDrawPile cards.Stack) *GameNode {
-	result := &gn.children[0]
-	result.state = gamestate.NewShuffled(result.state, newDrawPile)
-	result.children = nil
-	result.turnType = PlayTurn
-	return result
 }
 
 // GetChildProbability implements cfr.GameTreeNode.
@@ -361,7 +357,8 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	// 6 card in draw pile -> nOptions = 6 -> 7 children -> i in 0..5 + use extra child for bottom
 	nCardsInDrawPile := gn.state.GetDrawPile().Len()
 	nOptions := min(nCardsInDrawPile+1, 6)
-	gn.allocChildren(nOptions + 1)
+	gn.allocChildren(nOptions + 2)
+	// Place in the i'th position.
 	for i := 0; i < nOptions; i++ {
 		child := &gn.children[i]
 		child.state.Apply(gamestate.Action{
@@ -372,6 +369,10 @@ func (gn *GameNode) buildMustDefuseChildren() {
 
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	}
+
+	// Place randomly.
+	child := &gn.children[nOptions]
+	child.turnType = InsertKittenRandom
 
 	// Place exploding cat on the bottom of the draw pile.
 	if nCardsInDrawPile > 5 {
@@ -386,8 +387,29 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	} else {
 		gn.children = gn.children[:len(gn.children)-1]
 	}
+}
 
-	// FIXME: Place randomly?
+func (gn *GameNode) buildInsertKittenRandomChildren() {
+	nPositions := gn.state.GetDrawPile().Len() + 1
+	gn.allocChildren(nPositions)
+	for i := 0; i < nPositions; i++ {
+		child := &gn.children[i]
+		child.state.Apply(gamestate.Action{
+			Player:             gn.player,
+			Type:               gamestate.InsertExplodingCat,
+			PositionInDrawPile: uint8(i),
+		})
+
+		makePlayTurnNode(child, gn.player, gn.pendingTurns)
+	}
+}
+
+func (gn *GameNode) buildShuffleChild(newDrawPile cards.Stack) *GameNode {
+	result := &gn.children[0]
+	result.state = gamestate.NewShuffled(result.state, newDrawPile)
+	result.children = nil
+	result.turnType = PlayTurn
+	return result
 }
 
 func nextPlayer(p gamestate.Player) gamestate.Player {

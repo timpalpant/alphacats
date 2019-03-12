@@ -62,9 +62,11 @@ def build_model(history_shape: tuple, hand_shape: tuple, output_shape: int):
     merged = concatenate([lstm, hand_input])
     merged_dropout_1 = Dropout(0.3)(merged)
     merged_hidden_1 = Dense(128, activation='relu')(merged_dropout_1)
-    merged_dropout_1 = Dropout(0.3)(merged_hidden_1)
-    merged_hidden_2 = Dense(128, activation='relu')(merged_dropout_1)
-    advantages_output = Dense(output_shape, activation='softmax')(merged_hidden_2)
+    merged_dropout_2 = Dropout(0.3)(merged_hidden_1)
+    merged_hidden_2 = Dense(128, activation='relu')(merged_dropout_2)
+    merged_dropout_3 = Dropout(0.3)(merged_hidden_2)
+    merged_hidden_3 = Dense(128, activation='relu')(merged_dropout_3)
+    advantages_output = Dense(output_shape, activation='linear')(merged_hidden_3)
 
     model = Model(
         inputs=[history_input, hand_input],
@@ -85,7 +87,7 @@ def train(model, data, val_data):
         #max_queue_size=16,
         callbacks=[
             EarlyStopping(
-                monitor='val_loss', min_delta=0.005, patience=3,
+                monitor='val_loss', min_delta=0.001, patience=3,
                 restore_best_weights=True),
             TerminateOnNaN(),
         ],

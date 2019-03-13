@@ -7,9 +7,15 @@ import (
 	"os/exec"
 
 	"github.com/golang/glog"
-
+	tf "github.com/tensorflow/tensorflow/tensorflow/go"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
+
+	"github.com/timpalpant/alphacats/gamestate"
+)
+
+const (
+	graphTag = "lstm"
 )
 
 type Params struct {
@@ -34,40 +40,108 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	// Save training data to disk in a tempdir.
 	tmpDir, err := ioutil.TempDir("", "alphacats-training-data-")
 	if err != nil {
-		panic(err)
+		glog.Fatal(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	glog.Infof("Saving training data to: %v", tmpDir)
 	if err := saveTrainingData(samples.GetSamples(), tmpDir, m.params.BatchSize); err != nil {
-		panic(err)
+		glog.Fatal(err)
 	}
 
 	// Shell out to Python to train the network.
-	outputFilename := fmt.Sprintf("model_%08d.hd5", m.iter)
-	cmd := exec.Command("python", "model/train.py", tmpDir, outputFilename)
+	outputDir := fmt.Sprintf("model_%08d", m.iter)
+	cmd := exec.Command("python", "model/train.py", tmpDir, outputDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	glog.Infof("Running: %v", cmd)
+	glog.Infof("Running: %v", cmd.Args)
 	if err := cmd.Run(); err != nil {
-		panic(err)
+		glog.Fatal(err)
 	}
 
 	m.iter++
 
 	// Load trained model.
-	// https://github.com/galeone/tfgo#tfgo-tensorflow-in-go
-	return &TrainedLSTM{}
+	trained, err := LoadTrainedLSTM(outputDir)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	return trained
 }
 
 type TrainedLSTM struct {
+	dir   string
+	model *tf.SavedModel
+}
+
+func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
+	model, err := tf.LoadSavedModel(dir, []string{graphTag}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TrainedLSTM{dir, model}, nil
 }
 
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
-	p := make([]float32, nActions)
-	for i := range p {
-		p[i] = 1.0 / float32(nActions)
+	is := infoSet.(gamestate.InfoSet)
+	historyTensor, err := tf.NewTensor(EncodeHistory(is.History))
+	if err != nil {
+		glog.Fatal(err)
 	}
-	return p
+	handTensor, err := tf.NewTensor(encodeHand(is.Hand))
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	result, err := m.model.Session.Run(
+		map[tf.Output]*tf.Tensor{
+			m.model.Graph.Operation("history").Output(0): historyTensor,
+			m.model.Graph.Operation("hand").Output(0):    handTensor,
+		},
+		[]tf.Output{
+			m.model.Graph.Operation("output").Output(0),
+		},
+		nil,
+	)
+
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	advantages := result[0].Value().([]float32)
+	glog.V(1).Infof("Predicted advantages: %v", advantages)
+	makePositive(advantages)
+	total := sum(advantages)
+
+	if total > 0 {
+		for i := range advantages {
+			advantages[i] /= total
+		}
+	} else { // Uniform probability.
+		for i := range advantages {
+			advantages[i] = 1.0 / float32(len(advantages))
+		}
+	}
+
+	return advantages
+}
+
+func makePositive(v []float32) {
+	for i := range v {
+		if v[i] < 0 {
+			v[i] = 0.0
+		}
+	}
+}
+
+func sum(v []float32) float32 {
+	var total float32
+	for _, x := range v {
+		total += x
+	}
+
+	return total
 }

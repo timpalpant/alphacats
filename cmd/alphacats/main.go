@@ -31,8 +31,6 @@ func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
 		return cfr.NewOutcomeSampling(policy, 0.1)
 	case "chance":
 		return cfr.NewChanceSampling(policy)
-	case "none":
-		return cfr.New(policy)
 	default:
 		panic(fmt.Errorf("unknown sampling type: %v", samplingType))
 	}
@@ -56,7 +54,7 @@ func main() {
 	params := model.Params{}
 	cfrType := flag.String("cfrtype", "tabular", "Type of CFR to run (tabular, deep)")
 	samplingType := flag.String("sampling", "external",
-		"Type of sampling to perform (external, chance, outcome, none)")
+		"Type of sampling to perform (external, chance, outcome)")
 	seed := flag.Int64("seed", 123, "Random seed")
 	iter := flag.Int("iter", 100, "Number of DeepCFR iterations to perform")
 	bufSize := flag.Int("buf_size", 10000000, "Size of reservoir sample buffer")

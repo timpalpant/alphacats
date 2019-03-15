@@ -38,11 +38,11 @@ func encodeHistories(samples []deepcfr.Sample) []float32 {
 //  - One hot encoded Card (10)
 //  - One hot encoded position in draw pile (13)
 //  - Concatenated one hot cards seen (3x10)
-func EncodeHistory(h []gamestate.Action) [][]float32 {
+func EncodeHistory(h []gamestate.EncodedAction) [][]float32 {
 	result := make([][]float32, gamestate.MaxNumActions)
 
 	for i, action := range h {
-		result[i] = encodeAction(action)
+		result[i] = encodeAction(action.Decode())
 	}
 
 	for i := len(h); i < len(result); i++ {

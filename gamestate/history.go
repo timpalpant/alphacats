@@ -3,6 +3,7 @@ package gamestate
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/gob"
 	"fmt"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -118,7 +119,7 @@ func (h *History) asViewedBy(player Player) []EncodedAction {
 			action.CardsSeen = [3]cards.Card{}
 		}
 
-		result[i] = encodeAction(action)
+		result[i] = EncodeAction(action)
 	}
 
 	return result
@@ -146,6 +147,8 @@ func (is *InfoSet) Key() string {
 	return string(hash[:])
 }
 
+type EncodedAction [3]uint8
+
 // Action is packed as bits within a [3]uint8:
 //   [0] Player (0 or 1)
 //   [1-3] Type (1 - 4)
@@ -153,7 +156,7 @@ func (is *InfoSet) Key() string {
 //   [8-11] PositionInDrawPile (0 - 13)
 //   [12-24] 3 Cards (1 - 10)
 // Thus the first byte is public info, the second two bytes are private info.
-func encodeAction(a Action) EncodedAction {
+func EncodeAction(a Action) EncodedAction {
 	var result EncodedAction
 	result[0] = uint8(a.Player)
 	result[0] += uint8(a.Type << 1)
@@ -164,8 +167,6 @@ func encodeAction(a Action) EncodedAction {
 	result[2] += uint8(a.CardsSeen[2] << 4)
 	return result
 }
-
-type EncodedAction [3]uint8
 
 func (packed EncodedAction) Decode() Action {
 	return Action{
@@ -179,4 +180,8 @@ func (packed EncodedAction) Decode() Action {
 			cards.Card(packed[2] >> 4),
 		},
 	}
+}
+
+func init() {
+	gob.Register(&InfoSet{})
 }

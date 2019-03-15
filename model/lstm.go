@@ -1,6 +1,12 @@
+// Package model implements an LSTM-based network model for use in DeepCFR.
+// As input, the model takes the public game history (one-hot encoded),
+// as well as the player's current hand (one-hot encoded) and predicts the
+// advantages for each possible action in this infoset.
 package model
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -73,6 +79,36 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	return trained
 }
 
+func (m *LSTM) GobDecode(buf []byte) error {
+	r := bytes.NewReader(buf)
+	dec := gob.NewDecoder(r)
+
+	if err := dec.Decode(&m.params); err != nil {
+		return err
+	}
+
+	if err := dec.Decode(&m.iter); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *LSTM) GobEncode() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+
+	if err := enc.Encode(m.params); err != nil {
+		return nil, err
+	}
+
+	if err := enc.Encode(m.iter); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
 type TrainedLSTM struct {
 	dir   string
 	model *tf.SavedModel
@@ -138,6 +174,18 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	return advantages
 }
 
+// When serializing, we just serialize the path to the model already on disk.
+func (m *TrainedLSTM) GobDecode(buf []byte) error {
+	dir := string(buf)
+	model, err := LoadTrainedLSTM(dir)
+	*m = *model
+	return err
+}
+
+func (m *TrainedLSTM) GobEncode() ([]byte, error) {
+	return []byte(m.dir), nil
+}
+
 func makePositive(v []float32) {
 	for i := range v {
 		if v[i] < 0 {
@@ -153,4 +201,9 @@ func sum(v []float32) float32 {
 	}
 
 	return total
+}
+
+func init() {
+	gob.Register(&LSTM{})
+	gob.Register(&TrainedLSTM{})
 }

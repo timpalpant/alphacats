@@ -68,17 +68,14 @@ func (a Action) String() string {
 const MaxNumActions = 48
 
 // History records the history of game actions to reach this state.
-// It is bit-packed and pre-sized to avoid allocations.
-// The first byte is public information. The other two bytes are private
-// information to the player that performed the action.
-// History is presized, rather than a slice, to reduce allocations.
+// It is pre-sized to avoid allocations and keep GameState easily copyable.
 type History struct {
-	actions [MaxNumActions][3]byte
+	actions [MaxNumActions]Action
 	n       int
 }
 
 func (h *History) String() string {
-	return fmt.Sprintf("%v", h.AsSlice())
+	return fmt.Sprintf("%v", h.actions[:h.n])
 }
 
 func (h *History) Len() int {
@@ -90,29 +87,21 @@ func (h *History) Get(i int) Action {
 		panic(fmt.Errorf("index out of range: %d %v", i, h))
 	}
 
-	return decodeAction(h.actions[i])
+	return h.actions[i]
 }
 
 func (h *History) Append(action Action) {
 	if h.n >= len(h.actions) {
-		panic(fmt.Errorf("history exceeded max length: %v", h))
+		panic(fmt.Errorf("history exceeded max capacity: %v", h))
 	}
 
-	h.actions[h.n] = encodeAction(action)
+	h.actions[h.n] = action
 	h.n++
 }
 
-func (h *History) AsSlice() []Action {
-	result := make([]Action, h.n)
-	for i, packed := range h.actions[:h.n] {
-		result[i] = decodeAction(packed)
-	}
-	return result
-}
-
 // Gets the full, unabstracted infoset (but hashed into md5).
-func (h *History) GetInfoSet(player Player, hand cards.Set) InfoSet {
-	return InfoSet{
+func (h *History) GetInfoSet(player Player, hand cards.Set) *InfoSet {
+	return &InfoSet{
 		History: h.asViewedBy(player),
 		Hand:    hand,
 	}
@@ -120,18 +109,41 @@ func (h *History) GetInfoSet(player Player, hand cards.Set) InfoSet {
 
 // Censor the given full game history to contain only info available
 // to the given player.
-func (h *History) asViewedBy(player Player) History {
-	result := *h
-	for i := 0; i < h.n; i++ {
-		actionPlayer := Player(result.actions[i][0] & 0x1) // We don't want to fully decode.
-		if actionPlayer != player {
+func (h *History) asViewedBy(player Player) []Action {
+	result := make([]Action, h.n)
+	copy(result, h.actions[:h.n])
+	for i := range result {
+		if result[i].Player != player {
 			// Hide the non-public information.
-			result.actions[i][1] = 0
-			result.actions[i][2] = 0
+			result[i].PositionInDrawPile = 0
+			result[i].CardsSeen = [3]cards.Card{}
 		}
 	}
 
 	return result
+}
+
+type InfoSet struct {
+	History []Action
+	Hand    cards.Set
+}
+
+func (is *InfoSet) Key() string {
+	var buf [3*MaxNumActions + 8]byte
+	for i, action := range is.History {
+		packed := encodeAction(action)
+		buf[i] = packed[0]
+		buf[i+1] = packed[1]
+		buf[i+2] = packed[2]
+	}
+
+	// Player's hand is appended to private game history.
+	binary.LittleEndian.PutUint64(buf[3*len(is.History):], uint64(is.Hand))
+
+	// Hash into smaller bitstring since it is sparse.
+	// We'll hope for no collisions :)
+	hash := md5.Sum(buf[:3*len(is.History)+8])
+	return string(hash[:])
 }
 
 // Action is packed as bits within a [3]uint8:
@@ -151,41 +163,4 @@ func encodeAction(a Action) [3]uint8 {
 	result[2] = uint8(a.CardsSeen[1])
 	result[2] += uint8(a.CardsSeen[2] << 4)
 	return result
-}
-
-func decodeAction(packed [3]uint8) Action {
-	return Action{
-		Player:             Player(packed[0] & 0x1),
-		Type:               ActionType((packed[0] >> 1) & 0x7),
-		Card:               cards.Card(packed[0] >> 4),
-		PositionInDrawPile: uint8(packed[1] & 0xf),
-		CardsSeen: [3]cards.Card{
-			cards.Card(packed[1] >> 4),
-			cards.Card(packed[2] & 0xf),
-			cards.Card(packed[2] >> 4),
-		},
-	}
-}
-
-type InfoSet struct {
-	History History
-	Hand    cards.Set
-}
-
-func (is InfoSet) Key() string {
-	var buf [3*MaxNumActions + 8]byte
-	for i := 0; i < is.History.Len(); i++ {
-		packed := is.History.actions[i]
-		buf[i] = packed[0]
-		buf[i+1] = packed[1]
-		buf[i+2] = packed[2]
-	}
-
-	// Player's hand is appended to private game history.
-	binary.LittleEndian.PutUint64(buf[3*is.History.Len():], uint64(is.Hand))
-
-	// Hash into smaller bitstring since it is sparse.
-	// We'll hope for no collisions :)
-	hash := md5.Sum(buf[:3*is.History.Len()+8])
-	return string(hash[:])
 }

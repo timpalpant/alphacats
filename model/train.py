@@ -2,6 +2,7 @@ import argparse
 import glob
 import logging
 import os
+import shutil
 
 from keras import backend as K
 from keras.callbacks import (
@@ -128,6 +129,9 @@ def main():
         logging.info(node.name)
 
     model, history = train(model, data, val_data)
+
+    if os.path.exists(args.output):
+      shutil.rmtree(args.output)
 
     logging.info("Saving model to %s", args.output)
     builder = tf.saved_model.builder.SavedModelBuilder(args.output)

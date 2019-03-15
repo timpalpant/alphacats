@@ -14,9 +14,12 @@ import (
 	"github.com/timpalpant/alphacats/gamestate"
 )
 
-const (
-	graphTag = "lstm"
-)
+const graphTag = "lstm"
+
+// tfConfig is tf.ConfigProto(
+//   gpu_options=tf.GPUOptions(allow_growth=True)
+// ).SerializeToString()
+var tfConfig = []byte{50, 2, 32, 1}
 
 type Params struct {
 	BatchSize      int
@@ -76,7 +79,8 @@ type TrainedLSTM struct {
 }
 
 func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
-	model, err := tf.LoadSavedModel(dir, []string{graphTag}, nil)
+	opts := &tf.SessionOptions{Config: tfConfig}
+	model, err := tf.LoadSavedModel(dir, []string{graphTag}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -86,12 +90,15 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
-	is := infoSet.(gamestate.InfoSet)
-	historyTensor, err := tf.NewTensor(EncodeHistory(is.History))
+	is := infoSet.(*gamestate.InfoSet)
+	history := EncodeHistory(is.History)
+	historyTensor, err := tf.NewTensor([][][]float32{history})
 	if err != nil {
 		glog.Fatal(err)
 	}
-	handTensor, err := tf.NewTensor(encodeHand(is.Hand))
+
+	hand := encodeHand(is.Hand)
+	handTensor, err := tf.NewTensor([][]float32{hand})
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -102,7 +109,7 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 			m.model.Graph.Operation("hand").Output(0):    handTensor,
 		},
 		[]tf.Output{
-			m.model.Graph.Operation("output").Output(0),
+			m.model.Graph.Operation("output/BiasAdd").Output(0),
 		},
 		nil,
 	)
@@ -111,8 +118,10 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 		glog.Fatal(err)
 	}
 
-	advantages := result[0].Value().([]float32)
-	glog.V(1).Infof("Predicted advantages: %v", advantages)
+	prediction := result[0].Value().([][]float32)
+	glog.V(1).Infof("Predicted advantages: %v", prediction)
+
+	advantages := prediction[0][:nActions]
 	makePositive(advantages)
 	total := sum(advantages)
 

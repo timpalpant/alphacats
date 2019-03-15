@@ -49,6 +49,8 @@ func (s Stack) IsEmpty() bool {
 // Len is O(n) for the number of Cards in the Stack.
 func (s Stack) Len() int {
 	n := 0
+	// NOTE: Empirically in our workload this seems faster than binary search,
+	// probably because the stack (deck) is often (near) empty (in terminal nodes).
 	s.Iter(func(card Card) { n++ })
 	return n
 }

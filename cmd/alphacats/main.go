@@ -42,9 +42,11 @@ func getPolicy(cfrType string, params model.Params, bufSize int) cfr.StrategyPro
 		return cfr.NewStrategyTable(cfr.DiscountParams{})
 	case "deep":
 		lstm := model.NewLSTM(params)
-		p0Buffer := deepcfr.NewReservoirBuffer(bufSize)
-		p1Buffer := deepcfr.NewReservoirBuffer(bufSize)
-		return deepcfr.New(lstm, p0Buffer, p1Buffer)
+		buffers := []deepcfr.Buffer{
+			deepcfr.NewReservoirBuffer(bufSize),
+			deepcfr.NewReservoirBuffer(bufSize),
+		}
+		return deepcfr.New(lstm, buffers)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", cfrType))
 	}
@@ -89,16 +91,6 @@ func main() {
 
 		glog.Infof("[t=%d] Training network", t)
 		policy.Update()
-
-		if t%(*iter/10) == 0 { // Save 10 snapshots.
-			// TODO(palpant): Implement marshalling for DeepCFR policy,
-			// which should save the current sample buffers + trained models.
-			if policy, ok := policy.(*cfr.StrategyTable); ok {
-				if err := savePolicy(policy, *outputDir, t); err != nil {
-					glog.Fatal(err)
-				}
-			}
-		}
 	}
 }
 

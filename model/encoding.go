@@ -22,7 +22,7 @@ func encodeHistories(samples []deepcfr.Sample) []float32 {
 	n := len(samples) * gamestate.MaxNumActions * numHistoryFeatures
 	result := make([]float32, 0, n)
 	for _, sample := range samples {
-		is := sample.InfoSet.(gamestate.InfoSet)
+		is := sample.InfoSet.(*gamestate.InfoSet)
 		X := EncodeHistory(is.History)
 		for _, row := range X {
 			result = append(result, row...)
@@ -38,15 +38,14 @@ func encodeHistories(samples []deepcfr.Sample) []float32 {
 //  - One hot encoded Card (10)
 //  - One hot encoded position in draw pile (13)
 //  - Concatenated one hot cards seen (3x10)
-func EncodeHistory(h gamestate.History) [][]float32 {
+func EncodeHistory(h []gamestate.Action) [][]float32 {
 	result := make([][]float32, gamestate.MaxNumActions)
 
-	for i := 0; i < h.Len(); i++ {
-		action := h.Get(i)
+	for i, action := range h {
 		result[i] = encodeAction(action)
 	}
 
-	for i := h.Len(); i < len(result); i++ {
+	for i := len(h); i < len(result); i++ {
 		result[i] = make([]float32, numHistoryFeatures)
 	}
 
@@ -71,7 +70,7 @@ func encodeAction(action gamestate.Action) []float32 {
 func encodeHands(samples []deepcfr.Sample) []float32 {
 	result := make([]float32, 0, len(samples)*cards.NumTypes)
 	for _, sample := range samples {
-		is := sample.InfoSet.(gamestate.InfoSet)
+		is := sample.InfoSet.(*gamestate.InfoSet)
 		X := encodeHand(is.Hand)
 		result = append(result, X...)
 	}

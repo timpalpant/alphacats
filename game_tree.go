@@ -46,11 +46,15 @@ type GameNode struct {
 	// pendingTurns is the number of turns the player has outstanding
 	// to play. In general this will be 1, except when Slap cards are played.
 	pendingTurns int
+	// nDrawPileCards is used lazily be ShuffleDrawPile nodes to cache
+	// the number of cards in the draw pile.
+	nDrawPileCards int
 
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
 	children []GameNode
 
+	rng    *rand.Rand
 	gnPool *gameNodeSlicePool
 }
 
@@ -66,6 +70,7 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:       gamestate.Player0,
 		turnType:     PlayTurn,
 		pendingTurns: 1,
+		rng:          rand.New(rand.NewSource(rand.Int63())),
 		gnPool:       &gameNodeSlicePool{},
 	}
 }
@@ -87,6 +92,11 @@ func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
 	randPos = rand.Intn(drawPile.Len() + 1)
 	drawPile.InsertCard(cards.Defuse, randPos)
 	return NewGame(drawPile, p0Deal, p1Deal)
+}
+
+func (gn *GameNode) Liberate() {
+	gn.rng = rand.New(rand.NewSource(rand.Int63()))
+	gn.gnPool = &gameNodeSlicePool{}
 }
 
 // Type implements cfr.GameTreeNode.
@@ -116,7 +126,7 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 }
 
 // Utility implements cfr.GameTreeNode.
-func (gn *GameNode) Utility(player int) float32 {
+func (gn *GameNode) Utility(player int) float64 {
 	if gn.Type() != cfr.TerminalNode {
 		panic("cannot get the utility of a non-terminal node")
 	}
@@ -179,7 +189,7 @@ func (gn *GameNode) NumChildren() int {
 	// Chance children are lazily generated because we always sample them
 	// but we can easily compute how many there will be.
 	if gn.turnType == ShuffleDrawPile {
-		return factorial[gn.state.GetDrawPile().Len()]
+		return factorial[gn.nDrawPileCards]
 	}
 
 	if gn.children == nil {
@@ -204,13 +214,20 @@ func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 }
 
 // GetChildProbability implements cfr.GameTreeNode.
-func (gn *GameNode) GetChildProbability(i int) float32 {
+func (gn *GameNode) GetChildProbability(i int) float64 {
 	if gn.Type() != cfr.ChanceNode {
 		panic("cannot get the probability of a non-chance node")
 	}
 
-	nShuffles := gn.NumChildren()
-	return 1.0 / float32(nShuffles)
+	// Uniform random over all possible shuffles / insertion spots.
+	return 1.0 / float64(gn.NumChildren())
+}
+
+// SampleChild implements cfr.GameTreeNode.
+func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
+	// All chance nodes are uniform random over their children.
+	selected := gn.rng.Intn(gn.NumChildren())
+	return gn.GetChild(selected), gn.GetChildProbability(selected)
 }
 
 // Close implements cfr.GameTreeNode.
@@ -286,6 +303,7 @@ func (gn *GameNode) buildPlayTurnChildren() {
 			makePlayTurnNode(child, gn.player, gn.pendingTurns-1)
 		case cards.Shuffle:
 			child.turnType = ShuffleDrawPile
+			child.nDrawPileCards = gn.state.GetDrawPile().Len()
 		case cards.Slap1x, cards.Slap2x:
 			// Ends our turn (and all pending turns). Goes to next player with
 			// any pending turns + slap.

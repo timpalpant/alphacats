@@ -41,10 +41,10 @@ func main() {
 	deck := cards.CoreDeck.AsSlice()
 	for i := 0; i < *numBatches; i++ {
 		glog.Infof("Collecting %d samples", *batchSize)
-		samples := make([]Sample, *batchSize)
-		for j := 0; j < *batchSize; j++ {
+		samples := make([]Sample, 0, *batchSize)
+		for len(samples) < *batchSize {
 			game := alphacats.NewRandomGame(deck, 4)
-			samples[j] = collectSample(game)
+			samples = append(samples, collectSamples(game)...)
 		}
 
 		batchName := fmt.Sprintf("batch_%08d", i)
@@ -55,16 +55,16 @@ func main() {
 	}
 }
 
-func collectSample(game *alphacats.GameNode) Sample {
+func collectSamples(game cfr.GameTreeNode) []Sample {
 	// Play out the given game to the end, choosing actions uniformly randomly.
 	var terminalHistory []Sample
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
-			game = cfr.SampleChanceNode(game).(*alphacats.GameNode)
+			game, _ = game.SampleChild()
 		} else {
 			// All samples are collected from the POV of player 0.
 			is := game.InfoSet(0).(gamestate.InfoSet)
-			drawPile := game.GetDrawPile()
+			drawPile := game.(*alphacats.GameNode).GetDrawPile()
 			sample := Sample{
 				History:                 is.History,
 				ExplodingKittenPosition: getKittenPosition(drawPile),
@@ -78,13 +78,11 @@ func collectSample(game *alphacats.GameNode) Sample {
 
 			// Randomly choose a player action.
 			selected := rand.Intn(game.NumChildren())
-			game = game.GetChild(selected).(*alphacats.GameNode)
+			game = game.GetChild(selected)
 		}
 	}
 
-	// Choose one point in this game to use as a training sample.
-	selected := rand.Intn(len(terminalHistory))
-	return terminalHistory[selected]
+	return terminalHistory
 }
 
 func getKittenPosition(drawPile cards.Stack) int {

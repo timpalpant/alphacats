@@ -109,32 +109,32 @@ func (h *History) GetInfoSet(player Player, hand cards.Set) *InfoSet {
 
 // Censor the given full game history to contain only info available
 // to the given player.
-func (h *History) asViewedBy(player Player) []Action {
-	result := make([]Action, h.n)
-	copy(result, h.actions[:h.n])
-	for i := range result {
-		if result[i].Player != player {
+func (h *History) asViewedBy(player Player) []EncodedAction {
+	result := make([]EncodedAction, h.n)
+	for i, action := range h.actions[:h.n] {
+		if action.Player != player {
 			// Hide the non-public information.
-			result[i].PositionInDrawPile = 0
-			result[i].CardsSeen = [3]cards.Card{}
+			action.PositionInDrawPile = 0
+			action.CardsSeen = [3]cards.Card{}
 		}
+
+		result[i] = encodeAction(action)
 	}
 
 	return result
 }
 
 type InfoSet struct {
-	History []Action
+	History []EncodedAction
 	Hand    cards.Set
 }
 
 func (is *InfoSet) Key() string {
 	var buf [3*MaxNumActions + 8]byte
 	for i, action := range is.History {
-		packed := encodeAction(action)
-		buf[i] = packed[0]
-		buf[i+1] = packed[1]
-		buf[i+2] = packed[2]
+		buf[i] = action[0]
+		buf[i+1] = action[1]
+		buf[i+2] = action[2]
 	}
 
 	// Player's hand is appended to private game history.
@@ -153,8 +153,8 @@ func (is *InfoSet) Key() string {
 //   [8-11] PositionInDrawPile (0 - 13)
 //   [12-24] 3 Cards (1 - 10)
 // Thus the first byte is public info, the second two bytes are private info.
-func encodeAction(a Action) [3]uint8 {
-	var result [3]uint8
+func encodeAction(a Action) EncodedAction {
+	var result EncodedAction
 	result[0] = uint8(a.Player)
 	result[0] += uint8(a.Type << 1)
 	result[0] += uint8(a.Card << 4)
@@ -163,4 +163,20 @@ func encodeAction(a Action) [3]uint8 {
 	result[2] = uint8(a.CardsSeen[1])
 	result[2] += uint8(a.CardsSeen[2] << 4)
 	return result
+}
+
+type EncodedAction [3]uint8
+
+func (packed EncodedAction) Decode() Action {
+	return Action{
+		Player:             Player(packed[0] & 0x1),
+		Type:               ActionType((packed[0] >> 1) & 0x7),
+		Card:               cards.Card(packed[0] >> 4),
+		PositionInDrawPile: uint8(packed[1] & 0xf),
+		CardsSeen: [3]cards.Card{
+			cards.Card(packed[1] >> 4),
+			cards.Card(packed[2] & 0xf),
+			cards.Card(packed[2] >> 4),
+		},
+	}
 }

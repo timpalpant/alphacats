@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 
 	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
 )
 
+const maxConcurrentIOWorkers = 4
+
 func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int) error {
 	// Write each batch as npz within the given directory.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	sem := make(chan struct{}, runtime.NumCPU())
+	sem := make(chan struct{}, maxConcurrentIOWorkers)
 	var retErr error
 	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
 		sem <- struct{}{}

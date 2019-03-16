@@ -22,7 +22,7 @@ import (
 
 const (
 	graphTag               = "lstm"
-	maxPredictionBatchSize = 128
+	maxPredictionBatchSize = 256
 )
 
 // tfConfig is tf.ConfigProto(

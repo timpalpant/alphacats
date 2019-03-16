@@ -8,6 +8,8 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
@@ -43,8 +45,8 @@ func getPolicy(cfrType string, params model.Params, bufSize int) cfr.StrategyPro
 	case "deep":
 		lstm := model.NewLSTM(params)
 		buffers := []deepcfr.Buffer{
-			deepcfr.NewReservoirBuffer(bufSize),
-			deepcfr.NewReservoirBuffer(bufSize),
+			deepcfr.NewThreadSafeReservoirBuffer(bufSize),
+			deepcfr.NewThreadSafeReservoirBuffer(bufSize),
 		}
 		return deepcfr.New(lstm, buffers)
 	default:
@@ -81,13 +83,23 @@ func main() {
 
 	deck := cards.TestDeck.AsSlice()
 	cardsPerPlayer := (len(deck) / 2) - 1
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU())
 	for t := 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting samples", t)
 		for k := 1; k <= *traversalsPerIter; k++ {
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-			opt.Run(game)
+			sem <- struct{}{}
+			wg.Add(1)
+			go func() {
+				opt.Run(game)
+				<-sem
+				wg.Done()
+			}()
 		}
+		wg.Wait()
 
 		glog.Infof("[t=%d] Training network", t)
 		policy.Update()

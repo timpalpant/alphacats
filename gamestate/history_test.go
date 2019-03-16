@@ -12,8 +12,8 @@ func TestEncodeDecode(t *testing.T) {
 		for _, actionType := range allActions {
 			for card := cards.Card(0); card <= cards.Cat; card++ {
 				action := Action{Player: player, Type: actionType, Card: card}
-				packed := encodeAction(action)
-				decoded := decodeAction(packed)
+				packed := EncodeAction(action)
+				decoded := packed.Decode()
 				if !reflect.DeepEqual(action, decoded) {
 					t.Errorf("input: %+v, output: %+v", action, decoded)
 				}

@@ -79,12 +79,13 @@ func main() {
 	policy := getPolicy(*cfrType, params, *bufSize)
 	opt := getCFRAlgo(policy, *samplingType)
 
-	deck := cards.CoreDeck.AsSlice()
+	deck := cards.TestDeck.AsSlice()
+	cardsPerPlayer := (len(deck) / 2) - 1
 	for t := 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting samples", t)
 		for k := 1; k <= *traversalsPerIter; k++ {
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
-			game := alphacats.NewRandomGame(deck, 4)
+			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			opt.Run(game)
 		}
 

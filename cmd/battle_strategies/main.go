@@ -67,7 +67,7 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 func playGame(policy0, policy1 cfr.StrategyProfile, game cfr.GameTreeNode) int {
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
-			game = cfr.SampleChanceNode(game)
+			game, _ = cfr.SampleChanceNode(game)
 		} else if game.Player() == 0 {
 			strategy := policy0.GetStrategy(game).GetAverageStrategy()
 			selected := sampleStrategy(strategy)

@@ -22,7 +22,7 @@ import (
 const maxCardsInDrawPile = 13
 
 type Sample struct {
-	History                 gamestate.History
+	History                 []gamestate.EncodedAction
 	ExplodingKittenPosition int
 }
 
@@ -63,7 +63,7 @@ func collectSamples(game cfr.GameTreeNode) []Sample {
 			game, _ = game.SampleChild()
 		} else {
 			// All samples are collected from the POV of player 0.
-			is := game.InfoSet(0).(gamestate.InfoSet)
+			is := game.InfoSet(0).(*gamestate.InfoSet)
 			drawPile := game.(*alphacats.GameNode).GetDrawPile()
 			sample := Sample{
 				History:                 is.History,

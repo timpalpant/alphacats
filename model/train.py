@@ -88,7 +88,7 @@ def train(model, data, val_data):
         data,
         epochs=50,
         validation_data=val_data,
-        use_multiprocessing=True,
+        use_multiprocessing=False,
         workers=2,
         max_queue_size=2,
         callbacks=[

@@ -108,6 +108,14 @@ func (h *History) GetInfoSet(player Player, hand cards.Set) *InfoSet {
 	}
 }
 
+func (h *History) AsSlice() []Action {
+	result := make([]Action, h.Len())
+	for i := range result {
+		result[i] = h.Get(i)
+	}
+	return result
+}
+
 // Censor the given full game history to contain only info available
 // to the given player.
 func (h *History) asViewedBy(player Player) []EncodedAction {

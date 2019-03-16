@@ -88,6 +88,9 @@ def train(model, data, val_data):
         data,
         epochs=50,
         validation_data=val_data,
+        use_multiprocessing=True,
+        workers=2,
+        max_queue_size=2,
         callbacks=[
             EarlyStopping(
                 monitor='val_loss', min_delta=0.001, patience=3,

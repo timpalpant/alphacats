@@ -63,7 +63,7 @@ func main() {
 	traversalsPerIter := flag.Int("traversals_per_iter", 10000000,
 		"Number of OS-CFR traversals to perform each iteration")
 	outputDir := flag.String("output_dir", "", "Directory to save policies to")
-	flag.IntVar(&params.BatchSize, "batch_size", 10000,
+	flag.IntVar(&params.BatchSize, "batch_size", 4096,
 		"Size of minibatches to save for network training")
 	flag.StringVar(&params.ModelOutputDir, "model_dir", "",
 		"Directory to save trained network models to")
@@ -79,22 +79,28 @@ func main() {
 	policy := getPolicy(*cfrType, params, *bufSize)
 	opt := getCFRAlgo(policy, *samplingType)
 
-	deck := cards.TestDeck.AsSlice()
-	cardsPerPlayer := (len(deck) / 2) - 1
+	deck := cards.CoreDeck.AsSlice()
 	for t := 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting samples", t)
 		for k := 1; k <= *traversalsPerIter; k++ {
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
-			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
+			game := alphacats.NewRandomGame(deck, 4)
 			opt.Run(game)
 		}
 
 		glog.Infof("[t=%d] Training network", t)
 		policy.Update()
+
+		// Save 10 snapshots throughout the course of training.
+		if t%(*iter/10) == 0 {
+			if err := savePolicy(policy, *outputDir, t); err != nil {
+				glog.Fatal(err)
+			}
+		}
 	}
 }
 
-func savePolicy(policy *cfr.StrategyTable, outputDir string, iter int) error {
+func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
 	name := fmt.Sprintf("iter_%d.policy", iter)
 	outputFile := filepath.Join(outputDir, name)
 	glog.Infof("[t=%d] Saving current policy to %v", iter, outputFile)

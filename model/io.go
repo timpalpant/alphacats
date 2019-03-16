@@ -13,9 +13,9 @@ import (
 
 // Writing to npz files is slow, but we have to buffer the (large)
 // one-hot encoded feature tensors in memory before they are written out.
-// Each batch of 4096 samples requires ~200MB of memory, so this works
+// Each batch of 4096 samples requires ~100MB of memory, so this works
 // out to ~1.6GB required for I/O.
-const maxConcurrentIOWorkers = 8
+const maxConcurrentIOWorkers = 16
 
 func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int) error {
 	// Write each batch as npz within the given directory.

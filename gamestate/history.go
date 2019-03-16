@@ -71,7 +71,7 @@ const MaxNumActions = 48
 // History records the history of game actions to reach this state.
 // It is pre-sized to avoid allocations and keep GameState easily copyable.
 type History struct {
-	actions [MaxNumActions]Action
+	actions [MaxNumActions]EncodedAction
 	n       int
 }
 
@@ -88,7 +88,7 @@ func (h *History) Get(i int) Action {
 		panic(fmt.Errorf("index out of range: %d %v", i, h))
 	}
 
-	return h.actions[i]
+	return h.actions[i].Decode()
 }
 
 func (h *History) Append(action Action) {
@@ -96,7 +96,7 @@ func (h *History) Append(action Action) {
 		panic(fmt.Errorf("history exceeded max capacity: %v", h))
 	}
 
-	h.actions[h.n] = action
+	h.actions[h.n] = EncodeAction(action)
 	h.n++
 }
 
@@ -112,14 +112,13 @@ func (h *History) GetInfoSet(player Player, hand cards.Set) *InfoSet {
 // to the given player.
 func (h *History) asViewedBy(player Player) []EncodedAction {
 	result := make([]EncodedAction, h.n)
-	for i, action := range h.actions[:h.n] {
-		if action.Player != player {
+	copy(result, h.actions[:h.n])
+	for i, packed := range result {
+		if player != Player(packed[0]&0x1) {
 			// Hide the non-public information.
-			action.PositionInDrawPile = 0
-			action.CardsSeen = [3]cards.Card{}
+			result[i][1] = 0
+			result[i][2] = 0
 		}
-
-		result[i] = EncodeAction(action)
 	}
 
 	return result

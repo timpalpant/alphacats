@@ -20,7 +20,10 @@ import (
 	"github.com/timpalpant/alphacats/gamestate"
 )
 
-const graphTag = "lstm"
+const (
+	graphTag               = "lstm"
+	maxPredictionBatchSize = 128
+)
 
 // tfConfig is tf.ConfigProto(
 //   gpu_options=tf.GPUOptions(allow_growth=True)
@@ -112,6 +115,7 @@ func (m *LSTM) GobEncode() ([]byte, error) {
 type TrainedLSTM struct {
 	dir   string
 	model *tf.SavedModel
+	reqCh chan predictionRequest
 }
 
 func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
@@ -121,43 +125,28 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 		return nil, err
 	}
 
-	return &TrainedLSTM{dir, model}, nil
+	m := &TrainedLSTM{
+		dir:   dir,
+		model: model,
+		reqCh: make(chan predictionRequest, 1),
+	}
+	go m.bgPredictionHandler()
+	return m, nil
 }
 
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	is := infoSet.(*gamestate.InfoSet)
-	history := EncodeHistory(is.History)
-	historyTensor, err := tf.NewTensor([][][]float32{history})
-	if err != nil {
-		glog.Fatal(err)
+	req := predictionRequest{
+		history:  EncodeHistory(is.History),
+		hand:     encodeHand(is.Hand),
+		resultCh: make(chan []float32),
 	}
 
-	hand := encodeHand(is.Hand)
-	handTensor, err := tf.NewTensor([][]float32{hand})
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	result, err := m.model.Session.Run(
-		map[tf.Output]*tf.Tensor{
-			m.model.Graph.Operation("history").Output(0): historyTensor,
-			m.model.Graph.Operation("hand").Output(0):    handTensor,
-		},
-		[]tf.Output{
-			m.model.Graph.Operation("output/BiasAdd").Output(0),
-		},
-		nil,
-	)
-
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	prediction := result[0].Value().([][]float32)
+	m.reqCh <- req
+	prediction := <-req.resultCh
 	glog.V(1).Infof("Predicted advantages: %v", prediction)
-
-	advantages := prediction[0][:nActions]
+	advantages := prediction[:nActions]
 	makePositive(advantages)
 	total := sum(advantages)
 
@@ -184,6 +173,93 @@ func (m *TrainedLSTM) GobDecode(buf []byte) error {
 
 func (m *TrainedLSTM) GobEncode() ([]byte, error) {
 	return []byte(m.dir), nil
+}
+
+func (m *TrainedLSTM) Close() {
+	close(m.reqCh)
+	// TODO: Wait for final batch, if there is one.
+	m.model.Session.Close()
+}
+
+type predictionRequest struct {
+	history  [][]float32
+	hand     []float32
+	resultCh chan []float32
+}
+
+// Handles prediction requests, attempting to batch all pending requests.
+func (m *TrainedLSTM) bgPredictionHandler() {
+	var batch []predictionRequest
+
+	for {
+		batch, closed := drainPendingRequests(m.reqCh, batch)
+		if len(batch) > 0 {
+			predictBatch(m.model, batch)
+			batch = batch[:0]
+		}
+
+		if closed {
+			return
+		}
+	}
+}
+
+// Drain channel, collecting all pending prediction requests.
+func drainPendingRequests(reqCh chan predictionRequest, batch []predictionRequest) ([]predictionRequest, bool) {
+	for {
+		select {
+		case req, ok := <-reqCh:
+			if !ok {
+				return batch, true
+			}
+
+			batch = append(batch, req)
+			if len(batch) >= maxPredictionBatchSize {
+				return batch, false
+			}
+		default:
+			return batch, false
+		}
+	}
+}
+
+func predictBatch(model *tf.SavedModel, batch []predictionRequest) {
+	histories := make([][][]float32, len(batch))
+	hands := make([][]float32, len(batch))
+	for i, req := range batch {
+		histories[i] = req.history
+		hands[i] = req.hand
+	}
+
+	historyTensor, err := tf.NewTensor(histories)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	handTensor, err := tf.NewTensor(hands)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	result, err := model.Session.Run(
+		map[tf.Output]*tf.Tensor{
+			model.Graph.Operation("history").Output(0): historyTensor,
+			model.Graph.Operation("hand").Output(0):    handTensor,
+		},
+		[]tf.Output{
+			model.Graph.Operation("output/BiasAdd").Output(0),
+		},
+		nil,
+	)
+
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	predictions := result[0].Value().([][]float32)
+	for i, req := range batch {
+		req.resultCh <- predictions[i]
+	}
 }
 
 func makePositive(v []float32) {

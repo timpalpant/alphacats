@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
 )
@@ -35,6 +36,8 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 			batch := samples[batchStart:batchEnd]
 			batchName := fmt.Sprintf("batch_%08d.npz", batchNum)
 			batchFilename := filepath.Join(directory, batchName)
+			glog.V(2).Infof("Saving batch %d (%d samples) to %v",
+				batchNum, len(batch), batchFilename)
 			if err := saveBatch(batch, batchFilename); err != nil {
 				mu.Lock()
 				defer mu.Unlock()

@@ -62,8 +62,8 @@ func main() {
 	seed := flag.Int64("seed", 123, "Random seed")
 	iter := flag.Int("iter", 100, "Number of DeepCFR iterations to perform")
 	bufSize := flag.Int("buf_size", 10000000, "Size of reservoir sample buffer")
-	traversalsPerIter := flag.Int("traversals_per_iter", 10000000,
-		"Number of OS-CFR traversals to perform each iteration")
+	traversalsPerIter := flag.Int("traversals_per_iter", 30000,
+		"Number of ES-CFR traversals to perform each iteration")
 	outputDir := flag.String("output_dir", "", "Directory to save policies to")
 	flag.IntVar(&params.BatchSize, "batch_size", 4096,
 		"Size of minibatches to save for network training")

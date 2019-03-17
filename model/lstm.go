@@ -145,7 +145,7 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 
 	m.reqCh <- req
 	prediction := <-req.resultCh
-	glog.V(1).Infof("Predicted advantages: %v", prediction)
+	glog.V(3).Infof("Predicted advantages: %v", prediction)
 	advantages := prediction[:nActions]
 	makePositive(advantages)
 	total := sum(advantages)

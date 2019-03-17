@@ -1,13 +1,14 @@
 package model
 
 import (
-	"archive/zip"
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/golang/glog"
+	"github.com/klauspost/compress/zip"
 	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
 )
@@ -68,7 +69,9 @@ func SaveNPZFile(filename string, data map[string]interface{}) error {
 		return err
 	}
 	defer f.Close()
-	z := zip.NewWriter(f)
+	bufW := bufio.NewWriter(f)
+	defer bufW.Flush()
+	z := zip.NewWriter(bufW)
 	defer z.Close()
 
 	// Write each npy entry into the npz file.

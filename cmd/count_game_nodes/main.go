@@ -1,4 +1,4 @@
-// Generate and save samples of exploding kitten position for analysis in Python.
+// Script to estimate the number of nodes touched in an external sampling run.
 package main
 
 import (
@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
-	"sync"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
@@ -22,53 +21,32 @@ func main() {
 
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
-	total := countNodes(game, 0)
+	rng := rand.New(rand.NewSource(rand.Int63()))
+	total := countNodes(game, rng, 0)
 	glog.Infof("%d nodes in game", total)
 }
 
-func countNodes(node cfr.GameTreeNode, depth int) int {
+func countNodes(node cfr.GameTreeNode, rng *rand.Rand, depth int) int {
 	switch node.Type() {
 	case cfr.ChanceNode:
 		child, _ := node.SampleChild()
-		total := countNodes(child, depth+1) + 1
+		total := countNodes(child, rng, depth+1) + 1
 		node.Close()
 		return total
 	case cfr.PlayerNode:
 		if node.Player() == 0 {
-			if depth < 5 {
-				var wg sync.WaitGroup
-				var mu sync.Mutex
-				total := 1
-				for i := 0; i < node.NumChildren(); i++ {
-					child := node.GetChild(i)
-					child.(*alphacats.GameNode).Liberate()
-					wg.Add(1)
-					go func() {
-						result := countNodes(child, depth+1)
-						mu.Lock()
-						total += result
-						mu.Unlock()
-						wg.Done()
-					}()
-				}
-
-				wg.Wait()
-				node.Close()
-				return total
-			} else {
-				total := 1
-				for i := 0; i < node.NumChildren(); i++ {
-					child := node.GetChild(i)
-					total += countNodes(child, depth+1)
-				}
-
-				node.Close()
-				return total
+			total := 1
+			for i := 0; i < node.NumChildren(); i++ {
+				child := node.GetChild(i)
+				total += countNodes(child, rng, depth+1)
 			}
+
+			node.Close()
+			return total
 		} else {
-			selected := rand.Intn(node.NumChildren())
+			selected := rng.Intn(node.NumChildren())
 			child := node.GetChild(selected)
-			total := countNodes(child, depth+1) + 1
+			total := countNodes(child, rng, depth+1) + 1
 			node.Close()
 			return total
 		}

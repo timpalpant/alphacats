@@ -202,18 +202,16 @@ type predictionRequest struct {
 
 // Handles prediction requests, attempting to batch all pending requests.
 func (m *TrainedLSTM) bgPredictionHandler() {
-	for {
-		// Wait for one request (or shutdown).
-		req, ok := <-m.reqCh
-		if !ok {
-			return
-		}
+	var batch []predictionRequest
 
-		// Drain any other requests currently pending to batch them together.
-		batch := []predictionRequest{req}
+	for {
 		batch, closed := drainPendingRequests(m.reqCh, batch)
-		// Run prediction for this batch.
-		go predictBatch(m.model, batch)
+		if len(batch) > 0 {
+			predictBatch(m.model, batch)
+			samplesPredicted.Add(int64(len(batch)))
+			batchesPredicted.Add(1)
+			batch = batch[:0]
+		}
 
 		if closed {
 			return
@@ -277,9 +275,6 @@ func predictBatch(model *tf.SavedModel, batch []predictionRequest) {
 	for i, req := range batch {
 		req.resultCh <- predictions[i]
 	}
-
-	samplesPredicted.Add(int64(len(batch)))
-	batchesPredicted.Add(1)
 }
 
 func makePositive(v []float32) {

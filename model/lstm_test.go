@@ -20,10 +20,6 @@ const testModel = "testdata/savedmodel"
 // without request batching:
 // BenchmarkPredict-24            	500	    2741763 ns/op
 // BenchmarkPredictParallel-24    	500	    2848236 ns/op
-//
-// with async request batching:
-// BenchmarkPredict-24            	500	    2686052 ns/op
-// BenchmarkPredictParallel-24    	500	    3134419 ns/op
 func BenchmarkPredict(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)

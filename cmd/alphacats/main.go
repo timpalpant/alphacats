@@ -155,6 +155,8 @@ func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
 }
 
 func loadPolicy(cfrType, filename string) cfr.StrategyProfile {
+	glog.Infof("Loading saved %v policy from: %v", cfrType, filename)
+	start := time.Now()
 	f, err := os.Open(filename)
 	if err != nil {
 		glog.Fatal(err)
@@ -181,5 +183,6 @@ func loadPolicy(cfrType, filename string) cfr.StrategyProfile {
 		glog.Fatal(err)
 	}
 
+	glog.Infof("Finished loading policy (took: %v)", time.Since(start))
 	return policy
 }

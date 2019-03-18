@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/klauspost/compress/zip"
@@ -24,6 +25,7 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	sem := make(chan struct{}, maxConcurrentIOWorkers)
+	start := time.Now()
 	var retErr error
 	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
 		sem <- struct{}{}
@@ -50,6 +52,10 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 	}
 
 	wg.Wait()
+
+	elapsed := time.Since(start)
+	sps := float64(len(samples)) / elapsed.Seconds()
+	glog.V(1).Infof("Finished saving training data (took: %v, %.1f samples/sec)", elapsed, sps)
 	return retErr
 }
 

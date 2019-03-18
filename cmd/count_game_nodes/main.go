@@ -15,8 +15,10 @@ import (
 )
 
 func main() {
+	seed := flag.Int64("seed", 123, "Seed for random game")
 	flag.Parse()
 
+	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4124", nil)
 
 	deck := cards.CoreDeck.AsSlice()

@@ -7,10 +7,12 @@ package model
 import (
 	"bytes"
 	"encoding/gob"
+	"expvar"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/golang/glog"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
@@ -23,6 +25,11 @@ import (
 const (
 	graphTag               = "lstm"
 	maxPredictionBatchSize = 256
+)
+
+var (
+	samplesPredicted = expvar.NewInt("num_predicted_samples")
+	batchesPredicted = expvar.NewInt("num_predicted_batches")
 )
 
 // tfConfig is tf.ConfigProto(
@@ -57,7 +64,8 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	defer os.RemoveAll(tmpDir)
 
 	glog.Infof("Saving training data to: %v", tmpDir)
-	if err := saveTrainingData(samples.GetSamples(), tmpDir, m.params.BatchSize); err != nil {
+	trainingData := samples.GetSamples()
+	if err := saveTrainingData(trainingData, tmpDir, m.params.BatchSize); err != nil {
 		glog.Fatal(err)
 	}
 
@@ -67,10 +75,15 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	glog.Infof("Running: %v", cmd.Args)
+	start := time.Now()
 	if err := cmd.Run(); err != nil {
 		glog.Fatal(err)
 	}
 
+	elapsed := time.Since(start)
+	sps := float64(len(trainingData)) / elapsed.Seconds()
+	glog.V(1).Infof("Finished training (took %v, %v samples/sec)",
+		elapsed, sps)
 	m.iter++
 
 	// Load trained model.
@@ -195,6 +208,8 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 		batch, closed := drainPendingRequests(m.reqCh, batch)
 		if len(batch) > 0 {
 			predictBatch(m.model, batch)
+			samplesPredicted.Add(int64(len(batch)))
+			batchesPredicted.Add(1)
 			batch = batch[:0]
 		}
 

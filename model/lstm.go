@@ -211,12 +211,14 @@ type predictionRequest struct {
 
 // Handles prediction requests, attempting to batch all pending requests.
 func (m *TrainedLSTM) bgPredictionHandler() {
-	var batch []*predictionRequest
+	encodeCh := make(chan []*predictionRequest)
+	defer close(encodeCh)
+	go handleEncoding(m.model, encodeCh)
 
 	for {
-		batch, closed := drainPendingRequests(m.reqCh, batch)
+		batch, closed := drainPendingRequests(m.reqCh)
 		if len(batch) > 0 {
-			predictBatch(m.model, batch)
+			encodeCh <- batch
 			samplesPredicted.Add(int64(len(batch)))
 			batchesPredicted.Add(1)
 			batch = batch[:0]
@@ -229,15 +231,14 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 }
 
 // Drain channel, collecting all pending prediction requests.
-func drainPendingRequests(reqCh chan *predictionRequest, batch []*predictionRequest) ([]*predictionRequest, bool) {
+func drainPendingRequests(reqCh chan *predictionRequest) ([]*predictionRequest, bool) {
 	// Wait for first requst.
 	req, ok := <-reqCh
 	if !ok {
-		return batch, false
+		return nil, false
 	}
 
-	batch = append(batch, req)
-
+	batch := []*predictionRequest{req}
 	for {
 		select {
 		case req, ok := <-reqCh:
@@ -255,28 +256,57 @@ func drainPendingRequests(reqCh chan *predictionRequest, batch []*predictionRequ
 	}
 }
 
-func predictBatch(model *tf.SavedModel, batch []*predictionRequest) {
-	histories := make([][][]float32, len(batch))
-	hands := make([][]float32, len(batch))
-	for i, req := range batch {
-		histories[i] = req.history
-		hands[i] = req.hand
-	}
+func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest) {
+	outputCh := make(chan *batchPredictionRequest)
+	defer close(outputCh)
+	go handleBatchPredictions(model, outputCh)
 
-	historyTensor, err := tf.NewTensor(histories)
-	if err != nil {
-		glog.Fatal(err)
-	}
+	for batch := range batchCh {
+		histories := make([][][]float32, len(batch))
+		hands := make([][]float32, len(batch))
+		for i, req := range batch {
+			histories[i] = req.history
+			hands[i] = req.hand
+		}
 
-	handTensor, err := tf.NewTensor(hands)
-	if err != nil {
-		glog.Fatal(err)
-	}
+		historyTensor, err := tf.NewTensor(histories)
+		if err != nil {
+			glog.Fatal(err)
+		}
 
+		handTensor, err := tf.NewTensor(hands)
+		if err != nil {
+			glog.Fatal(err)
+		}
+
+		outputCh <- &batchPredictionRequest{
+			history: historyTensor,
+			hand:    handTensor,
+			batch:   batch,
+		}
+	}
+}
+
+type batchPredictionRequest struct {
+	history *tf.Tensor
+	hand    *tf.Tensor
+	batch   []*predictionRequest
+}
+
+func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
+	for req := range reqCh {
+		result := predictBatch(model, req.history, req.hand)
+		for i, req := range req.batch {
+			req.resultCh <- result[i]
+		}
+	}
+}
+
+func predictBatch(model *tf.SavedModel, history, hand *tf.Tensor) [][]float32 {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0): historyTensor,
-			model.Graph.Operation("hand").Output(0):    handTensor,
+			model.Graph.Operation("history").Output(0): history,
+			model.Graph.Operation("hand").Output(0):    hand,
 		},
 		[]tf.Output{
 			model.Graph.Operation("output/BiasAdd").Output(0),
@@ -288,10 +318,7 @@ func predictBatch(model *tf.SavedModel, batch []*predictionRequest) {
 		glog.Fatal(err)
 	}
 
-	predictions := result[0].Value().([][]float32)
-	for i, req := range batch {
-		req.resultCh <- predictions[i]
-	}
+	return result[0].Value().([][]float32)
 }
 
 func makePositive(v []float32) {

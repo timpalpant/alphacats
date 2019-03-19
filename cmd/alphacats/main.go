@@ -8,7 +8,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -106,7 +105,7 @@ func main() {
 	deck, cardsPerPlayer := getDeck(*deckType)
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU())
+	sem := make(chan struct{}, 256)
 	for t := policy.Iter() + 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting %d samples", t, *traversalsPerIter)
 		start := time.Now()

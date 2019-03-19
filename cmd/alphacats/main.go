@@ -112,6 +112,9 @@ func main() {
 	// more efficiently (N predictions in < N x 1 sample time), we want to have
 	// a bunch of collection runs going in parallel, so that when we make a
 	// prediction it is usually for a larger batch of samples.
+	//
+	// Our GPU (NVIDIA 1060) seems to top out at a concurrency of ~1024,
+	// see benchmarks in model/lstm_test.go.
 	sem := make(chan struct{}, *numSamplingThreads)
 	for t := policy.Iter(); t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting %d samples with %d threads",

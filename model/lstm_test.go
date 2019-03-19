@@ -16,6 +16,12 @@ const testModel = "testdata/savedmodel"
 // with request batching:
 // BenchmarkPredict-24            	500	    3210621 ns/op
 // BenchmarkPredictParallel-24    	3000     409844 ns/op
+// BenchmarkPredictParallel-64      5000     228288 ns/op
+// BenchmarkPredictParallel-128	    10000    140949 ns/op
+// BenchmarkPredictParallel-256     20000     78092 ns/op
+// BenchmarkPredictParallel-512     20000     60986 ns/op
+// BenchmarkPredictParallel-1024    30000     38710 ns/op
+// BenchmarkPredictParallel-2048    30000     36679 ns/op
 //
 // without request batching:
 // BenchmarkPredict-24            	500	    2741763 ns/op
@@ -69,6 +75,7 @@ func BenchmarkBatchSize(b *testing.B) {
 	is := game.InfoSet(0).(*gamestate.InfoSet)
 	history := EncodeHistory(is.History)
 	hand := encodeHand(is.Hand)
+	numActions := maskNumActions(game.NumChildren())
 
 	opts := &tf.SessionOptions{Config: tfConfig}
 	model, err := tf.LoadSavedModel(testModel, []string{graphTag}, opts)
@@ -78,16 +85,18 @@ func BenchmarkBatchSize(b *testing.B) {
 	defer model.Session.Close()
 
 	for _, batchSize := range []int{1, 8, 16, 32, 64, 128, 256} {
-		runBatch(b, model, history, hand, batchSize)
+		runBatch(b, model, history, hand, numActions, batchSize)
 	}
 }
 
-func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand []float32, batchSize int) {
+func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand, numActions []float32, batchSize int) {
 	historyBatch := make([][][]float32, batchSize)
 	handBatch := make([][]float32, batchSize)
+	numActionsBatch := make([][]float32, batchSize)
 	for i := range historyBatch {
 		historyBatch[i] = history
 		handBatch[i] = hand
+		numActionsBatch[i] = numActions
 	}
 
 	historyTensor, err := tf.NewTensor(historyBatch)
@@ -100,15 +109,21 @@ func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand []fl
 		b.Fatal(err)
 	}
 
+	numActionsTensor, err := tf.NewTensor(numActionsBatch)
+	if err != nil {
+		b.Fatal(err)
+	}
+
 	// There is some expensive one-time cost so make one prediction so the
 	// remainder of the numbers are comparable.
 	_, err = model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0): historyTensor,
-			model.Graph.Operation("hand").Output(0):    handTensor,
+			model.Graph.Operation("history").Output(0):     historyTensor,
+			model.Graph.Operation("hand").Output(0):        handTensor,
+			model.Graph.Operation("num_actions").Output(0): numActionsTensor,
 		},
 		[]tf.Output{
-			model.Graph.Operation("output/BiasAdd").Output(0),
+			model.Graph.Operation(outputLayer).Output(0),
 		},
 		nil,
 	)
@@ -122,11 +137,12 @@ func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand []fl
 		for i := 0; i < b.N; i++ {
 			_, err := model.Session.Run(
 				map[tf.Output]*tf.Tensor{
-					model.Graph.Operation("history").Output(0): historyTensor,
-					model.Graph.Operation("hand").Output(0):    handTensor,
+					model.Graph.Operation("history").Output(0):     historyTensor,
+					model.Graph.Operation("hand").Output(0):        handTensor,
+					model.Graph.Operation("num_actions").Output(0): numActionsTensor,
 				},
 				[]tf.Output{
-					model.Graph.Operation("output/BiasAdd").Output(0),
+					model.Graph.Operation(outputLayer).Output(0),
 				},
 				nil,
 			)

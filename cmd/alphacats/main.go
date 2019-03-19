@@ -82,6 +82,8 @@ func main() {
 		"Number of ES-CFR traversals to perform each iteration")
 	outputDir := flag.String("output_dir", "", "Directory to save policies to")
 	resume := flag.String("resume", "", "Resume training with given model")
+	numSamplingThreads := flag.Int("num_sampling_threads", 256,
+		"Max number of sampling runs to perform in parallel")
 	flag.IntVar(&params.BatchSize, "batch_size", 4096,
 		"Size of minibatches to save for network training")
 	flag.StringVar(&params.ModelOutputDir, "model_dir", "",
@@ -105,9 +107,15 @@ func main() {
 	deck, cardsPerPlayer := getDeck(*deckType)
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 256)
+	// Becuse we are generally rate-limited by the speed at which we can make
+	// model predictions, and because the GPU can perform batches of predictions
+	// more efficiently (N predictions in < N x 1 sample time), we want to have
+	// a bunch of collection runs going in parallel, so that when we make a
+	// prediction it is usually for a larger batch of samples.
+	sem := make(chan struct{}, *numSamplingThreads)
 	for t := policy.Iter(); t <= *iter; t++ {
-		glog.Infof("[t=%d] Collecting %d samples", t, *traversalsPerIter)
+		glog.Infof("[t=%d] Collecting %d samples with %d threads",
+			t, *traversalsPerIter, cap(sem))
 		start := time.Now()
 		for k := 1; k <= *traversalsPerIter; k++ {
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)

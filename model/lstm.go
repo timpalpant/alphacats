@@ -28,6 +28,7 @@ const (
 	graphTag               = "lstm"
 	outputLayer            = "output/mul"
 	maxPredictionBatchSize = 4096
+	numEncodingWorkers     = 4
 )
 
 var (
@@ -215,11 +216,21 @@ type predictionRequest struct {
 
 // Handles prediction requests, attempting to batch all pending requests.
 func (m *TrainedLSTM) bgPredictionHandler() {
-	// No buffer here because we are collecting batches and we want the batch to be as
+	// No buffers here because we are collecting batches and we want the batch to be as
 	// large as possible until we are ready to process it.
+	outputCh := make(chan *batchPredictionRequest)
+	defer close(outputCh)
+	go handleBatchPredictions(m.model, outputCh)
+
 	encodeCh := make(chan []*predictionRequest)
 	defer close(encodeCh)
-	go handleEncoding(m.model, encodeCh)
+	// Multiple encoder threads because it is NewTensor is slow
+	// and we don't want to be bottlenecked on it. This will mean too-small batches
+	// for the first few, but we expect that at steady-state we will be rate-limited
+	// by predictions on the GPU, so the batches will still be large (just buffered).
+	for i := 0; i < numEncodingWorkers; i++ {
+		go handleEncoding(m.model, encodeCh, outputCh)
+	}
 
 	for {
 		// Wait for first request so we know we have at least one.
@@ -251,11 +262,7 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	}
 }
 
-func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest) {
-	outputCh := make(chan *batchPredictionRequest, 1)
-	defer close(outputCh)
-	go handleBatchPredictions(model, outputCh)
-
+func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, outputCh chan *batchPredictionRequest) {
 	for batch := range batchCh {
 		histories := make([][][]float32, len(batch))
 		hands := make([][]float32, len(batch))

@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -126,9 +127,10 @@ func (m *LSTM) GobEncode() ([]byte, error) {
 }
 
 type TrainedLSTM struct {
-	dir   string
-	model *tf.SavedModel
-	reqCh chan predictionRequest
+	dir     string
+	model   *tf.SavedModel
+	reqCh   chan *predictionRequest
+	reqPool sync.Pool
 }
 
 func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
@@ -141,7 +143,14 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 	m := &TrainedLSTM{
 		dir:   dir,
 		model: model,
-		reqCh: make(chan predictionRequest, 1),
+		reqCh: make(chan *predictionRequest, 1),
+		reqPool: sync.Pool{
+			New: func() interface{} {
+				return &predictionRequest{
+					resultCh: make(chan []float32),
+				}
+			},
+		},
 	}
 	go m.bgPredictionHandler()
 	return m, nil
@@ -150,14 +159,14 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	is := infoSet.(*gamestate.InfoSet)
-	req := predictionRequest{
-		history:  EncodeHistory(is.History),
-		hand:     encodeHand(is.Hand),
-		resultCh: make(chan []float32),
-	}
+	req := m.reqPool.Get().(*predictionRequest)
+	req.history = EncodeHistory(is.History)
+	req.hand = encodeHand(is.Hand)
 
 	m.reqCh <- req
 	prediction := <-req.resultCh
+	m.reqPool.Put(req)
+
 	glog.V(3).Infof("Predicted advantages: %v", prediction)
 	advantages := prediction[:nActions]
 	makePositive(advantages)
@@ -202,16 +211,9 @@ type predictionRequest struct {
 
 // Handles prediction requests, attempting to batch all pending requests.
 func (m *TrainedLSTM) bgPredictionHandler() {
-	var batch []predictionRequest
+	var batch []*predictionRequest
 
 	for {
-		// Wait for first requst.
-		req, ok := <-m.reqCh
-		if !ok {
-			return
-		}
-
-		batch = append(batch, req)
 		batch, closed := drainPendingRequests(m.reqCh, batch)
 		if len(batch) > 0 {
 			predictBatch(m.model, batch)
@@ -227,7 +229,15 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 }
 
 // Drain channel, collecting all pending prediction requests.
-func drainPendingRequests(reqCh chan predictionRequest, batch []predictionRequest) ([]predictionRequest, bool) {
+func drainPendingRequests(reqCh chan *predictionRequest, batch []*predictionRequest) ([]*predictionRequest, bool) {
+	// Wait for first requst.
+	req, ok := <-reqCh
+	if !ok {
+		return batch, false
+	}
+
+	batch = append(batch, req)
+
 	for {
 		select {
 		case req, ok := <-reqCh:
@@ -245,7 +255,7 @@ func drainPendingRequests(reqCh chan predictionRequest, batch []predictionReques
 	}
 }
 
-func predictBatch(model *tf.SavedModel, batch []predictionRequest) {
+func predictBatch(model *tf.SavedModel, batch []*predictionRequest) {
 	histories := make([][][]float32, len(batch))
 	hands := make([][]float32, len(batch))
 	for i, req := range batch {

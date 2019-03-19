@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -72,7 +73,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	}
 
 	// Shell out to Python to train the network.
-	outputDir := fmt.Sprintf("model_%08d", m.iter)
+	outputDir := filepath.Join(m.params.ModelOutputDir, fmt.Sprintf("model_%08d", m.iter))
 	cmd := exec.Command("python", "model/train.py", tmpDir, outputDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

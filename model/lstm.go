@@ -205,6 +205,13 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	var batch []predictionRequest
 
 	for {
+		// Wait for first requst.
+		req, ok := <-m.reqCh
+		if !ok {
+			return
+		}
+
+		batch = append(batch, req)
 		batch, closed := drainPendingRequests(m.reqCh, batch)
 		if len(batch) > 0 {
 			predictBatch(m.model, batch)

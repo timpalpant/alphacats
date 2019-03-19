@@ -53,13 +53,6 @@ class TrainingSequence(Sequence):
         return X, y, batch["sample_weight"]
 
 
-MASKS_BY_LEN = [None]
-for n in range(1, MAX_NUM_CHOICES+1):
-    mask_v = np.zeros(MAX_NUM_CHOICES)
-    mask_v[:n] = 1.0
-    MASKS_BY_LEN.append(K.constant(mask_v))
-
-
 def build_model(history_shape: tuple, hand_shape: tuple, num_actions_shape: tuple, output_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)

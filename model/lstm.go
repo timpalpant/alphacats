@@ -25,7 +25,7 @@ import (
 
 const (
 	graphTag               = "lstm"
-	maxPredictionBatchSize = 256
+	maxPredictionBatchSize = 4096
 )
 
 var (
@@ -147,7 +147,7 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 		reqPool: sync.Pool{
 			New: func() interface{} {
 				return &predictionRequest{
-					resultCh: make(chan []float32),
+					resultCh: make(chan []float32, 1),
 				}
 			},
 		},
@@ -211,53 +211,42 @@ type predictionRequest struct {
 
 // Handles prediction requests, attempting to batch all pending requests.
 func (m *TrainedLSTM) bgPredictionHandler() {
-	encodeCh := make(chan []*predictionRequest)
+	encodeCh := make(chan []*predictionRequest, 1)
 	defer close(encodeCh)
 	go handleEncoding(m.model, encodeCh)
 
 	for {
-		batch, closed := drainPendingRequests(m.reqCh)
-		if len(batch) > 0 {
-			encodeCh <- batch
-			samplesPredicted.Add(int64(len(batch)))
-			batchesPredicted.Add(1)
-			batch = batch[:0]
-		}
-
-		if closed {
+		// Wait for first request so we know we have at least one.
+		req, ok := <-m.reqCh
+		if !ok {
 			return
 		}
-	}
-}
 
-// Drain channel, collecting all pending prediction requests.
-func drainPendingRequests(reqCh chan *predictionRequest) ([]*predictionRequest, bool) {
-	// Wait for first requst.
-	req, ok := <-reqCh
-	if !ok {
-		return nil, false
-	}
+		// Drain any additional requests as long as we're waiting for an encoding spot.
+		batch := []*predictionRequest{req}
+	Loop:
+		for {
+			select {
+			case req, ok := <-m.reqCh:
+				if !ok {
+					encodeCh <- batch
+					return
+				}
 
-	batch := []*predictionRequest{req}
-	for {
-		select {
-		case req, ok := <-reqCh:
-			if !ok {
-				return batch, true
+				batch = append(batch, req)
+				if len(batch) >= maxPredictionBatchSize {
+					encodeCh <- batch
+					break Loop
+				}
+			case encodeCh <- batch:
+				break Loop
 			}
-
-			batch = append(batch, req)
-			if len(batch) >= maxPredictionBatchSize {
-				return batch, false
-			}
-		default:
-			return batch, false
 		}
 	}
 }
 
 func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest) {
-	outputCh := make(chan *batchPredictionRequest)
+	outputCh := make(chan *batchPredictionRequest, 1)
 	defer close(outputCh)
 	go handleBatchPredictions(model, outputCh)
 
@@ -299,6 +288,9 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 		for i, req := range req.batch {
 			req.resultCh <- result[i]
 		}
+
+		samplesPredicted.Add(int64(len(req.batch)))
+		batchesPredicted.Add(1)
 	}
 }
 

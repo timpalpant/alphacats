@@ -107,7 +107,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, runtime.NumCPU())
-	for t := 1; t <= *iter; t++ {
+	for t := policy.Iter() + 1; t <= *iter; t++ {
 		glog.Infof("[t=%d] Collecting %d samples", t, *iter)
 		start := time.Now()
 		for k := 1; k <= *traversalsPerIter; k++ {

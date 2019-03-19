@@ -96,6 +96,8 @@ func encodeTargets(samples []deepcfr.Sample) []float32 {
 }
 
 // Pad advantages to make fixed-size output vector.
+// NODE: We place them in the first N positions, which needs to match
+// the encoding of the numActions mask below.
 func encodeAdvantages(advantages []float32) []float32 {
 	if len(advantages) > maxNumChoices {
 		panic(fmt.Errorf("%d advantages > expected max %d",

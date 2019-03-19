@@ -155,8 +155,8 @@ func (gn *GameNode) allocChildren(n int) {
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
 	childPrototype.children = nil
-	for i := range gn.children {
-		gn.children[i] = childPrototype
+	for i := 0; i < n; i++ {
+		gn.children = append(gn.children, childPrototype)
 	}
 }
 

@@ -116,3 +116,21 @@ func encodeSampleWeights(batch []deepcfr.Sample) []float32 {
 
 	return result
 }
+
+func encodeNumActions(batch []deepcfr.Sample) []float32 {
+	result := make([]float32, 0, len(batch)*maxNumChoices)
+	for _, sample := range batch {
+		mask := maskNumActions(len(sample.Advantages))
+		result = append(result, mask...)
+	}
+
+	return result
+}
+
+func maskNumActions(nActions int) []float32 {
+	mask := make([]float32, maxNumChoices)
+	for j := 0; j < nActions; j++ {
+		mask[j] = 1
+	}
+	return mask
+}

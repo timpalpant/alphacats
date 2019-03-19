@@ -63,6 +63,7 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 	return SaveNPZFile(filename, map[string]interface{}{
 		"X_history":     encodeHistories(batch),
 		"X_hand":        encodeHands(batch),
+		"X_num_actions": encodeNumActions(batch),
 		"y":             encodeTargets(batch),
 		"sample_weight": encodeSampleWeights(batch),
 	})

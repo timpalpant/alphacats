@@ -13,10 +13,10 @@ func (p *gameNodeSlicePool) alloc(n int) []GameNode {
 		m := len(p.pool)
 		next := p.pool[m-1]
 		p.pool = p.pool[:m-1]
-		return append(next, make([]GameNode, n)...)
+		return next
 	}
 
-	return make([]GameNode, n)
+	return make([]GameNode, 0, n)
 }
 
 func (p *gameNodeSlicePool) free(s []GameNode) {

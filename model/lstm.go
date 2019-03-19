@@ -25,6 +25,7 @@ import (
 
 const (
 	graphTag               = "lstm"
+	outputLayer            = "output/mul"
 	maxPredictionBatchSize = 4096
 )
 
@@ -126,11 +127,18 @@ func (m *LSTM) GobEncode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+var reqPool = sync.Pool{
+	New: func() interface{} {
+		return &predictionRequest{
+			resultCh: make(chan []float32, 1),
+		}
+	},
+}
+
 type TrainedLSTM struct {
-	dir     string
-	model   *tf.SavedModel
-	reqCh   chan *predictionRequest
-	reqPool sync.Pool
+	dir   string
+	model *tf.SavedModel
+	reqCh chan *predictionRequest
 }
 
 func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
@@ -144,13 +152,6 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 		dir:   dir,
 		model: model,
 		reqCh: make(chan *predictionRequest, 1),
-		reqPool: sync.Pool{
-			New: func() interface{} {
-				return &predictionRequest{
-					resultCh: make(chan []float32, 1),
-				}
-			},
-		},
 	}
 	go m.bgPredictionHandler()
 	return m, nil
@@ -159,13 +160,14 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	is := infoSet.(*gamestate.InfoSet)
-	req := m.reqPool.Get().(*predictionRequest)
+	req := reqPool.Get().(*predictionRequest)
 	req.history = EncodeHistory(is.History)
 	req.hand = encodeHand(is.Hand)
+	req.nActions = maskNumActions(nActions)
 
 	m.reqCh <- req
 	prediction := <-req.resultCh
-	m.reqPool.Put(req)
+	reqPool.Put(req)
 
 	glog.V(3).Infof("Predicted advantages: %v", prediction)
 	advantages := prediction[:nActions]
@@ -206,12 +208,15 @@ func (m *TrainedLSTM) Close() {
 type predictionRequest struct {
 	history  [][]float32
 	hand     []float32
+	nActions []float32
 	resultCh chan []float32
 }
 
 // Handles prediction requests, attempting to batch all pending requests.
 func (m *TrainedLSTM) bgPredictionHandler() {
-	encodeCh := make(chan []*predictionRequest, 1)
+	// No buffer here because we are collecting batches and we want the batch to be as
+	// large as possible until we are ready to process it.
+	encodeCh := make(chan []*predictionRequest)
 	defer close(encodeCh)
 	go handleEncoding(m.model, encodeCh)
 
@@ -253,9 +258,11 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest) {
 	for batch := range batchCh {
 		histories := make([][][]float32, len(batch))
 		hands := make([][]float32, len(batch))
+		nActions := make([][]float32, len(batch))
 		for i, req := range batch {
 			histories[i] = req.history
 			hands[i] = req.hand
+			nActions[i] = req.nActions
 		}
 
 		historyTensor, err := tf.NewTensor(histories)
@@ -268,23 +275,30 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest) {
 			glog.Fatal(err)
 		}
 
+		nActionsTensor, err := tf.NewTensor(nActions)
+		if err != nil {
+			glog.Fatal(err)
+		}
+
 		outputCh <- &batchPredictionRequest{
-			history: historyTensor,
-			hand:    handTensor,
-			batch:   batch,
+			history:  historyTensor,
+			hand:     handTensor,
+			nActions: nActionsTensor,
+			batch:    batch,
 		}
 	}
 }
 
 type batchPredictionRequest struct {
-	history *tf.Tensor
-	hand    *tf.Tensor
-	batch   []*predictionRequest
+	history  *tf.Tensor
+	hand     *tf.Tensor
+	nActions *tf.Tensor
+	batch    []*predictionRequest
 }
 
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
 	for req := range reqCh {
-		result := predictBatch(model, req.history, req.hand)
+		result := predictBatch(model, req.history, req.hand, req.nActions)
 		for i, req := range req.batch {
 			req.resultCh <- result[i]
 		}
@@ -294,14 +308,15 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hand *tf.Tensor) [][]float32 {
+func predictBatch(model *tf.SavedModel, history, hand, nActions *tf.Tensor) [][]float32 {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0): history,
-			model.Graph.Operation("hand").Output(0):    hand,
+			model.Graph.Operation("history").Output(0):     history,
+			model.Graph.Operation("hand").Output(0):        hand,
+			model.Graph.Operation("num_actions").Output(0): nActions,
 		},
 		[]tf.Output{
-			model.Graph.Operation("output/BiasAdd").Output(0),
+			model.Graph.Operation(outputLayer).Output(0),
 		},
 		nil,
 	)

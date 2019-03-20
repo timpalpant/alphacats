@@ -33,6 +33,12 @@ func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
 		return cfr.NewOutcomeSampling(policy, 0.1)
 	case "chance":
 		return cfr.NewChanceSampling(policy)
+	case "average":
+		return cfr.NewAverageStrategySampling(policy, cfr.ASSamplingParams{
+			Epsilon: 0.05,
+			Tau:     1000,
+			Beta:    1000000,
+		})
 	default:
 		panic(fmt.Errorf("unknown sampling type: %v", samplingType))
 	}
@@ -74,7 +80,7 @@ func main() {
 	deckType := flag.String("decktype", "test", "Type of deck to use (core, test)")
 	cfrType := flag.String("cfrtype", "tabular", "Type of CFR to run (tabular, deep)")
 	samplingType := flag.String("sampling", "external",
-		"Type of sampling to perform (external, chance, outcome)")
+		"Type of sampling to perform (external, chance, outcome, average)")
 	seed := flag.Int64("seed", 123, "Random seed")
 	iter := flag.Int("iter", 100, "Number of DeepCFR iterations to perform")
 	bufSize := flag.Int("buf_size", 10000000, "Size of reservoir sample buffer")

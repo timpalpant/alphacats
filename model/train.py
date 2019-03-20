@@ -86,7 +86,8 @@ def build_model(history_shape: tuple, hand_shape: tuple, num_actions_shape: tupl
         outputs=[advantages_output])
     model.compile(
         loss='mean_squared_error',
-        optimizer='adam')
+        optimizer='adam',
+        metrics=['mean_absolute_error', 'mean_absolute_percentage_error'])
     return model
 
 

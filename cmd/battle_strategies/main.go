@@ -7,6 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"sync"
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
@@ -26,8 +27,18 @@ func main() {
 
 	deck := cards.TestDeck.AsSlice()
 	cardsPerPlayer := (len(deck) / 2) - 1
-	policy0 := mustLoadPolicy(*strat0)
-	policy1 := mustLoadPolicy(*strat1)
+	var wg sync.WaitGroup
+	var policy0, policy1 cfr.StrategyProfile
+	wg.Add(2)
+	go func() {
+		policy0 = mustLoadPolicy(*strat0)
+		wg.Done()
+	}()
+	go func() {
+		policy1 = mustLoadPolicy(*strat1)
+		wg.Done()
+	}()
+	wg.Wait()
 
 	glog.Infof("Playing %d games", *numGames)
 	var p0Wins int

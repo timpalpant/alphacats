@@ -12,9 +12,11 @@ import (
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
+	"github.com/timpalpant/go-cfr/deepcfr"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
+	_ "github.com/timpalpant/alphacats/model"
 )
 
 func main() {
@@ -68,6 +70,27 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 	}
 
 	policy, err := cfr.LoadStrategyTable(r)
+	if err != nil {
+		// Gross hack: we should write a header with the type.
+		return mustLoadDeepCFR(filename)
+	}
+
+	return policy
+}
+
+func mustLoadDeepCFR(filename string) cfr.StrategyProfile {
+	f, err := os.Open(filename)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	defer f.Close()
+
+	r, err := gzip.NewReader(f)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	policy, err := deepcfr.Load(r)
 	if err != nil {
 		glog.Fatal(err)
 	}

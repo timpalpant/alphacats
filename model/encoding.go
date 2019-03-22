@@ -5,6 +5,7 @@ import (
 
 	"github.com/timpalpant/go-cfr/deepcfr"
 
+	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 )
@@ -15,14 +16,14 @@ const (
 	maxNumChoices = 16
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
-	numHistoryFeatures = 59
+	numActionFeatures = 59
 )
 
 func encodeHistories(samples []deepcfr.Sample) []float32 {
-	n := len(samples) * gamestate.MaxNumActions * numHistoryFeatures
+	n := len(samples) * gamestate.MaxNumActions * numActionFeatures
 	result := make([]float32, 0, n)
 	for _, sample := range samples {
-		is := sample.InfoSet.(*gamestate.InfoSet)
+		is := sample.InfoSet.(*alphacats.InfoSetWithAvailableActions)
 		X := EncodeHistory(is.History)
 		for _, row := range X {
 			result = append(result, row...)
@@ -46,14 +47,14 @@ func EncodeHistory(h []gamestate.EncodedAction) [][]float32 {
 	}
 
 	for i := len(h); i < len(result); i++ {
-		result[i] = make([]float32, numHistoryFeatures)
+		result[i] = make([]float32, numActionFeatures)
 	}
 
 	return result
 }
 
 func encodeAction(action gamestate.Action) []float32 {
-	result := make([]float32, numHistoryFeatures)
+	result := make([]float32, numActionFeatures)
 	result[int(action.Player)] = 1.0
 	result[2+int(action.Type)-1] = 1.0
 	result[6+int(action.Card)] = 1.0
@@ -70,7 +71,7 @@ func encodeAction(action gamestate.Action) []float32 {
 func encodeHands(samples []deepcfr.Sample) []float32 {
 	result := make([]float32, 0, len(samples)*cards.NumTypes)
 	for _, sample := range samples {
-		is := sample.InfoSet.(*gamestate.InfoSet)
+		is := sample.InfoSet.(*alphacats.InfoSetWithAvailableActions)
 		X := encodeHand(is.Hand)
 		result = append(result, X...)
 	}
@@ -119,20 +120,14 @@ func encodeSampleWeights(batch []deepcfr.Sample) []float32 {
 	return result
 }
 
-func encodeNumActions(batch []deepcfr.Sample) []float32 {
-	result := make([]float32, 0, len(batch)*maxNumChoices)
+func encodeActions(batch []deepcfr.Sample) []float32 {
+	var result []float32
 	for _, sample := range batch {
-		mask := maskNumActions(len(sample.Advantages))
-		result = append(result, mask...)
+		is := sample.InfoSet.(*alphacats.InfoSetWithAvailableActions)
+		for _, action := range is.AvailableActions {
+			result = append(result, encodeAction(action)...)
+		}
 	}
 
 	return result
-}
-
-func maskNumActions(nActions int) []float32 {
-	mask := make([]float32, maxNumChoices)
-	for j := 0; j < nActions; j++ {
-		mask[j] = 1
-	}
-	return mask
 }

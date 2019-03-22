@@ -100,7 +100,7 @@ func (h *History) Append(action Action) {
 	h.n++
 }
 
-// Gets the full, unabstracted infoset (but hashed into md5).
+// Gets the current infoset for the given player.
 func (h *History) GetInfoSet(player Player, hand cards.Set) *InfoSet {
 	return &InfoSet{
 		History: h.asViewedBy(player),

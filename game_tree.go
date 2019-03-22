@@ -53,9 +53,13 @@ type GameNode struct {
 	// children are the possible next states in the game.
 	// Which child is realized will depend on chance or a player's action.
 	children []GameNode
+	// actions are the action taken by the player to reach each child.
+	// len(actions) must always equal len(children).
+	actions []gamestate.Action
 
 	rng    *rand.Rand
 	gnPool *gameNodeSlicePool
+	aPool  *actionSlicePool
 }
 
 // Verify that we implement the interface.
@@ -72,6 +76,7 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		pendingTurns: 1,
 		rng:          rand.New(rand.NewSource(rand.Int63())),
 		gnPool:       &gameNodeSlicePool{},
+		aPool:        &actionSlicePool{},
 	}
 }
 
@@ -97,6 +102,7 @@ func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
 func (gn *GameNode) Liberate() {
 	gn.rng = rand.New(rand.NewSource(rand.Int63()))
 	gn.gnPool = &gameNodeSlicePool{}
+	gn.aPool = &actionSlicePool{}
 }
 
 // Type implements cfr.GameTreeNode.
@@ -120,9 +126,24 @@ func (gn *GameNode) LastAction() gamestate.Action {
 	return gn.state.LastAction()
 }
 
+type InfoSetWithAvailableActions struct {
+	*gamestate.InfoSet
+	AvailableActions []gamestate.Action
+}
+
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
-	return gn.state.GetInfoSet(gamestate.Player(player))
+	if gn.children == nil {
+		gn.buildChildren()
+	}
+
+	is := gn.state.GetInfoSet(gamestate.Player(player))
+	availableActions := make([]gamestate.Action, len(gn.actions))
+	copy(availableActions, gn.actions)
+	return &InfoSetWithAvailableActions{
+		InfoSet:          is,
+		AvailableActions: availableActions,
+	}
 }
 
 // Utility implements cfr.GameTreeNode.
@@ -151,6 +172,7 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 
 func (gn *GameNode) allocChildren(n int) {
 	gn.children = gn.gnPool.alloc(n)
+	gn.actions = gn.aPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
@@ -289,11 +311,13 @@ func (gn *GameNode) buildPlayTurnChildren() {
 	// Play one of the cards in our hand.
 	hand.Iter(func(card cards.Card, count uint8) {
 		child := &gn.children[i]
-		child.state.Apply(gamestate.Action{
+		action := gamestate.Action{
 			Player: gn.player,
 			Type:   gamestate.PlayCard,
 			Card:   card,
-		})
+		}
+		gn.actions[i] = action
+		child.state.Apply(action)
 
 		switch card {
 		case cards.Defuse, cards.SeeTheFuture:
@@ -337,10 +361,12 @@ func (gn *GameNode) buildPlayTurnChildren() {
 	gn.children = gn.children[:i+1]
 	// End our turn by drawing a card.
 	lastChild := &gn.children[i]
-	lastChild.state.Apply(gamestate.Action{
+	action := gamestate.Action{
 		Player: gn.player,
 		Type:   gamestate.DrawCard,
-	})
+	}
+	lastChild.state.Apply(action)
+	gn.actions[i] = action
 	makePlayTurnNode(lastChild, gn.player, gn.pendingTurns-1)
 }
 
@@ -354,11 +380,13 @@ func (gn *GameNode) buildGiveCardChildren() {
 		//   2) Adding card to opponent's hand,
 		//   3) Returning to opponent's turn.
 		child := &gn.children[i]
-		child.state.Apply(gamestate.Action{
+		action := gamestate.Action{
 			Player: gn.player,
 			Type:   gamestate.GiveCard,
 			Card:   card,
-		})
+		}
+		child.state.Apply(action)
+		gn.actions[i] = action
 
 		// Game play returns to other player (with the given card in their hand).
 		makePlayTurnNode(child, nextPlayer(gn.player), gn.pendingTurns)
@@ -379,11 +407,13 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	// Place in the i'th position.
 	for i := 0; i < nOptions; i++ {
 		child := &gn.children[i]
-		child.state.Apply(gamestate.Action{
+		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
 			PositionInDrawPile: uint8(i),
-		})
+		}
+		child.state.Apply(action)
+		gn.actions[i] = action
 
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	}
@@ -395,15 +425,17 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	// Place exploding cat on the bottom of the draw pile.
 	if nCardsInDrawPile > 5 {
 		child := &gn.children[len(gn.children)-1]
-		child.state.Apply(gamestate.Action{
+		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
 			PositionInDrawPile: uint8(nCardsInDrawPile), // bottom
-		})
-
+		}
+		child.state.Apply(action)
+		gn.actions[len(gn.children)-1] = action
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	} else {
 		gn.children = gn.children[:len(gn.children)-1]
+		gn.actions = gn.actions[:len(gn.children)-1]
 	}
 }
 
@@ -412,11 +444,13 @@ func (gn *GameNode) buildInsertKittenRandomChildren() {
 	gn.allocChildren(nPositions)
 	for i := 0; i < nPositions; i++ {
 		child := &gn.children[i]
-		child.state.Apply(gamestate.Action{
+		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
 			PositionInDrawPile: uint8(i),
-		})
+		}
+		child.state.Apply(action)
+		gn.actions[i] = action
 
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	}

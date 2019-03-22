@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -21,7 +20,7 @@ import (
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
 
-	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats"
 )
 
 const (
@@ -129,14 +128,6 @@ func (m *LSTM) GobEncode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-var reqPool = sync.Pool{
-	New: func() interface{} {
-		return &predictionRequest{
-			resultCh: make(chan []float32, 1),
-		}
-	},
-}
-
 type TrainedLSTM struct {
 	dir   string
 	model *tf.SavedModel
@@ -161,15 +152,31 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
-	is := infoSet.(*gamestate.InfoSet)
-	req := reqPool.Get().(*predictionRequest)
-	req.history = EncodeHistory(is.History)
-	req.hand = encodeHand(is.Hand)
-	req.nActions = maskNumActions(nActions)
+	is := infoSet.(*alphacats.InfoSetWithAvailableActions)
+	if len(is.AvailableActions) != nActions {
+		panic(fmt.Errorf("InfoSet has %d actions but expected %d",
+			len(is.AvailableActions), nActions))
+	}
 
-	m.reqCh <- req
-	prediction := <-req.resultCh
-	reqPool.Put(req)
+	history := EncodeHistory(is.History)
+	hand := encodeHand(is.Hand)
+	reqs := make([]*predictionRequest, nActions)
+	for _, action := range is.AvailableActions {
+		req := &predictionRequest{
+			history:  history,
+			hand:     hand,
+			action:   encodeAction(action),
+			resultCh: make(chan float32, 1),
+		}
+
+		m.reqCh <- req
+		reqs = append(reqs, req)
+	}
+
+	prediction := make([]float32, nActions)
+	for i, req := range reqs {
+		prediction[i] = <-req.resultCh
+	}
 
 	glog.V(3).Infof("Predicted advantages: %v", prediction)
 	advantages := prediction[:nActions]
@@ -203,15 +210,13 @@ func (m *TrainedLSTM) GobEncode() ([]byte, error) {
 
 func (m *TrainedLSTM) Close() {
 	close(m.reqCh)
-	// TODO: Wait for final batch, if there is one.
-	m.model.Session.Close()
 }
 
 type predictionRequest struct {
 	history  [][]float32
 	hand     []float32
-	nActions []float32
-	resultCh chan []float32
+	action   []float32
+	resultCh chan float32
 }
 
 // Handles prediction requests, attempting to batch all pending requests.
@@ -266,11 +271,11 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 	for batch := range batchCh {
 		histories := make([][][]float32, len(batch))
 		hands := make([][]float32, len(batch))
-		nActions := make([][]float32, len(batch))
+		actions := make([][]float32, len(batch))
 		for i, req := range batch {
 			histories[i] = req.history
 			hands[i] = req.hand
-			nActions[i] = req.nActions
+			actions[i] = req.action
 		}
 
 		historyTensor, err := tf.NewTensor(histories)
@@ -283,32 +288,33 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 			glog.Fatal(err)
 		}
 
-		nActionsTensor, err := tf.NewTensor(nActions)
+		actionTensor, err := tf.NewTensor(actions)
 		if err != nil {
 			glog.Fatal(err)
 		}
 
 		outputCh <- &batchPredictionRequest{
-			history:  historyTensor,
-			hand:     handTensor,
-			nActions: nActionsTensor,
-			batch:    batch,
+			history: historyTensor,
+			hand:    handTensor,
+			action:  actionTensor,
+			batch:   batch,
 		}
 	}
 }
 
 type batchPredictionRequest struct {
-	history  *tf.Tensor
-	hand     *tf.Tensor
-	nActions *tf.Tensor
-	batch    []*predictionRequest
+	history *tf.Tensor
+	hand    *tf.Tensor
+	action  *tf.Tensor
+	batch   []*predictionRequest
 }
 
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
+	defer model.Session.Close()
 	for req := range reqCh {
-		result := predictBatch(model, req.history, req.hand, req.nActions)
+		result := predictBatch(model, req.history, req.hand, req.action)
 		for i, req := range req.batch {
-			req.resultCh <- result[i]
+			req.resultCh <- result[i][0]
 		}
 
 		samplesPredicted.Add(int64(len(req.batch)))
@@ -316,12 +322,12 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hand, nActions *tf.Tensor) [][]float32 {
+func predictBatch(model *tf.SavedModel, history, hand, action *tf.Tensor) [][]float32 {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0):     history,
-			model.Graph.Operation("hand").Output(0):        hand,
-			model.Graph.Operation("num_actions").Output(0): nActions,
+			model.Graph.Operation("history").Output(0): history,
+			model.Graph.Operation("hand").Output(0):    hand,
+			model.Graph.Operation("action").Output(0):  action,
 		},
 		[]tf.Output{
 			model.Graph.Operation(outputLayer).Output(0),

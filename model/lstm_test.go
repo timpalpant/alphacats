@@ -72,10 +72,10 @@ func BenchmarkPredictParallel(b *testing.B) {
 func BenchmarkBatchSize(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
-	is := game.InfoSet(0).(*gamestate.InfoSet)
+	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
 	history := EncodeHistory(is.History)
 	hand := encodeHand(is.Hand)
-	numActions := maskNumActions(game.NumChildren())
+	action := encodeAction(is.AvailableActions[0])
 
 	opts := &tf.SessionOptions{Config: tfConfig}
 	model, err := tf.LoadSavedModel(testModel, []string{graphTag}, opts)
@@ -85,18 +85,18 @@ func BenchmarkBatchSize(b *testing.B) {
 	defer model.Session.Close()
 
 	for _, batchSize := range []int{1, 8, 16, 32, 64, 128, 256} {
-		runBatch(b, model, history, hand, numActions, batchSize)
+		runBatch(b, model, history, hand, action, batchSize)
 	}
 }
 
-func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand, numActions []float32, batchSize int) {
+func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand, action []float32, batchSize int) {
 	historyBatch := make([][][]float32, batchSize)
 	handBatch := make([][]float32, batchSize)
-	numActionsBatch := make([][]float32, batchSize)
+	actionBatch := make([][]float32, batchSize)
 	for i := range historyBatch {
 		historyBatch[i] = history
 		handBatch[i] = hand
-		numActionsBatch[i] = numActions
+		actionBatch[i] = action
 	}
 
 	historyTensor, err := tf.NewTensor(historyBatch)
@@ -109,7 +109,7 @@ func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand, num
 		b.Fatal(err)
 	}
 
-	numActionsTensor, err := tf.NewTensor(numActionsBatch)
+	actionTensor, err := tf.NewTensor(actionBatch)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -118,9 +118,9 @@ func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand, num
 	// remainder of the numbers are comparable.
 	_, err = model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0):     historyTensor,
-			model.Graph.Operation("hand").Output(0):        handTensor,
-			model.Graph.Operation("num_actions").Output(0): numActionsTensor,
+			model.Graph.Operation("history").Output(0): historyTensor,
+			model.Graph.Operation("hand").Output(0):    handTensor,
+			model.Graph.Operation("action").Output(0):  actionTensor,
 		},
 		[]tf.Output{
 			model.Graph.Operation(outputLayer).Output(0),

@@ -67,7 +67,7 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
     hand_input = Input(name="hand", shape=hand_shape)
 
     # The action we are evaluating.
-    action_input = Input(shape=action_shape, name="action")
+    action_input = Input(name="action", shape=action_shape)
 
     # Concatenate and predict advantages.
     merged = concatenate([lstm, hand_input, action_input])

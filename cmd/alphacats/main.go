@@ -118,7 +118,7 @@ func main() {
 	// see benchmarks in model/lstm_test.go.
 	sem := make(chan struct{}, *numSamplingThreads)
 	for t := policy.Iter(); t <= *iter; t++ {
-		glog.Infof("[t=%d] Collecting %d samples with %d threads",
+		glog.V(1).Infof("[t=%d] Collecting %d samples with %d threads",
 			t, *traversalsPerIter, cap(sem))
 		start := time.Now()
 		for k := 1; k <= *traversalsPerIter; k++ {
@@ -133,12 +133,12 @@ func main() {
 			}()
 		}
 		wg.Wait()
-		glog.Infof("[t=%d] Finished collecting samples (took: %v)", t, time.Since(start))
+		glog.V(1).Infof("[t=%d] Finished collecting samples (took: %v)", t, time.Since(start))
 
-		glog.Infof("[t=%d] Training network", t)
+		glog.V(1).Infof("[t=%d] Training network", t)
 		start = time.Now()
 		policy.Update()
-		glog.Infof("[t=%d] Finished training network (took: %v)", t, time.Since(start))
+		glog.V(1).Infof("[t=%d] Finished training network (took: %v)", t, time.Since(start))
 
 		// Save 10 snapshots throughout the course of training.
 		if t%(*iter/10) == 0 {

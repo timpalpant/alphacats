@@ -163,7 +163,9 @@ func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
 	defer w.Close()
 
 	enc := gob.NewEncoder(w)
-	return enc.Encode(policy)
+	// Need to pass pointer to interface so that Gob sees the interface rather
+	// than the concrete type. See the example in encoding/gob.
+	return enc.Encode(&policy)
 }
 
 func loadPolicy(cfrType, filename string) cfr.StrategyProfile {

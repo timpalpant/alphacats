@@ -161,7 +161,7 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	history := EncodeHistory(is.History)
 	hand := encodeHand(is.Hand)
 	reqs := make([]*predictionRequest, nActions)
-	for _, action := range is.AvailableActions {
+	for i, action := range is.AvailableActions {
 		req := &predictionRequest{
 			history:  history,
 			hand:     hand,
@@ -170,10 +170,10 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 		}
 
 		m.reqCh <- req
-		reqs = append(reqs, req)
+		reqs[i] = req
 	}
 
-	prediction := make([]float32, nActions)
+	prediction := make([]float32, len(reqs))
 	for i, req := range reqs {
 		prediction[i] = <-req.resultCh
 	}

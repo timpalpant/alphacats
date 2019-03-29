@@ -1,6 +1,7 @@
 package alphacats
 
 import (
+	"encoding/gob"
 	"fmt"
 	"math/rand"
 
@@ -9,6 +10,15 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 )
+
+type InfoSetWithAvailableActions struct {
+	*gamestate.InfoSet
+	AvailableActions []gamestate.Action
+}
+
+func init() {
+	gob.Register(&InfoSetWithAvailableActions{})
+}
 
 // turnType represents the kind of turn at a given point in the game.
 type turnType uint8
@@ -124,11 +134,6 @@ func (gn *GameNode) Player() int {
 
 func (gn *GameNode) LastAction() gamestate.Action {
 	return gn.state.LastAction()
-}
-
-type InfoSetWithAvailableActions struct {
-	*gamestate.InfoSet
-	AvailableActions []gamestate.Action
 }
 
 // InfoSet implements cfr.GameTreeNode.

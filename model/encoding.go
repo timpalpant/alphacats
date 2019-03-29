@@ -113,7 +113,7 @@ func encodeAdvantages(advantages []float32) []float32 {
 func encodeSampleWeights(batch []deepcfr.Sample) []float32 {
 	result := make([]float32, len(batch))
 	for i, sample := range batch {
-		w := float32((sample.Iter + 1) / 2)
+		w := float32(int((sample.Weight + 1.0) / 2.0))
 		result[i] = w
 	}
 

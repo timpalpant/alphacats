@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -33,12 +34,6 @@ func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
 		return cfr.NewOutcomeSampling(policy, 0.1)
 	case "chance":
 		return cfr.NewChanceSampling(policy)
-	case "average":
-		return cfr.NewAverageStrategySampling(policy, cfr.ASSamplingParams{
-			Epsilon: 0.05,
-			Tau:     1000,
-			Beta:    1000000,
-		})
 	default:
 		panic(fmt.Errorf("unknown sampling type: %v", samplingType))
 	}
@@ -47,7 +42,7 @@ func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
 func newPolicy(cfrType string, params model.Params, bufSize int) cfr.StrategyProfile {
 	switch cfrType {
 	case "tabular":
-		return cfr.NewStrategyTable(cfr.DiscountParams{})
+		return cfr.NewPolicyTable(cfr.DiscountParams{})
 	case "deep":
 		lstm := model.NewLSTM(params)
 		buffers := []deepcfr.Buffer{
@@ -167,7 +162,8 @@ func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
 	w := gzip.NewWriter(f)
 	defer w.Close()
 
-	return policy.MarshalTo(w)
+	enc := gob.NewEncoder(w)
+	return enc.Encode(policy)
 }
 
 func loadPolicy(cfrType, filename string) cfr.StrategyProfile {
@@ -186,16 +182,8 @@ func loadPolicy(cfrType, filename string) cfr.StrategyProfile {
 	defer r.Close()
 
 	var policy cfr.StrategyProfile
-	switch cfrType {
-	case "tabular":
-		policy, err = cfr.LoadStrategyTable(r)
-	case "deep":
-		policy, err = deepcfr.Load(r)
-	default:
-		glog.Fatal(fmt.Errorf("unknown CFR type: %v", cfrType))
-	}
-
-	if err != nil {
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&policy); err != nil {
 		glog.Fatal(err)
 	}
 

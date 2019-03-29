@@ -29,7 +29,7 @@ import tensorflow as tf
 TF_GRAPH_TAG = "lstm"
 
 MAX_HISTORY = 48
-N_HISTORY_FEATURES = 59
+N_ACTION_FEATURES = 59
 NUM_CARD_TYPES = 10
 
 
@@ -44,9 +44,9 @@ class TrainingSequence(Sequence):
         logging.debug("Loading batch %d", idx)
         batch = np.load(self.batches[idx])
         n_samples = len(batch["sample_weight"])
-        X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_HISTORY_FEATURES))
+        X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
         X_hand = batch["X_hand"].reshape((n_samples, NUM_CARD_TYPES))
-        X_action = batch["X_action"].reshape((n_samples, 1))
+        X_action = batch["X_action"].reshape((n_samples, N_ACTION_FEATURES))
         X = {"history": X_history, "hand": X_hand, "action": X_action}
         y = batch["y"].reshape((n_samples, 1))
         return X, y, batch["sample_weight"]

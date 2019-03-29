@@ -10,7 +10,7 @@ type gameNodeSlicePool struct {
 
 func (p *gameNodeSlicePool) alloc(n int) []GameNode {
 	if p == nil {
-		return make([]GameNode, n)
+		return make([]GameNode, 0, n)
 	}
 
 	if len(p.pool) > 0 {
@@ -35,7 +35,7 @@ type actionSlicePool struct {
 
 func (p *actionSlicePool) alloc(n int) []gamestate.Action {
 	if p == nil {
-		return make([]gamestate.Action, n)
+		return make([]gamestate.Action, 0, n)
 	}
 
 	if len(p.pool) > 0 {

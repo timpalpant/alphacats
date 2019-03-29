@@ -138,7 +138,7 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	}
 
 	is := gn.state.GetInfoSet(gamestate.Player(player))
-	availableActions := make([]gamestate.Action, len(gn.actions))
+	availableActions := make([]gamestate.Action, gn.NumChildren())
 	copy(availableActions, gn.actions)
 	return &InfoSetWithAvailableActions{
 		InfoSet:          is,
@@ -179,6 +179,7 @@ func (gn *GameNode) allocChildren(n int) {
 	childPrototype.children = nil
 	for i := 0; i < n; i++ {
 		gn.children = append(gn.children, childPrototype)
+		gn.actions = append(gn.actions, gamestate.Action{})
 	}
 }
 
@@ -216,6 +217,11 @@ func (gn *GameNode) NumChildren() int {
 
 	if gn.children == nil {
 		gn.buildChildren()
+	}
+
+	if len(gn.children) != len(gn.actions) {
+		panic(fmt.Errorf("%d children, %d actions: %v",
+			len(gn.children), len(gn.actions), gn))
 	}
 
 	return len(gn.children)
@@ -359,6 +365,7 @@ func (gn *GameNode) buildPlayTurnChildren() {
 	})
 
 	gn.children = gn.children[:i+1]
+	gn.actions = gn.actions[:i+1]
 	// End our turn by drawing a card.
 	lastChild := &gn.children[i]
 	action := gamestate.Action{
@@ -395,6 +402,7 @@ func (gn *GameNode) buildGiveCardChildren() {
 	})
 
 	gn.children = gn.children[:i]
+	gn.actions = gn.actions[:i]
 }
 
 func (gn *GameNode) buildMustDefuseChildren() {
@@ -435,7 +443,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	} else {
 		gn.children = gn.children[:len(gn.children)-1]
-		gn.actions = gn.actions[:len(gn.children)-1]
+		gn.actions = gn.actions[:len(gn.actions)-1]
 	}
 }
 

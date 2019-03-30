@@ -1,7 +1,6 @@
 package gamestate
 
 import (
-	"crypto/md5"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
@@ -138,20 +137,43 @@ type InfoSet struct {
 }
 
 func (is *InfoSet) Key() string {
-	var buf [3*MaxNumActions + 8]byte
+	buf, _ := is.MarshalBinary()
+	return string(buf)
+}
+
+func (is *InfoSet) MarshalBinary() ([]byte, error) {
+	buf := make([]byte, 3*len(is.History)+8)
+
 	for i, action := range is.History {
-		buf[i] = action[0]
-		buf[i+1] = action[1]
-		buf[i+2] = action[2]
+		buf[3*i] = action[0]
+		buf[3*i+1] = action[1]
+		buf[3*i+2] = action[2]
 	}
 
-	// Player's hand is appended to private game history.
-	binary.LittleEndian.PutUint64(buf[3*len(is.History):], uint64(is.Hand))
+	// Player's hand is appended at the end.
+	handBuf := buf[len(buf)-8:]
+	binary.LittleEndian.PutUint64(handBuf, uint64(is.Hand))
 
-	// Hash into smaller bitstring since it is sparse.
-	// We'll hope for no collisions :)
-	hash := md5.Sum(buf[:3*len(is.History)+8])
-	return string(hash[:])
+	return buf, nil
+}
+
+func (is *InfoSet) UnmarshalBinary(buf []byte) error {
+	if (len(buf)-8)%3 != 0 {
+		panic(fmt.Errorf("invalid InfoSet binary len=%d: %v", len(buf), buf))
+	}
+
+	nActions := (len(buf) - 8) / 3
+	is.History = make([]EncodedAction, nActions)
+	for i := range is.History {
+		is.History[i][0] = buf[3*i]
+		is.History[i][1] = buf[3*i+1]
+		is.History[i][2] = buf[3*i+2]
+	}
+
+	handBuf := buf[len(buf)-8:]
+	is.Hand = cards.Set(binary.LittleEndian.Uint64(handBuf))
+
+	return nil
 }
 
 type EncodedAction [3]uint8

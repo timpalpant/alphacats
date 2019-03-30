@@ -4,6 +4,7 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -29,10 +30,35 @@ type cfrAlgo interface {
 	Run(cfr.GameTreeNode) float32
 }
 
-func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
+func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir string) cfrAlgo {
 	switch samplingType {
 	case "external":
-		return cfr.NewExternalSampling(policy)
+		sampledActionsFactory := cfr.NewSampledActionsMap
+		if cfrType == "leveldb" || cfrType == "deepleveldb" {
+			sampledActionsFactory = func() cfr.SampledActions {
+				tmpDir, err := ioutil.TempDir(outputDir, "sampled-actions-")
+				if err != nil {
+					glog.Fatal(err)
+				}
+
+				opts := &opt.Options{
+					BlockCacheCapacity:  256 * opt.MiB,
+					CompactionTableSize: 16 * opt.MiB,
+					CompactionTotalSize: 32 * opt.MiB,
+					WriteBuffer:         16 * opt.MiB,
+					NoSync:              true,
+					Filter:              filter.NewBloomFilter(10),
+				}
+				ss, err := ldbstore.NewLDBSampledActionStore(tmpDir, opts)
+				if err != nil {
+					glog.Fatal(err)
+				}
+
+				return ss
+			}
+		}
+
+		return cfr.NewExternalSampling(policy, sampledActionsFactory)
 	case "outcome":
 		return cfr.NewOutcomeSampling(policy, 0.1)
 	case "chance":
@@ -48,9 +74,12 @@ func newPolicy(cfrType string, params model.Params, bufSize int, outputDir strin
 		return cfr.NewPolicyTable(cfr.DiscountParams{})
 	case "leveldb":
 		opts := &opt.Options{
-			BlockCacheCapacity: 256 * opt.MiB,
-			NoSync:             true,
-			Filter:             filter.NewBloomFilter(10),
+			BlockCacheCapacity:  256 * opt.MiB,
+			CompactionTableSize: 16 * opt.MiB,
+			CompactionTotalSize: 32 * opt.MiB,
+			WriteBuffer:         16 * opt.MiB,
+			NoSync:              true,
+			Filter:              filter.NewBloomFilter(10),
 		}
 		policy, err := ldbstore.New(outputDir, opts, cfr.DiscountParams{})
 		if err != nil {
@@ -69,7 +98,12 @@ func newPolicy(cfrType string, params model.Params, bufSize int, outputDir strin
 		t := time.Now().UnixNano()
 		bufPath1 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer1-%d", t))
 		bufPath2 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer2-%d", t))
-		opts := &opt.Options{NoSync: true}
+		opts := &opt.Options{
+			NoSync:              true,
+			CompactionTableSize: 16 * opt.MiB,
+			CompactionTotalSize: 32 * opt.MiB,
+			WriteBuffer:         16 * opt.MiB,
+		}
 		buf1, err := ldbstore.NewReservoirBuffer(bufPath1, opts, bufSize)
 		if err != nil {
 			glog.Fatal(err)
@@ -134,7 +168,7 @@ func main() {
 	} else {
 		policy = loadPolicy(*cfrType, *resume)
 	}
-	opt := getCFRAlgo(policy, *samplingType)
+	opt := getCFRAlgo(policy, *cfrType, *samplingType, *outputDir)
 	deck, cardsPerPlayer := getDeck(*deckType)
 
 	var wg sync.WaitGroup

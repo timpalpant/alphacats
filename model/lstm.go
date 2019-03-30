@@ -98,7 +98,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	return trained
 }
 
-func (m *LSTM) GobDecode(buf []byte) error {
+func (m *LSTM) UnmarshalBinary(buf []byte) error {
 	r := bytes.NewReader(buf)
 	dec := gob.NewDecoder(r)
 
@@ -113,7 +113,7 @@ func (m *LSTM) GobDecode(buf []byte) error {
 	return nil
 }
 
-func (m *LSTM) GobEncode() ([]byte, error) {
+func (m *LSTM) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 

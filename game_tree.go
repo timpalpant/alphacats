@@ -13,7 +13,50 @@ import (
 
 type InfoSetWithAvailableActions struct {
 	*gamestate.InfoSet
-	AvailableActions []gamestate.Action
+	AvailableActions []gamestate.EncodedAction
+}
+
+func (is *InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
+	buf, err := is.InfoSet.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	// Append available actions.
+	nBits := 3*len(is.AvailableActions) + 1
+	buf = append(buf, make([]byte, nBits)...)
+	aBuf := buf[len(buf)-nBits:]
+	for i, action := range is.AvailableActions {
+		aBuf[3*i] = action[0]
+		aBuf[3*i+1] = action[1]
+		aBuf[3*i+2] = action[2]
+	}
+
+	// Append number of available actions so we can unmarshal.
+	buf[len(buf)-1] = uint8(len(is.AvailableActions))
+	return buf, nil
+}
+
+func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
+	nActions := int(uint8(buf[len(buf)-1]))
+	buf = buf[:len(buf)-1]
+
+	is.AvailableActions = make([]gamestate.EncodedAction, nActions)
+	aBuf := buf[len(buf)-3*nActions:]
+	buf = buf[:len(buf)-3*nActions]
+	for i := range is.AvailableActions {
+		is.AvailableActions[i][0] = aBuf[3*i]
+		is.AvailableActions[i][1] = aBuf[3*i+1]
+		is.AvailableActions[i][2] = aBuf[3*i+2]
+	}
+
+	infoSet := &gamestate.InfoSet{}
+	if err := infoSet.UnmarshalBinary(buf); err != nil {
+		return err
+	}
+
+	is.InfoSet = infoSet
+	return nil
 }
 
 func init() {
@@ -143,8 +186,12 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	}
 
 	is := gn.state.GetInfoSet(gamestate.Player(player))
-	availableActions := make([]gamestate.Action, gn.NumChildren())
-	copy(availableActions, gn.actions)
+	availableActions := make([]gamestate.EncodedAction, 0, gn.NumChildren())
+	for _, action := range gn.actions {
+		packed := gamestate.EncodeAction(action)
+		availableActions = append(availableActions, packed)
+	}
+
 	return &InfoSetWithAvailableActions{
 		InfoSet:          is,
 		AvailableActions: availableActions,

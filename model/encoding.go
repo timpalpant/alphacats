@@ -118,7 +118,7 @@ func encodeActions(batch []deepcfr.Sample) []float32 {
 	for _, sample := range batch {
 		is := sample.InfoSet.(*alphacats.InfoSetWithAvailableActions)
 		for _, action := range is.AvailableActions {
-			result = append(result, encodeAction(action)...)
+			result = append(result, encodeAction(action.Decode())...)
 		}
 	}
 

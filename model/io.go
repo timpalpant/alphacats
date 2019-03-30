@@ -12,6 +12,8 @@ import (
 	"github.com/klauspost/compress/zip"
 	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
+
+	"github.com/timpalpant/alphacats"
 )
 
 // Writing to npz files is slow, but we have to buffer the (large)
@@ -60,13 +62,47 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 }
 
 func saveBatch(batch []deepcfr.Sample, filename string) error {
-	return SaveNPZFile(filename, map[string]interface{}{
-		"X_history":     encodeHistories(batch),
-		"X_hand":        encodeHands(batch),
-		"X_action":      encodeActions(batch),
-		"y":             encodeTargets(batch),
-		"sample_weight": encodeSampleWeights(batch),
-	})
+	features := encodeFeatures(batch)
+	return SaveNPZFile(filename, features)
+}
+
+func encodeFeatures(batch []deepcfr.Sample) map[string]interface{} {
+	var historyFeatures, handFeatures, actionFeatures, y, sampleWeights []float32
+
+	var is alphacats.InfoSetWithAvailableActions
+	for _, sample := range batch {
+		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
+			panic(err)
+		}
+
+		if len(is.AvailableActions) != len(sample.Advantages) {
+			panic(fmt.Errorf("Sample has %d actions but %d advantages",
+				len(is.AvailableActions), len(sample.Advantages)))
+		}
+
+		history := EncodeHistory(is.History)
+		hand := encodeHand(is.Hand)
+		w := float32(int((sample.Weight + 1.0) / 2.0))
+		for _, action := range is.AvailableActions {
+			for _, row := range history {
+				historyFeatures = append(historyFeatures, row...)
+			}
+
+			handFeatures = append(handFeatures, hand...)
+			sampleWeights = append(sampleWeights, w)
+			actionFeatures = append(actionFeatures, encodeAction(action)...)
+		}
+
+		y = append(y, sample.Advantages...)
+	}
+
+	return map[string]interface{}{
+		"X_history":     historyFeatures,
+		"X_hand":        handFeatures,
+		"X_action":      actionFeatures,
+		"y":             y,
+		"sample_weight": sampleWeights,
+	}
 }
 
 func SaveNPZFile(filename string, data map[string]interface{}) error {

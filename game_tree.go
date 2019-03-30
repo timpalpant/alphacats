@@ -13,7 +13,7 @@ import (
 
 type InfoSetWithAvailableActions struct {
 	*gamestate.InfoSet
-	AvailableActions []gamestate.EncodedAction
+	AvailableActions []gamestate.Action
 }
 
 func (is *InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
@@ -27,9 +27,10 @@ func (is *InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
 	buf = append(buf, make([]byte, nBits)...)
 	aBuf := buf[len(buf)-nBits:]
 	for i, action := range is.AvailableActions {
-		aBuf[3*i] = action[0]
-		aBuf[3*i+1] = action[1]
-		aBuf[3*i+2] = action[2]
+		packed := gamestate.EncodeAction(action)
+		aBuf[3*i] = packed[0]
+		aBuf[3*i+1] = packed[1]
+		aBuf[3*i+2] = packed[2]
 	}
 
 	// Append number of available actions so we can unmarshal.
@@ -41,13 +42,15 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 	nActions := int(uint8(buf[len(buf)-1]))
 	buf = buf[:len(buf)-1]
 
-	is.AvailableActions = make([]gamestate.EncodedAction, nActions)
+	is.AvailableActions = make([]gamestate.Action, nActions)
 	aBuf := buf[len(buf)-3*nActions:]
 	buf = buf[:len(buf)-3*nActions]
 	for i := range is.AvailableActions {
-		is.AvailableActions[i][0] = aBuf[3*i]
-		is.AvailableActions[i][1] = aBuf[3*i+1]
-		is.AvailableActions[i][2] = aBuf[3*i+2]
+		packed := gamestate.EncodedAction{}
+		packed[0] = aBuf[3*i]
+		packed[1] = aBuf[3*i+1]
+		packed[2] = aBuf[3*i+2]
+		is.AvailableActions[i] = packed.Decode()
 	}
 
 	infoSet := &gamestate.InfoSet{}
@@ -185,16 +188,9 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 		gn.buildChildren()
 	}
 
-	is := gn.state.GetInfoSet(gamestate.Player(player))
-	availableActions := make([]gamestate.EncodedAction, 0, gn.NumChildren())
-	for _, action := range gn.actions {
-		packed := gamestate.EncodeAction(action)
-		availableActions = append(availableActions, packed)
-	}
-
 	return &InfoSetWithAvailableActions{
-		InfoSet:          is,
-		AvailableActions: availableActions,
+		InfoSet:          gn.state.GetInfoSet(gamestate.Player(player)),
+		AvailableActions: gn.actions,
 	}
 }
 

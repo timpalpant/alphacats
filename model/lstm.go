@@ -25,7 +25,7 @@ import (
 
 const (
 	graphTag               = "lstm"
-	outputLayer            = "output/mul"
+	outputLayer            = "output/BiasAdd"
 	maxPredictionBatchSize = 4096
 	numEncodingWorkers     = 4
 )

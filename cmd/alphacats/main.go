@@ -14,8 +14,11 @@ import (
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
+	"github.com/syndtr/goleveldb/leveldb/filter"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
+	"github.com/timpalpant/go-cfr/ldbstore"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
@@ -39,16 +42,43 @@ func getCFRAlgo(policy cfr.StrategyProfile, samplingType string) cfrAlgo {
 	}
 }
 
-func newPolicy(cfrType string, params model.Params, bufSize int) cfr.StrategyProfile {
+func newPolicy(cfrType string, params model.Params, bufSize int, outputDir string) cfr.StrategyProfile {
 	switch cfrType {
 	case "tabular":
 		return cfr.NewPolicyTable(cfr.DiscountParams{})
+	case "leveldb":
+		opts := &opt.Options{
+			BlockCacheCapacity: 256 * opt.MiB,
+			NoSync:             true,
+			Filter:             filter.NewBloomFilter(10),
+		}
+		policy, err := ldbstore.New(outputDir, opts, cfr.DiscountParams{})
+		if err != nil {
+			glog.Fatal(err)
+		}
+		return policy
 	case "deep":
 		lstm := model.NewLSTM(params)
 		buffers := []deepcfr.Buffer{
 			deepcfr.NewThreadSafeReservoirBuffer(bufSize),
 			deepcfr.NewThreadSafeReservoirBuffer(bufSize),
 		}
+		return deepcfr.New(lstm, buffers)
+	case "deepleveldb":
+		lstm := model.NewLSTM(params)
+		t := time.Now().UnixNano()
+		bufPath1 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer1-%d", t))
+		bufPath2 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer2-%d", t))
+		opts := &opt.Options{NoSync: true}
+		buf1, err := ldbstore.NewReservoirBuffer(bufPath1, opts, bufSize)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		buf2, err := ldbstore.NewReservoirBuffer(bufPath2, opts, bufSize)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		buffers := []deepcfr.Buffer{buf1, buf2}
 		return deepcfr.New(lstm, buffers)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", cfrType))
@@ -100,7 +130,7 @@ func main() {
 
 	var policy cfr.StrategyProfile
 	if *resume == "" {
-		policy = newPolicy(*cfrType, params, *bufSize)
+		policy = newPolicy(*cfrType, params, *bufSize, *outputDir)
 	} else {
 		policy = loadPolicy(*cfrType, *resume)
 	}

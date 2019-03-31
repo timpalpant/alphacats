@@ -64,20 +64,12 @@ func TestPackSequences(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		h := newHistoryFromSlice(testCase)
+		h := NewHistoryFromActions(testCase)
 		result := h.AsSlice()
 		if !reflect.DeepEqual(result, testCase) {
 			t.Errorf("input: %+v, output: %+v", testCase, result)
 		}
 	}
-}
-
-func newHistoryFromSlice(actions []Action) History {
-	h := History{}
-	for _, action := range actions {
-		h.Append(action)
-	}
-	return h
 }
 
 func TestAppend(t *testing.T) {
@@ -87,7 +79,7 @@ func TestAppend(t *testing.T) {
 		{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
 	}
 
-	h := newHistoryFromSlice(testSequence)
+	h := NewHistoryFromActions(testSequence)
 	action := Action{Player: Player1, Type: InsertExplodingCat}
 	h.Append(action)
 	result := h.AsSlice()
@@ -126,7 +118,7 @@ func TestMarshalInfoSet(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		history := EncodeActions(tc.history)
+		history := NewHistoryFromActions(tc.history)
 		hand := cards.NewSetFromCards(tc.hand)
 		is := InfoSet{history, hand}
 

@@ -74,6 +74,14 @@ type History struct {
 	n       int
 }
 
+func NewHistoryFromActions(actions []Action) History {
+	h := History{}
+	for _, action := range actions {
+		h.Append(action)
+	}
+	return h
+}
+
 func (h *History) String() string {
 	return fmt.Sprintf("%v", h.actions[:h.n])
 }

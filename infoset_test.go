@@ -10,8 +10,8 @@ import (
 
 func TestMarshalInfoset(t *testing.T) {
 	isWithAvailableActions := InfoSetWithAvailableActions{
-		InfoSet: &gamestate.InfoSet{
-			History: gamestate.EncodeActions([]gamestate.Action{
+		InfoSet: gamestate.InfoSet{
+			History: gamestate.NewHistoryFromActions([]gamestate.Action{
 				{Player: gamestate.Player0, Type: gamestate.DrawCard},
 				{Player: gamestate.Player0, Type: gamestate.DrawCard},
 				{Player: gamestate.Player1, Type: gamestate.PlayCard, Card: cards.Shuffle},

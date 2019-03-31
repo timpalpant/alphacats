@@ -118,8 +118,11 @@ func getCFRAlgo(params RunParams, policy cfr.StrategyProfile) cfrAlgo {
 func getReservoirBuffer(params DeepCFRParams) deepcfr.Buffer {
 	switch params.BufferType {
 	case "leveldb":
-		t := time.Now().UnixNano()
-		bufPath := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("buffer1-%d", t))
+		bufPath, err := ioutil.TempDir(params.ModelParams.OutputDir, "buffer-")
+		if err != nil {
+			glog.Fatal(err)
+		}
+
 		opts := params.LDBParams.ToOpts()
 		buf, err := ldbstore.NewReservoirBuffer(bufPath, opts, params.BufferSize)
 		if err != nil {
@@ -176,18 +179,48 @@ func main() {
 	flag.StringVar(&params.DeckType, "decktype", "test", "Type of deck to use (core, test)")
 	flag.StringVar(&params.CFRType, "cfrtype", "tabular", "Type of CFR to run (tabular, deep)")
 	flag.IntVar(&params.NumCFRIterations, "iter", 100, "Number of DeepCFR iterations to perform")
-	flag.StringVar(&params.SamplingParams.SamplingType, "sampling", "external",
-		"Type of sampling to perform (external, chance, outcome, average)")
-	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "num_sampling_threads", 256,
-		"Max number of sampling runs to perform in parallel")
-	flag.Int64Var(&params.SamplingParams.Seed, "seed", 123, "Random seed")
-	flag.IntVar(&params.DeepCFRParams.BufferSize, "buf_size", 10000000, "Size of reservoir sample buffer")
-	flag.IntVar(&params.DeepCFRParams.TraversalsPerIter, "traversals_per_iter", 30000,
-		"Number of ES-CFR traversals to perform each iteration")
-	flag.IntVar(&params.DeepCFRParams.ModelParams.BatchSize, "batch_size", 4096,
-		"Size of minibatches to save for network training")
 	flag.StringVar(&params.OutputDir, "output_dir", "", "Directory to save policies to")
 	flag.StringVar(&params.ResumeFrom, "resume", "", "Resume training with given model")
+
+	flag.StringVar(&params.SamplingParams.SamplingType, "sampling.type", "external",
+		"Type of sampling to perform (external, chance, outcome, average)")
+	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "sampling.num_sampling_threads", 256,
+		"Max number of sampling runs to perform in parallel")
+	flag.StringVar(&params.SamplingParams.SampledActionsType,
+		"sampling.sampled_actions.type", "memory",
+		"Type of storage for sampled player actions (memory, leveldb)")
+	flag.IntVar(&params.SamplingParams.LDBParams.BlockCacheCapacity,
+		"sampling.sampled_actions.block_cache_capacity", 128*opt.MiB,
+		"Block cache capacity if using leveldb sampled actions")
+	flag.IntVar(&params.SamplingParams.LDBParams.WriteBuffer,
+		"sampling.sampled_actions.write_buffer", 256*opt.MiB,
+		"Write buffer if using leveldb sampled actions")
+	flag.IntVar(&params.SamplingParams.LDBParams.BloomFilterNumBits,
+		"sampling.sampled_actions.num_bloom_bits", 10,
+		"Number of bits/sample for Bloom filter if using leveldb sampled actions")
+	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
+
+	flag.StringVar(&params.DeepCFRParams.BufferType,
+		"deepcfr.buffer.type", "memory",
+		"Type of reservoir sample buffer (memory, leveldb)")
+	flag.IntVar(&params.DeepCFRParams.BufferSize,
+		"deepcfr.buffer.size", 10000000,
+		"Number of samples to keep in reservoir sample buffer")
+	flag.IntVar(&params.DeepCFRParams.LDBParams.BlockCacheCapacity,
+		"deepcfr.buffer.block_cache_capacity", 8*opt.MiB,
+		"Block cache capacity if using leveldb sampled actions")
+	flag.IntVar(&params.DeepCFRParams.LDBParams.WriteBuffer,
+		"deepcfr.buffer.write_buffer", 256*opt.MiB,
+		"Write buffer if using leveldb sampled actions")
+	flag.IntVar(&params.DeepCFRParams.LDBParams.BloomFilterNumBits,
+		"deepcfr.buffer.bloom_bits", 10,
+		"Number of bits/sample for Bloom filter if using leveldb reservoir buffer")
+	flag.IntVar(&params.DeepCFRParams.TraversalsPerIter,
+		"deepcfr.traversals_per_iter", 1,
+		"Number of ES-CFR traversals to perform each iteration")
+	flag.IntVar(&params.DeepCFRParams.ModelParams.BatchSize,
+		"deepcfr.model.batch_size", 4096,
+		"Size of minibatches to save for network training")
 	flag.Parse()
 
 	rand.Seed(params.SamplingParams.Seed)

@@ -46,9 +46,13 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 	buf = buf[:len(buf)-4]
 
 	actionsBuf := buf[len(buf)-nAvailableActionBytes:]
-	buf = buf[:len(buf)-nAvailableActionBytes]
-	if err := is.InfoSet.UnmarshalBinary(buf); err != nil {
+	isBuf := buf[:len(buf)-nAvailableActionBytes]
+	if err := is.InfoSet.UnmarshalBinary(isBuf); err != nil {
 		return err
+	}
+
+	if len(is.AvailableActions) > 0 { // Clear
+		is.AvailableActions = is.AvailableActions[:0]
 	}
 
 	for len(actionsBuf) > 0 {

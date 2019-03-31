@@ -90,6 +90,10 @@ func (h *History) Len() int {
 	return h.n
 }
 
+func (h *History) Clear() {
+	h.n = 0
+}
+
 func (h *History) Get(i int) Action {
 	return h.GetPacked(i).Decode()
 }
@@ -179,6 +183,7 @@ func (is *InfoSet) MarshalBinary() ([]byte, error) {
 }
 
 func (is *InfoSet) UnmarshalBinary(buf []byte) error {
+	is.History.Clear()
 	for len(buf) > 8 {
 		packed := EncodedAction{}
 		packed[0] = buf[0]

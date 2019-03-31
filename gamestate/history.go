@@ -121,7 +121,7 @@ func (h *History) asViewedBy(player Player) []EncodedAction {
 	result := make([]EncodedAction, h.n)
 	copy(result, h.actions[:h.n])
 	for i, packed := range result {
-		if player != Player(packed[0]&0x1) {
+		if player != packed.Player() {
 			// Hide the non-public information.
 			result[i][1] = 0
 			result[i][2] = 0
@@ -142,36 +142,42 @@ func (is *InfoSet) Key() string {
 }
 
 func (is *InfoSet) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, 3*len(is.History)+8)
+	var buf []byte
+	for _, action := range is.History {
+		buf = append(buf, action[0])
 
-	for i, action := range is.History {
-		buf[3*i] = action[0]
-		buf[3*i+1] = action[1]
-		buf[3*i+2] = action[2]
+		// Actions are "varint" encoded: we only copy the private bits
+		// if they are non-zero, which is indicated by the last bit of
+		// the first byte.
+		if action.HasPrivateInfo() {
+			buf = append(buf, action[1], action[2])
+		}
 	}
 
 	// Player's hand is appended at the end.
-	handBuf := buf[len(buf)-8:]
-	binary.LittleEndian.PutUint64(handBuf, uint64(is.Hand))
+	var hBuf [8]byte
+	binary.LittleEndian.PutUint64(hBuf[:], uint64(is.Hand))
+	buf = append(buf, hBuf[:]...)
 
 	return buf, nil
 }
 
 func (is *InfoSet) UnmarshalBinary(buf []byte) error {
-	if (len(buf)-8)%3 != 0 {
-		panic(fmt.Errorf("invalid InfoSet binary len=%d: %v", len(buf), buf))
+	for len(buf) > 8 {
+		packed := EncodedAction{}
+		packed[0] = buf[0]
+		buf = buf[1:]
+
+		if packed.HasPrivateInfo() {
+			packed[1] = buf[0]
+			packed[2] = buf[1]
+			buf = buf[2:]
+		}
+
+		is.History = append(is.History, packed)
 	}
 
-	nActions := (len(buf) - 8) / 3
-	is.History = make([]EncodedAction, nActions)
-	for i := range is.History {
-		is.History[i][0] = buf[3*i]
-		is.History[i][1] = buf[3*i+1]
-		is.History[i][2] = buf[3*i+2]
-	}
-
-	handBuf := buf[len(buf)-8:]
-	is.Hand = cards.Set(binary.LittleEndian.Uint64(handBuf))
+	is.Hand = cards.Set(binary.LittleEndian.Uint64(buf))
 
 	return nil
 }
@@ -180,28 +186,33 @@ type EncodedAction [3]uint8
 
 // Action is packed as bits within a [3]uint8:
 //   [0] Player (0 or 1)
-//   [1-3] Type (1 - 4)
-//   [4-7] Card (1 - 10)
+//   [1-2] Type (1 - 4, encoded as 0-3)
+//   [3-6] Card (1 - 10)
+//   [7] Indicates whether there is additional private info (remaining bits) (0 or 1)
 //   [8-11] PositionInDrawPile (0 - 13)
 //   [12-24] 3 Cards (1 - 10)
 // Thus the first byte is public info, the second two bytes are private info.
 func EncodeAction(a Action) EncodedAction {
 	var result EncodedAction
 	result[0] = uint8(a.Player)
-	result[0] += uint8(a.Type << 1)
-	result[0] += uint8(a.Card << 4)
+	result[0] += uint8((a.Type - 1) << 1)
+	result[0] += uint8(a.Card << 3)
 	result[1] = uint8(a.PositionInDrawPile)
 	result[1] += uint8(a.CardsSeen[0] << 4)
 	result[2] = uint8(a.CardsSeen[1])
 	result[2] += uint8(a.CardsSeen[2] << 4)
+	hasPrivateInfo := (result[1] != 0 || result[2] != 0)
+	if hasPrivateInfo {
+		result[0] += uint8(1 << 7)
+	}
 	return result
 }
 
 func (packed EncodedAction) Decode() Action {
 	return Action{
 		Player:             Player(packed[0] & 0x1),
-		Type:               ActionType((packed[0] >> 1) & 0x7),
-		Card:               cards.Card(packed[0] >> 4),
+		Type:               ActionType((packed[0]>>1)&0x3) + 1,
+		Card:               cards.Card((packed[0] >> 3) & 0xf),
 		PositionInDrawPile: uint8(packed[1] & 0xf),
 		CardsSeen: [3]cards.Card{
 			cards.Card(packed[1] >> 4),
@@ -209,6 +220,14 @@ func (packed EncodedAction) Decode() Action {
 			cards.Card(packed[2] >> 4),
 		},
 	}
+}
+
+func (packed EncodedAction) Player() Player {
+	return Player(packed[0] & 0x1)
+}
+
+func (packed EncodedAction) HasPrivateInfo() bool {
+	return (packed[0] >> 7) == 1
 }
 
 func EncodeActions(actions []Action) []EncodedAction {

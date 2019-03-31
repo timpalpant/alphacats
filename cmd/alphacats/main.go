@@ -42,7 +42,7 @@ func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir str
 				}
 
 				opts := &opt.Options{
-					BlockCacheCapacity:  256 * opt.MiB,
+					BlockCacheCapacity:  16 * opt.MiB,
 					CompactionTableSize: 16 * opt.MiB,
 					CompactionTotalSize: 32 * opt.MiB,
 					WriteBuffer:         16 * opt.MiB,

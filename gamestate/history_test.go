@@ -22,17 +22,43 @@ func TestEncodeDecode(t *testing.T) {
 	}
 }
 
+func TestHasPrivateInfo(t *testing.T) {
+	action := Action{Player: 0, Type: DrawCard, Card: cards.Unknown}
+	packed := EncodeAction(action)
+	if packed.HasPrivateInfo() {
+		t.Errorf("action does not have private info: %v", packed)
+	}
+
+	action.PositionInDrawPile = 1
+	packed = EncodeAction(action)
+	if !packed.HasPrivateInfo() {
+		t.Errorf("action has private info: %v", packed)
+	}
+
+	action.PositionInDrawPile = 0
+	action.CardsSeen[0] = cards.Skip
+	packed = EncodeAction(action)
+	if !packed.HasPrivateInfo() {
+		t.Errorf("action has private info: %v", packed)
+	}
+}
+
 func TestPackSequences(t *testing.T) {
 	testCases := [][]Action{
 		{
 			{Player: Player0, Type: DrawCard},
-			{Player: Player0, Type: DrawCard},
+			{Player: Player0, Type: DrawCard, CardsSeen: [3]cards.Card{
+				cards.Slap1x, cards.Unknown, cards.Unknown,
+			}},
 			{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
-			{Player: Player1, Type: InsertExplodingCat},
+			{Player: Player1, Type: InsertExplodingCat, PositionInDrawPile: 13},
+			{Player: Player1, Type: InsertExplodingCat, PositionInDrawPile: 11},
 		},
 		{
 			{Player: Player0, Type: PlayCard, Card: cards.Skip},
-			{Player: Player0, Type: PlayCard, Card: cards.SeeTheFuture},
+			{Player: Player0, Type: PlayCard, Card: cards.SeeTheFuture, CardsSeen: [3]cards.Card{
+				cards.Cat, cards.Skip, cards.SeeTheFuture,
+			}},
 			{Player: Player0, Type: PlayCard, Card: cards.Cat},
 		},
 	}

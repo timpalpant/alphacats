@@ -1,6 +1,7 @@
 package alphacats
 
 import (
+	"encoding/binary"
 	"encoding/gob"
 
 	"github.com/timpalpant/alphacats/gamestate"
@@ -18,39 +19,51 @@ func (is *InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
 	}
 
 	// Append available actions.
-	nBytes := 3*len(is.AvailableActions) + 1
-	buf = append(buf, make([]byte, nBytes)...)
-	aBuf := buf[len(buf)-nBytes:]
-	for i, action := range is.AvailableActions {
+	nInfoSetBytes := len(buf)
+	for _, action := range is.AvailableActions {
 		packed := gamestate.EncodeAction(action)
-		aBuf[3*i] = packed[0]
-		aBuf[3*i+1] = packed[1]
-		aBuf[3*i+2] = packed[2]
+		buf = append(buf, packed[0])
+
+		// Actions are "varint" encoded: we only copy the private bits
+		// if they are non-zero, which is indicated by the last bit of
+		// the first byte.
+		if packed.HasPrivateInfo() {
+			buf = append(buf, packed[1], packed[2])
+		}
 	}
 
-	// Append number of available actions so we can unmarshal.
-	buf[len(buf)-1] = uint8(len(is.AvailableActions))
+	// Append number of available actions bytes so we can split off when unmarshaling.
+	nAvailableActionBytes := len(buf) - nInfoSetBytes
+	var nBuf [4]byte
+	binary.LittleEndian.PutUint32(nBuf[:], uint32(nAvailableActionBytes))
+	buf = append(buf, nBuf[:]...)
+
 	return buf, nil
 }
 
 func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
-	nActions := int(uint8(buf[len(buf)-1]))
-	buf = buf[:len(buf)-1]
+	nAvailableActionBytes := int(binary.LittleEndian.Uint32(buf[len(buf)-4:]))
+	buf = buf[:len(buf)-4]
 
-	actionsBuf := buf[len(buf)-3*nActions:]
-	buf = buf[:len(buf)-3*nActions]
+	actionsBuf := buf[len(buf)-nAvailableActionBytes:]
+	buf = buf[:len(buf)-nAvailableActionBytes]
 	is.InfoSet = &gamestate.InfoSet{}
 	if err := is.InfoSet.UnmarshalBinary(buf); err != nil {
 		return err
 	}
 
-	is.AvailableActions = make([]gamestate.Action, nActions)
-	for i := range is.AvailableActions {
+	for len(actionsBuf) > 0 {
 		packed := gamestate.EncodedAction{}
-		packed[0] = actionsBuf[3*i]
-		packed[1] = actionsBuf[3*i+1]
-		packed[2] = actionsBuf[3*i+2]
-		is.AvailableActions[i] = packed.Decode()
+		packed[0] = actionsBuf[0]
+		actionsBuf = actionsBuf[1:]
+
+		if packed.HasPrivateInfo() {
+			packed[1] = actionsBuf[0]
+			packed[2] = actionsBuf[1]
+			actionsBuf = actionsBuf[2:]
+		}
+
+		is.AvailableActions = append(is.AvailableActions, packed.Decode())
 	}
 
 	return nil

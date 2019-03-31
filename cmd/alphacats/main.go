@@ -33,6 +33,7 @@ type RunParams struct {
 
 	SamplingParams SamplingParams
 	DeepCFRParams  DeepCFRParams
+	LDBParams      LevelDBParams
 
 	OutputDir  string
 	ResumeFrom string
@@ -41,6 +42,7 @@ type RunParams struct {
 type SamplingParams struct {
 	SamplingType       string
 	SampledActionsType string
+	LDBParams          LevelDBParams
 	NumSamplingThreads int
 	Seed               int64
 }
@@ -48,49 +50,84 @@ type SamplingParams struct {
 type DeepCFRParams struct {
 	BufferType        string
 	BufferSize        int
+	LDBParams         LevelDBParams
 	TraversalsPerIter int
 	ModelParams       model.Params
+}
+
+type LevelDBParams struct {
+	BlockCacheCapacity int
+	WriteBuffer        int
+	BloomFilterNumBits int
+}
+
+func (p LevelDBParams) ToOpts() *opt.Options {
+	o := &opt.Options{
+		BlockCacheCapacity: p.BlockCacheCapacity,
+		WriteBuffer:        p.WriteBuffer,
+		NoSync:             true,
+	}
+
+	if p.BloomFilterNumBits > 0 {
+		o.Filter = filter.NewBloomFilter(p.BloomFilterNumBits)
+	}
+
+	return o
 }
 
 type cfrAlgo interface {
 	Run(cfr.GameTreeNode) float32
 }
 
-func getCFRAlgo(params RunParams) cfrAlgo {
+func getSampledActionsFactory(params RunParams) cfr.SampledActionsFactory {
+	switch params.SamplingParams.SampledActionsType {
+	case "leveldb":
+		return func() cfr.SampledActions {
+			tmpDir, err := ioutil.TempDir(params.OutputDir, "sampled-actions-")
+			if err != nil {
+				glog.Fatal(err)
+			}
+
+			opts := params.SamplingParams.LDBParams.ToOpts()
+			ss, err := ldbstore.NewLDBSampledActions(tmpDir, opts)
+			if err != nil {
+				glog.Fatal(err)
+			}
+
+			return ss
+		}
+	default:
+		return cfr.NewSampledActionsMap
+	}
+}
+
+func getCFRAlgo(params RunParams, policy cfr.StrategyProfile) cfrAlgo {
 	switch params.SamplingParams.SamplingType {
 	case "external":
-		sampledActionsFactory := cfr.NewSampledActionsMap
-		if cfrType == "leveldb" || cfrType == "deepleveldb" {
-			sampledActionsFactory = func() cfr.SampledActions {
-				tmpDir, err := ioutil.TempDir(outputDir, "sampled-actions-")
-				if err != nil {
-					glog.Fatal(err)
-				}
-
-				opts := &opt.Options{
-					BlockCacheCapacity:  256 * opt.MiB,
-					CompactionTableSize: 256 * opt.MiB,
-					CompactionTotalSize: 256 * opt.MiB,
-					WriteBuffer:         256 * opt.MiB,
-					NoSync:              true,
-					Filter:              filter.NewBloomFilter(10),
-				}
-				ss, err := ldbstore.NewLDBSampledActions(tmpDir, opts)
-				if err != nil {
-					glog.Fatal(err)
-				}
-
-				return ss
-			}
-		}
-
+		sampledActionsFactory := getSampledActionsFactory(params)
 		return cfr.NewExternalSampling(policy, sampledActionsFactory)
 	case "outcome":
 		return cfr.NewOutcomeSampling(policy, 0.1)
 	case "chance":
 		return cfr.NewChanceSampling(policy)
 	default:
-		panic(fmt.Errorf("unknown sampling type: %v", samplingType))
+		panic(fmt.Errorf("unsupported sampling type: %v", params.SamplingParams.SamplingType))
+	}
+}
+
+func getReservoirBuffer(params DeepCFRParams) deepcfr.Buffer {
+	switch params.BufferType {
+	case "leveldb":
+		t := time.Now().UnixNano()
+		bufPath := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("buffer1-%d", t))
+		opts := params.LDBParams.ToOpts()
+		buf, err := ldbstore.NewReservoirBuffer(bufPath, opts, params.BufferSize)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		return buf
+	default:
+		return deepcfr.NewThreadSafeReservoirBuffer(params.BufferSize)
 	}
 }
 
@@ -99,51 +136,23 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 	case "tabular":
 		return cfr.NewPolicyTable(cfr.DiscountParams{})
 	case "leveldb":
-		opts := &opt.Options{
-			BlockCacheCapacity:  1024 * opt.MiB,
-			CompactionTableSize: 256 * opt.MiB,
-			CompactionTotalSize: 256 * opt.MiB,
-			WriteBuffer:         256 * opt.MiB,
-			NoSync:              true,
-			Filter:              filter.NewBloomFilter(10),
-		}
+		opts := params.LDBParams.ToOpts()
 		policy, err := ldbstore.New(params.OutputDir, opts, cfr.DiscountParams{})
 		if err != nil {
 			glog.Fatal(err)
 		}
 		return policy
 	case "deep":
-		lstm := model.NewLSTM(params)
+		dCFRParams := params.DeepCFRParams
+		dCFRParams.ModelParams.OutputDir = filepath.Join(params.OutputDir, "models")
+		lstm := model.NewLSTM(dCFRParams.ModelParams)
 		buffers := []deepcfr.Buffer{
-			deepcfr.NewThreadSafeReservoirBuffer(bufSize),
-			deepcfr.NewThreadSafeReservoirBuffer(bufSize),
+			getReservoirBuffer(dCFRParams),
+			getReservoirBuffer(dCFRParams),
 		}
-		return deepcfr.New(lstm, buffers)
-	case "deepleveldb":
-		lstm := model.NewLSTM(params)
-		t := time.Now().UnixNano()
-		bufPath1 := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("buffer1-%d", t))
-		bufPath2 := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("buffer2-%d", t))
-		opts := &opt.Options{
-			BlockCacheCapacity:  256 * opt.MiB,
-			CompactionTableSize: 256 * opt.MiB,
-			CompactionTotalSize: 256 * opt.MiB,
-			WriteBuffer:         256 * opt.MiB,
-			NoSync:              true,
-			Filter:              filter.NewBloomFilter(10),
-		}
-		buf1, err := ldbstore.NewReservoirBuffer(bufPath1, opts, bufSize)
-		if err != nil {
-			glog.Fatal(err)
-		}
-		buf2, err := ldbstore.NewReservoirBuffer(bufPath2, opts, bufSize)
-		if err != nil {
-			glog.Fatal(err)
-		}
-		buffers := []deepcfr.Buffer{buf1, buf2}
 		return deepcfr.New(lstm, buffers)
 	default:
-		panic(fmt.Errorf("unknown CFR type: %v", cfrType))
+		panic(fmt.Errorf("unknown CFR type: %v", params.CFRType))
 	}
 }
 
@@ -172,18 +181,16 @@ func main() {
 	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "num_sampling_threads", 256,
 		"Max number of sampling runs to perform in parallel")
 	flag.Int64Var(&params.SamplingParams.Seed, "seed", 123, "Random seed")
-	flag.IntVar(&params.CFRParams.BufferSize, "buf_size", 10000000, "Size of reservoir sample buffer")
-	flag.IntVar(&params.CFRParams.TraversalsPerIter, "traversals_per_iter", 30000,
+	flag.IntVar(&params.DeepCFRParams.BufferSize, "buf_size", 10000000, "Size of reservoir sample buffer")
+	flag.IntVar(&params.DeepCFRParams.TraversalsPerIter, "traversals_per_iter", 30000,
 		"Number of ES-CFR traversals to perform each iteration")
-	flag.IntVar(&params.CFRParams.ModelParams.BatchSize, "batch_size", 4096,
+	flag.IntVar(&params.DeepCFRParams.ModelParams.BatchSize, "batch_size", 4096,
 		"Size of minibatches to save for network training")
-	flag.StringVar(&params.CFRParams.ModelParams.OutputDir, "model_dir", "",
-		"Directory to save trained network models to")
 	flag.StringVar(&params.OutputDir, "output_dir", "", "Directory to save policies to")
 	flag.StringVar(&params.ResumeFrom, "resume", "", "Resume training with given model")
 	flag.Parse()
 
-	rand.Seed(params.Seed)
+	rand.Seed(params.SamplingParams.Seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
 	if err := os.MkdirAll(params.OutputDir, 0777); err != nil {
@@ -196,7 +203,7 @@ func main() {
 	} else {
 		policy = loadPolicy(params)
 	}
-	opt := getCFRAlgo(params)
+	opt := getCFRAlgo(params, policy)
 	deck, cardsPerPlayer := getDeck(params.DeckType)
 
 	var wg sync.WaitGroup
@@ -208,12 +215,12 @@ func main() {
 	//
 	// Our GPU (NVIDIA 1060) seems to top out at a concurrency of ~1024,
 	// see benchmarks in model/lstm_test.go.
-	sem := make(chan struct{}, params.NumSamplingThreads)
+	sem := make(chan struct{}, params.SamplingParams.NumSamplingThreads)
 	for t := policy.Iter(); t <= params.NumCFRIterations; t++ {
 		glog.V(1).Infof("[t=%d] Collecting %d samples with %d threads",
-			t, params.TraversalsPerIter, cap(sem))
+			t, params.DeepCFRParams.TraversalsPerIter, cap(sem))
 		start := time.Now()
-		for k := 1; k <= params.TraversalsPerIter; k++ {
+		for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			sem <- struct{}{}
@@ -264,10 +271,10 @@ func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
 	return enc.Encode(&policy)
 }
 
-func loadPolicy(cfrType, filename string) cfr.StrategyProfile {
-	glog.Infof("Loading saved %v policy from: %v", cfrType, filename)
+func loadPolicy(params RunParams) cfr.StrategyProfile {
+	glog.Infof("Loading saved policy from: %v", params.ResumeFrom)
 	start := time.Now()
-	f, err := os.Open(filename)
+	f, err := os.Open(params.ResumeFrom)
 	if err != nil {
 		glog.Fatal(err)
 	}

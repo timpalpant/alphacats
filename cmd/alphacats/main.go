@@ -69,6 +69,8 @@ func (p LevelDBParams) ToOpts() *opt.Options {
 		CompactionTableSizeMultiplier: 2,
 		CompactionTotalSize:           p.WriteBuffer,
 		NoSync:                        true,
+		BlockSize:                     32 * opt.KiB,
+		Compression:                   opt.NoCompression,
 	}
 
 	if p.BloomFilterNumBits > 0 {

@@ -3,17 +3,20 @@ package model
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/klauspost/compress/zip"
-	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
 
 	"github.com/timpalpant/alphacats"
+	"github.com/timpalpant/alphacats/cards"
+	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/model/npyio"
 )
 
 // Writing to npz files is slow, but we have to buffer the (large)
@@ -62,22 +65,46 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 }
 
 func saveBatch(batch []deepcfr.Sample, filename string) error {
-	features := encodeFeatures(batch)
-	return SaveNPZFile(filename, features)
-}
+	outputDir := filepath.Dir(filename)
+	tmpDir, err := ioutil.TempDir(outputDir, "npy-entries-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
 
-func encodeFeatures(batch []deepcfr.Sample) map[string]interface{} {
-	var historyFeatures, handFeatures, actionFeatures, y, sampleWeights []float32
+	nSamples := 0
+	for _, sample := range batch {
+		nSamples += len(sample.Advantages)
+	}
+
+	npyFilenames := map[string]int{
+		"X_history":     nSamples * gamestate.MaxNumActions * numActionFeatures,
+		"X_hand":        nSamples * cards.NumTypes,
+		"X_action":      nSamples * numActionFeatures,
+		"y":             nSamples,
+		"sample_weight": nSamples,
+	}
+
+	npyFiles := make(map[string]*npyio.File, len(npyFilenames))
+	for filename, numElements := range npyFilenames {
+		f, err := npyio.Create(filepath.Join(tmpDir, filename), numElements)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		npyFiles[filename] = f
+	}
 
 	var is alphacats.InfoSetWithAvailableActions
 	for _, sample := range batch {
 		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
-			panic(err)
+			return err
 		}
 
 		if len(is.AvailableActions) != len(sample.Advantages) {
-			panic(fmt.Errorf("Sample has %d actions but %d advantages",
-				len(is.AvailableActions), len(sample.Advantages)))
+			panic(fmt.Errorf("Sample has %d actions but %d advantages: sample=%v, is=%v",
+				len(is.AvailableActions), len(sample.Advantages), sample, is))
 		}
 
 		history := EncodeHistory(is.History)
@@ -85,51 +112,43 @@ func encodeFeatures(batch []deepcfr.Sample) map[string]interface{} {
 		w := float32(int((sample.Weight + 1.0) / 2.0))
 		for _, action := range is.AvailableActions {
 			for _, row := range history {
-				historyFeatures = append(historyFeatures, row...)
+				if err := npyFiles["X_history"].Append(row...); err != nil {
+					return err
+				}
 			}
 
-			handFeatures = append(handFeatures, hand...)
-			sampleWeights = append(sampleWeights, w)
-			actionFeatures = append(actionFeatures, encodeAction(action)...)
+			if err := npyFiles["X_hand"].Append(hand...); err != nil {
+				return err
+			}
+
+			if err := npyFiles["sample_weight"].Append(w); err != nil {
+				return err
+			}
+
+			if err := npyFiles["X_action"].Append(encodeAction(action)...); err != nil {
+				return err
+			}
 		}
 
-		y = append(y, sample.Advantages...)
+		npyFiles["y"].Append(sample.Advantages...)
 	}
 
-	return map[string]interface{}{
-		"X_history":     historyFeatures,
-		"X_hand":        handFeatures,
-		"X_action":      actionFeatures,
-		"y":             y,
-		"sample_weight": sampleWeights,
-	}
-}
+	toZip := make(map[string]io.Reader, len(npyFiles))
+	for name, npyF := range npyFiles {
+		if err := npyF.Close(); err != nil {
+			return err
+		}
 
-func SaveNPZFile(filename string, data map[string]interface{}) error {
-	// Open npz (zip) file.
-	f, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	bufW := bufio.NewWriter(f)
-	defer bufW.Flush()
-	z := zip.NewWriter(bufW)
-	defer z.Close()
-
-	// Write each npy entry into the npz file.
-	for name, entry := range data {
-		w, err := z.Create(name)
+		f, err := os.Open(filepath.Join(tmpDir, name))
 		if err != nil {
 			return err
 		}
+		defer f.Close()
 
-		if err := npyio.Write(w, entry); err != nil {
-			return err
-		}
+		toZip[name] = bufio.NewReader(f)
 	}
 
-	return nil
+	return npyio.MakeNPZ(toZip, filename)
 }
 
 func min(i, j int) int {

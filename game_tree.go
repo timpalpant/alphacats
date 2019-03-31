@@ -254,6 +254,8 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 func (gn *GameNode) Close() {
 	gn.gnPool.free(gn.children)
 	gn.children = nil
+	gn.aPool.free(gn.actions)
+	gn.actions = nil
 }
 
 func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int) {

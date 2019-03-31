@@ -42,7 +42,7 @@ func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir str
 				}
 
 				opts := &opt.Options{
-					BlockCacheCapacity:  16 * opt.MiB,
+					BlockCacheCapacity:  256 * opt.MiB,
 					CompactionTableSize: 16 * opt.MiB,
 					CompactionTotalSize: 32 * opt.MiB,
 					WriteBuffer:         16 * opt.MiB,
@@ -99,10 +99,12 @@ func newPolicy(cfrType string, params model.Params, bufSize int, outputDir strin
 		bufPath1 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer1-%d", t))
 		bufPath2 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer2-%d", t))
 		opts := &opt.Options{
-			NoSync:              true,
+			BlockCacheCapacity:  256 * opt.MiB,
 			CompactionTableSize: 16 * opt.MiB,
 			CompactionTotalSize: 32 * opt.MiB,
 			WriteBuffer:         16 * opt.MiB,
+			NoSync:              true,
+			Filter:              filter.NewBloomFilter(10),
 		}
 		buf1, err := ldbstore.NewReservoirBuffer(bufPath1, opts, bufSize)
 		if err != nil {

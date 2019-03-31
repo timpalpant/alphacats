@@ -8,56 +8,49 @@ import (
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
-	"github.com/timpalpant/alphacats/gamestate"
 )
 
 const testModel = "testdata/savedmodel"
 
-// with request batching:
-// BenchmarkPredict-24            	500	    3210621 ns/op
-// BenchmarkPredictParallel-24    	3000     409844 ns/op
-// BenchmarkPredictParallel-64      5000     228288 ns/op
-// BenchmarkPredictParallel-128	    10000    140949 ns/op
-// BenchmarkPredictParallel-256     20000     78092 ns/op
-// BenchmarkPredictParallel-512     20000     60986 ns/op
-// BenchmarkPredictParallel-1024    30000     38710 ns/op
-// BenchmarkPredictParallel-2048    30000     36679 ns/op
-//
-// without request batching:
-// BenchmarkPredict-24            	500	    2741763 ns/op
-// BenchmarkPredictParallel-24    	500	    2848236 ns/op
+// BenchmarkPredict-24				     100	  14291122 ns/op
+// BenchmarkPredictParallel-24		    2000	    783695 ns/op
+// BenchmarkPredictParallel-128			5000	    305617 ns/op
+// BenchmarkPredictParallel-256		    5000	    221782 ns/op
+// BenchmarkPredictParallel-1024	   10000	    205640 ns/op
+// BenchmarkPredictParallel-2048	   10000	    155314 ns/op
+// BenchmarkPredictParallel-4096	   10000	    168410 ns/op
 func BenchmarkPredict(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
-	is := game.InfoSet(0)
+	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
 	model, err := LoadTrainedLSTM(testModel)
 	if err != nil {
 		b.Fatal(err)
 	}
 	defer model.Close()
-	model.Predict(is, 6) // One time setup cost.
+	model.Predict(is, len(is.AvailableActions)) // One time setup cost.
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		model.Predict(is, 6)
+		model.Predict(is, len(is.AvailableActions))
 	}
 }
 
 func BenchmarkPredictParallel(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
-	is := game.InfoSet(0)
+	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
 	model, err := LoadTrainedLSTM(testModel)
 	if err != nil {
 		b.Fatal(err)
 	}
 	defer model.Close()
-	model.Predict(is, 6) // One time setup cost.
+	model.Predict(is, len(is.AvailableActions)) // One time setup cost.
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			model.Predict(is, 6)
+			model.Predict(is, len(is.AvailableActions))
 		}
 	})
 }
@@ -137,9 +130,9 @@ func runBatch(b *testing.B, model *tf.SavedModel, history [][]float32, hand, act
 		for i := 0; i < b.N; i++ {
 			_, err := model.Session.Run(
 				map[tf.Output]*tf.Tensor{
-					model.Graph.Operation("history").Output(0):     historyTensor,
-					model.Graph.Operation("hand").Output(0):        handTensor,
-					model.Graph.Operation("num_actions").Output(0): numActionsTensor,
+					model.Graph.Operation("history").Output(0): historyTensor,
+					model.Graph.Operation("hand").Output(0):    handTensor,
+					model.Graph.Operation("action").Output(0):  actionTensor,
 				},
 				[]tf.Output{
 					model.Graph.Operation(outputLayer).Output(0),

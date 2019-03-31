@@ -154,8 +154,8 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	is := infoSet.(*alphacats.InfoSetWithAvailableActions)
 	if len(is.AvailableActions) != nActions {
-		panic(fmt.Errorf("InfoSet has %d actions but expected %d",
-			len(is.AvailableActions), nActions))
+		panic(fmt.Errorf("InfoSet has %d actions but expected %d: %v",
+			len(is.AvailableActions), nActions, is.AvailableActions))
 	}
 
 	history := EncodeHistory(is.History)
@@ -229,7 +229,7 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 
 	encodeCh := make(chan []*predictionRequest)
 	defer close(encodeCh)
-	// Multiple encoder threads because it is NewTensor is slow
+	// Multiple encoder threads because NewTensor is slow
 	// and we don't want to be bottlenecked on it. This will mean too-small batches
 	// for the first few, but we expect that at steady-state we will be rate-limited
 	// by predictions on the GPU, so the batches will still be large (just buffered).

@@ -63,9 +63,12 @@ type LevelDBParams struct {
 
 func (p LevelDBParams) ToOpts() *opt.Options {
 	o := &opt.Options{
-		BlockCacheCapacity: p.BlockCacheCapacity,
-		WriteBuffer:        p.WriteBuffer,
-		NoSync:             true,
+		BlockCacheCapacity:            p.BlockCacheCapacity,
+		WriteBuffer:                   p.WriteBuffer,
+		CompactionTableSize:           p.WriteBuffer,
+		CompactionTableSizeMultiplier: 2,
+		CompactionTotalSize:           p.WriteBuffer,
+		NoSync:                        true,
 	}
 
 	if p.BloomFilterNumBits > 0 {
@@ -148,6 +151,10 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 	case "deep":
 		dCFRParams := params.DeepCFRParams
 		dCFRParams.ModelParams.OutputDir = filepath.Join(params.OutputDir, "models")
+		if err := os.MkdirAll(dCFRParams.ModelParams.OutputDir, 0777); err != nil {
+			glog.Fatal(err)
+		}
+
 		lstm := model.NewLSTM(dCFRParams.ModelParams)
 		buffers := []deepcfr.Buffer{
 			getReservoirBuffer(dCFRParams),

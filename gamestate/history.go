@@ -151,7 +151,7 @@ func (is *InfoSet) Key() string {
 func (is *InfoSet) MarshalBinary() ([]byte, error) {
 	var buf []byte
 	for i := 0; i < is.History.Len(); i++ {
-		action := is.History.GetPacked(i)
+		action := is.History.actions[i]
 		buf = append(buf, action[0])
 
 		// Actions are "varint" encoded: we only copy the private bits

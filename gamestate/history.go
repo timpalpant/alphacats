@@ -211,6 +211,15 @@ func (packed EncodedAction) Decode() Action {
 	}
 }
 
+func EncodeActions(actions []Action) []EncodedAction {
+	result := make([]EncodedAction, len(actions))
+	for i, action := range actions {
+		result[i] = EncodeAction(action)
+	}
+
+	return result
+}
+
 func init() {
 	gob.Register(&InfoSet{})
 }

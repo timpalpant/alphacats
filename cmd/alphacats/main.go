@@ -49,7 +49,7 @@ func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir str
 					NoSync:              true,
 					Filter:              filter.NewBloomFilter(10),
 				}
-				ss, err := ldbstore.NewLDBSampledActionStore(tmpDir, opts)
+				ss, err := ldbstore.NewLDBSampledActions(tmpDir, opts)
 				if err != nil {
 					glog.Fatal(err)
 				}

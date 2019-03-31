@@ -74,3 +74,48 @@ func TestAppend(t *testing.T) {
 		t.Errorf("expected %v, got %v", action, lastItem)
 	}
 }
+
+func TestMarshalInfoSet(t *testing.T) {
+	testCases := []struct {
+		history []Action
+		hand    []cards.Card
+	}{
+		{
+			history: []Action{
+				{Player: Player0, Type: DrawCard},
+				{Player: Player0, Type: DrawCard},
+				{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
+				{Player: Player1, Type: InsertExplodingCat},
+			},
+			hand: []cards.Card{cards.Cat, cards.Defuse, cards.Skip},
+		},
+		{
+			history: []Action{
+				{Player: Player0, Type: PlayCard, Card: cards.Skip},
+				{Player: Player0, Type: PlayCard, Card: cards.SeeTheFuture},
+				{Player: Player0, Type: PlayCard, Card: cards.Cat},
+			},
+			hand: []cards.Card{cards.ExplodingCat, cards.Unknown},
+		},
+	}
+
+	for _, tc := range testCases {
+		history := EncodeActions(tc.history)
+		hand := cards.NewSetFromCards(tc.hand)
+		is := InfoSet{history, hand}
+
+		buf, err := is.MarshalBinary()
+		if err != nil {
+			t.Error(err)
+		}
+
+		var unmarshaled InfoSet
+		if err := unmarshaled.UnmarshalBinary(buf); err != nil {
+			t.Error(err)
+		}
+
+		if !reflect.DeepEqual(is, unmarshaled) {
+			t.Errorf("expected %v, got %v", is, unmarshaled)
+		}
+	}
+}

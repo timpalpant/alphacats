@@ -1,7 +1,6 @@
 package alphacats
 
 import (
-	"encoding/gob"
 	"fmt"
 	"math/rand"
 
@@ -10,61 +9,6 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 )
-
-type InfoSetWithAvailableActions struct {
-	*gamestate.InfoSet
-	AvailableActions []gamestate.Action
-}
-
-func (is *InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
-	buf, err := is.InfoSet.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-
-	// Append available actions.
-	nBits := 3*len(is.AvailableActions) + 1
-	buf = append(buf, make([]byte, nBits)...)
-	aBuf := buf[len(buf)-nBits:]
-	for i, action := range is.AvailableActions {
-		packed := gamestate.EncodeAction(action)
-		aBuf[3*i] = packed[0]
-		aBuf[3*i+1] = packed[1]
-		aBuf[3*i+2] = packed[2]
-	}
-
-	// Append number of available actions so we can unmarshal.
-	buf[len(buf)-1] = uint8(len(is.AvailableActions))
-	return buf, nil
-}
-
-func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
-	nActions := int(uint8(buf[len(buf)-1]))
-	buf = buf[:len(buf)-1]
-
-	is.AvailableActions = make([]gamestate.Action, nActions)
-	aBuf := buf[len(buf)-3*nActions:]
-	buf = buf[:len(buf)-3*nActions]
-	for i := range is.AvailableActions {
-		packed := gamestate.EncodedAction{}
-		packed[0] = aBuf[3*i]
-		packed[1] = aBuf[3*i+1]
-		packed[2] = aBuf[3*i+2]
-		is.AvailableActions[i] = packed.Decode()
-	}
-
-	infoSet := &gamestate.InfoSet{}
-	if err := infoSet.UnmarshalBinary(buf); err != nil {
-		return err
-	}
-
-	is.InfoSet = infoSet
-	return nil
-}
-
-func init() {
-	gob.Register(&InfoSetWithAvailableActions{})
-}
 
 // turnType represents the kind of turn at a given point in the game.
 type turnType uint8

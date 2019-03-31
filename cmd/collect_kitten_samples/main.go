@@ -22,7 +22,7 @@ import (
 const maxCardsInDrawPile = 13
 
 type Sample struct {
-	History                 []gamestate.EncodedAction
+	History                 gamestate.History
 	ExplodingKittenPosition int
 }
 

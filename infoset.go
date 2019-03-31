@@ -8,11 +8,11 @@ import (
 )
 
 type InfoSetWithAvailableActions struct {
-	*gamestate.InfoSet
+	gamestate.InfoSet
 	AvailableActions []gamestate.Action
 }
 
-func (is *InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
+func (is InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
 	buf, err := is.InfoSet.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -47,7 +47,6 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 
 	actionsBuf := buf[len(buf)-nAvailableActionBytes:]
 	buf = buf[:len(buf)-nAvailableActionBytes]
-	is.InfoSet = &gamestate.InfoSet{}
 	if err := is.InfoSet.UnmarshalBinary(buf); err != nil {
 		return err
 	}

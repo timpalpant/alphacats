@@ -83,25 +83,33 @@ func (h *History) Len() int {
 }
 
 func (h *History) Get(i int) Action {
+	return h.GetPacked(i).Decode()
+}
+
+func (h *History) GetPacked(i int) EncodedAction {
 	if i >= h.n {
 		panic(fmt.Errorf("index out of range: %d %v", i, h))
 	}
 
-	return h.actions[i].Decode()
+	return h.actions[i]
 }
 
 func (h *History) Append(action Action) {
+	h.AppendPacked(EncodeAction(action))
+}
+
+func (h *History) AppendPacked(packed EncodedAction) {
 	if h.n >= len(h.actions) {
 		panic(fmt.Errorf("history exceeded max capacity: %v", h))
 	}
 
-	h.actions[h.n] = EncodeAction(action)
+	h.actions[h.n] = packed
 	h.n++
 }
 
 // Gets the current infoset for the given player.
-func (h *History) GetInfoSet(player Player, hand cards.Set) *InfoSet {
-	return &InfoSet{
+func (h *History) GetInfoSet(player Player, hand cards.Set) InfoSet {
+	return InfoSet{
 		History: h.asViewedBy(player),
 		Hand:    hand,
 	}
@@ -117,14 +125,13 @@ func (h *History) AsSlice() []Action {
 
 // Censor the given full game history to contain only info available
 // to the given player.
-func (h *History) asViewedBy(player Player) []EncodedAction {
-	result := make([]EncodedAction, h.n)
-	copy(result, h.actions[:h.n])
-	for i, packed := range result {
-		if player != packed.Player() {
+func (h *History) asViewedBy(player Player) History {
+	result := *h
+	for i := 0; i < result.Len(); i++ {
+		if player != h.GetPacked(i).Player() {
 			// Hide the non-public information.
-			result[i][1] = 0
-			result[i][2] = 0
+			result.actions[i][1] = 0
+			result.actions[i][2] = 0
 		}
 	}
 
@@ -132,7 +139,7 @@ func (h *History) asViewedBy(player Player) []EncodedAction {
 }
 
 type InfoSet struct {
-	History []EncodedAction
+	History History
 	Hand    cards.Set
 }
 
@@ -143,7 +150,8 @@ func (is *InfoSet) Key() string {
 
 func (is *InfoSet) MarshalBinary() ([]byte, error) {
 	var buf []byte
-	for _, action := range is.History {
+	for i := 0; i < is.History.Len(); i++ {
+		action := is.History.GetPacked(i)
 		buf = append(buf, action[0])
 
 		// Actions are "varint" encoded: we only copy the private bits
@@ -174,7 +182,7 @@ func (is *InfoSet) UnmarshalBinary(buf []byte) error {
 			buf = buf[2:]
 		}
 
-		is.History = append(is.History, packed)
+		is.History.AppendPacked(packed)
 	}
 
 	is.Hand = cards.Set(binary.LittleEndian.Uint64(buf))

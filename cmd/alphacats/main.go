@@ -26,12 +26,38 @@ import (
 	"github.com/timpalpant/alphacats/model"
 )
 
+type RunParams struct {
+	DeckType         string
+	CFRType          string
+	NumCFRIterations int
+
+	SamplingParams SamplingParams
+	DeepCFRParams  DeepCFRParams
+
+	OutputDir  string
+	ResumeFrom string
+}
+
+type SamplingParams struct {
+	SamplingType       string
+	SampledActionsType string
+	NumSamplingThreads int
+	Seed               int64
+}
+
+type DeepCFRParams struct {
+	BufferType        string
+	BufferSize        int
+	TraversalsPerIter int
+	ModelParams       model.Params
+}
+
 type cfrAlgo interface {
 	Run(cfr.GameTreeNode) float32
 }
 
-func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir string) cfrAlgo {
-	switch samplingType {
+func getCFRAlgo(params RunParams) cfrAlgo {
+	switch params.SamplingParams.SamplingType {
 	case "external":
 		sampledActionsFactory := cfr.NewSampledActionsMap
 		if cfrType == "leveldb" || cfrType == "deepleveldb" {
@@ -43,9 +69,9 @@ func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir str
 
 				opts := &opt.Options{
 					BlockCacheCapacity:  256 * opt.MiB,
-					CompactionTableSize: 16 * opt.MiB,
-					CompactionTotalSize: 32 * opt.MiB,
-					WriteBuffer:         16 * opt.MiB,
+					CompactionTableSize: 256 * opt.MiB,
+					CompactionTotalSize: 256 * opt.MiB,
+					WriteBuffer:         256 * opt.MiB,
 					NoSync:              true,
 					Filter:              filter.NewBloomFilter(10),
 				}
@@ -68,20 +94,20 @@ func getCFRAlgo(policy cfr.StrategyProfile, cfrType, samplingType, outputDir str
 	}
 }
 
-func newPolicy(cfrType string, params model.Params, bufSize int, outputDir string) cfr.StrategyProfile {
-	switch cfrType {
+func newPolicy(params RunParams) cfr.StrategyProfile {
+	switch params.CFRType {
 	case "tabular":
 		return cfr.NewPolicyTable(cfr.DiscountParams{})
 	case "leveldb":
 		opts := &opt.Options{
-			BlockCacheCapacity:  256 * opt.MiB,
-			CompactionTableSize: 16 * opt.MiB,
-			CompactionTotalSize: 32 * opt.MiB,
-			WriteBuffer:         16 * opt.MiB,
+			BlockCacheCapacity:  1024 * opt.MiB,
+			CompactionTableSize: 256 * opt.MiB,
+			CompactionTotalSize: 256 * opt.MiB,
+			WriteBuffer:         256 * opt.MiB,
 			NoSync:              true,
 			Filter:              filter.NewBloomFilter(10),
 		}
-		policy, err := ldbstore.New(outputDir, opts, cfr.DiscountParams{})
+		policy, err := ldbstore.New(params.OutputDir, opts, cfr.DiscountParams{})
 		if err != nil {
 			glog.Fatal(err)
 		}
@@ -96,13 +122,13 @@ func newPolicy(cfrType string, params model.Params, bufSize int, outputDir strin
 	case "deepleveldb":
 		lstm := model.NewLSTM(params)
 		t := time.Now().UnixNano()
-		bufPath1 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer1-%d", t))
-		bufPath2 := filepath.Join(params.ModelOutputDir, fmt.Sprintf("buffer2-%d", t))
+		bufPath1 := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("buffer1-%d", t))
+		bufPath2 := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("buffer2-%d", t))
 		opts := &opt.Options{
 			BlockCacheCapacity:  256 * opt.MiB,
-			CompactionTableSize: 16 * opt.MiB,
-			CompactionTotalSize: 32 * opt.MiB,
-			WriteBuffer:         16 * opt.MiB,
+			CompactionTableSize: 256 * opt.MiB,
+			CompactionTotalSize: 256 * opt.MiB,
+			WriteBuffer:         256 * opt.MiB,
 			NoSync:              true,
 			Filter:              filter.NewBloomFilter(10),
 		}
@@ -137,41 +163,41 @@ func getDeck(deckType string) (deck []cards.Card, cardsPerPlayer int) {
 }
 
 func main() {
-	params := model.Params{}
-	deckType := flag.String("decktype", "test", "Type of deck to use (core, test)")
-	cfrType := flag.String("cfrtype", "tabular", "Type of CFR to run (tabular, deep)")
-	samplingType := flag.String("sampling", "external",
+	var params RunParams
+	flag.StringVar(&params.DeckType, "decktype", "test", "Type of deck to use (core, test)")
+	flag.StringVar(&params.CFRType, "cfrtype", "tabular", "Type of CFR to run (tabular, deep)")
+	flag.IntVar(&params.NumCFRIterations, "iter", 100, "Number of DeepCFR iterations to perform")
+	flag.StringVar(&params.SamplingParams.SamplingType, "sampling", "external",
 		"Type of sampling to perform (external, chance, outcome, average)")
-	seed := flag.Int64("seed", 123, "Random seed")
-	iter := flag.Int("iter", 100, "Number of DeepCFR iterations to perform")
-	bufSize := flag.Int("buf_size", 10000000, "Size of reservoir sample buffer")
-	traversalsPerIter := flag.Int("traversals_per_iter", 30000,
-		"Number of ES-CFR traversals to perform each iteration")
-	outputDir := flag.String("output_dir", "", "Directory to save policies to")
-	resume := flag.String("resume", "", "Resume training with given model")
-	numSamplingThreads := flag.Int("num_sampling_threads", 256,
+	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "num_sampling_threads", 256,
 		"Max number of sampling runs to perform in parallel")
-	flag.IntVar(&params.BatchSize, "batch_size", 4096,
+	flag.Int64Var(&params.SamplingParams.Seed, "seed", 123, "Random seed")
+	flag.IntVar(&params.CFRParams.BufferSize, "buf_size", 10000000, "Size of reservoir sample buffer")
+	flag.IntVar(&params.CFRParams.TraversalsPerIter, "traversals_per_iter", 30000,
+		"Number of ES-CFR traversals to perform each iteration")
+	flag.IntVar(&params.CFRParams.ModelParams.BatchSize, "batch_size", 4096,
 		"Size of minibatches to save for network training")
-	flag.StringVar(&params.ModelOutputDir, "model_dir", "",
+	flag.StringVar(&params.CFRParams.ModelParams.OutputDir, "model_dir", "",
 		"Directory to save trained network models to")
+	flag.StringVar(&params.OutputDir, "output_dir", "", "Directory to save policies to")
+	flag.StringVar(&params.ResumeFrom, "resume", "", "Resume training with given model")
 	flag.Parse()
 
-	rand.Seed(*seed)
+	rand.Seed(params.Seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	if err := os.MkdirAll(*outputDir, 0777); err != nil {
+	if err := os.MkdirAll(params.OutputDir, 0777); err != nil {
 		glog.Fatal(err)
 	}
 
 	var policy cfr.StrategyProfile
-	if *resume == "" {
-		policy = newPolicy(*cfrType, params, *bufSize, *outputDir)
+	if params.ResumeFrom == "" {
+		policy = newPolicy(params)
 	} else {
-		policy = loadPolicy(*cfrType, *resume)
+		policy = loadPolicy(params)
 	}
-	opt := getCFRAlgo(policy, *cfrType, *samplingType, *outputDir)
-	deck, cardsPerPlayer := getDeck(*deckType)
+	opt := getCFRAlgo(params)
+	deck, cardsPerPlayer := getDeck(params.DeckType)
 
 	var wg sync.WaitGroup
 	// Becuse we are generally rate-limited by the speed at which we can make
@@ -182,12 +208,12 @@ func main() {
 	//
 	// Our GPU (NVIDIA 1060) seems to top out at a concurrency of ~1024,
 	// see benchmarks in model/lstm_test.go.
-	sem := make(chan struct{}, *numSamplingThreads)
-	for t := policy.Iter(); t <= *iter; t++ {
+	sem := make(chan struct{}, params.NumSamplingThreads)
+	for t := policy.Iter(); t <= params.NumCFRIterations; t++ {
 		glog.V(1).Infof("[t=%d] Collecting %d samples with %d threads",
-			t, *traversalsPerIter, cap(sem))
+			t, params.TraversalsPerIter, cap(sem))
 		start := time.Now()
-		for k := 1; k <= *traversalsPerIter; k++ {
+		for k := 1; k <= params.TraversalsPerIter; k++ {
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			sem <- struct{}{}
@@ -207,12 +233,16 @@ func main() {
 		glog.V(1).Infof("[t=%d] Finished training network (took: %v)", t, time.Since(start))
 
 		// Save 10 snapshots throughout the course of training.
-		if t%(*iter/10) == 0 {
-			if err := savePolicy(policy, *outputDir, t); err != nil {
+		if shouldSave(t, params.NumCFRIterations) {
+			if err := savePolicy(policy, params.OutputDir, t); err != nil {
 				glog.Fatal(err)
 			}
 		}
 	}
+}
+
+func shouldSave(t, numIter int) bool {
+	return t%(numIter/10) == 0
 }
 
 func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {

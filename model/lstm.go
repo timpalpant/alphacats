@@ -41,8 +41,8 @@ var (
 var tfConfig = []byte{50, 2, 32, 1}
 
 type Params struct {
-	BatchSize      int
-	ModelOutputDir string
+	BatchSize int
+	OutputDir string
 }
 
 // LSTM is a model for AlphaCats to be used with DeepCFR
@@ -73,7 +73,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	}
 
 	// Shell out to Python to train the network.
-	outputDir := filepath.Join(m.params.ModelOutputDir, fmt.Sprintf("model_%08d", m.iter))
+	outputDir := filepath.Join(m.params.OutputDir, fmt.Sprintf("model_%08d", m.iter))
 	cmd := exec.Command("python", "model/train.py", tmpDir, outputDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

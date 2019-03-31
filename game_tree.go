@@ -11,10 +11,14 @@ import (
 	"github.com/timpalpant/alphacats/gamestate"
 )
 
-var nodesVisited = expvar.NewInt("nodes_visited")
-var terminalNodesVisited = expvar.NewInt("nodes_visited/terminal")
-var playerNodesVisited = expvar.NewInt("nodes_visited/player")
-var chanceNodesVisited = expvar.NewInt("nodes_visited/chance")
+const luckyNumber = 20181225
+
+var (
+	nodesVisited         = expvar.NewInt("nodes_visited")
+	terminalNodesVisited = expvar.NewInt("nodes_visited/terminal")
+	playerNodesVisited   = expvar.NewInt("nodes_visited/player")
+	chanceNodesVisited   = expvar.NewInt("nodes_visited/chance")
+)
 
 // turnType represents the kind of turn at a given point in the game.
 type turnType uint8
@@ -80,7 +84,7 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:       gamestate.Player0,
 		turnType:     PlayTurn,
 		pendingTurns: 1,
-		rng:          rand.New(rand.NewSource(rand.Int63())),
+		rng:          rand.New(rand.NewSource(luckyNumber)),
 		gnPool:       &gameNodeSlicePool{},
 		aPool:        &actionSlicePool{},
 	}
@@ -103,12 +107,6 @@ func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
 	randPos = rand.Intn(drawPile.Len() + 1)
 	drawPile.InsertCard(cards.Defuse, randPos)
 	return NewGame(drawPile, p0Deal, p1Deal)
-}
-
-func (gn *GameNode) Liberate() {
-	gn.rng = rand.New(rand.NewSource(rand.Int63()))
-	gn.gnPool = &gameNodeSlicePool{}
-	gn.aPool = &actionSlicePool{}
 }
 
 // Type implements cfr.GameTreeNode.
@@ -175,6 +173,7 @@ func (gn *GameNode) allocChildren(n int) {
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
 	childPrototype.children = nil
+	childPrototype.actions = nil
 	for i := 0; i < n; i++ {
 		gn.children = append(gn.children, childPrototype)
 		gn.actions = append(gn.actions, gamestate.Action{})

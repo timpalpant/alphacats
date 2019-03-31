@@ -89,7 +89,7 @@ func (gs *GameState) LastAction() Action {
 // InfoSet represents the state of the game from the point of view of one of the
 // players. Note that multiple distinct game states may have the same InfoSet
 // due to hidden information that the player is not privy to.
-func (gs *GameState) GetInfoSet(player Player) *InfoSet {
+func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	hand := gs.player0Hand
 	if player == Player1 {
 		hand = gs.player1Hand

@@ -71,6 +71,7 @@ func (p LevelDBParams) ToOpts() *opt.Options {
 		NoSync:                        true,
 		BlockSize:                     32 * opt.KiB,
 		Compression:                   opt.NoCompression,
+		BlockRestartInterval:          32,
 	}
 
 	if p.BloomFilterNumBits > 0 {
@@ -102,7 +103,7 @@ func getSampledActionsFactory(params RunParams) cfr.SampledActionsFactory {
 			return ss
 		}
 	default:
-		return cfr.NewSampledActionsMap
+		return alphacats.NewSampledActionsMap
 	}
 }
 
@@ -263,9 +264,9 @@ func main() {
 			t, params.DeepCFRParams.TraversalsPerIter, cap(sem))
 		start := time.Now()
 		for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
+			sem <- struct{}{}
 			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-			sem <- struct{}{}
 			wg.Add(1)
 			go func() {
 				opt.Run(game)

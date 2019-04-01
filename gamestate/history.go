@@ -1,6 +1,7 @@
 package gamestate
 
 import (
+	"crypto/md5"
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
@@ -155,13 +156,27 @@ type InfoSet struct {
 	Hand    cards.Set
 }
 
+// Key implements cfr.InfoSet.
 func (is *InfoSet) Key() string {
 	buf, _ := is.MarshalBinary()
 	return string(buf)
 }
 
+// HashedKey is a custom implementation of a Key for sampled actions that avoids
+// allocations and hashes the lookup key into md5.
+func (is *InfoSet) HashedKey() [md5.Size]byte {
+	var buf [3*MaxNumActions + 8]byte // Longest posible binary representation.
+	bufSlice, _ := is.marshalTo(buf[:])
+	return md5.Sum(bufSlice)
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler.
 func (is *InfoSet) MarshalBinary() ([]byte, error) {
-	var buf []byte
+	buf := make([]byte, 0, is.History.Len()+8) // Minimum possible capacity needed.
+	return is.marshalTo(buf)
+}
+
+func (is *InfoSet) marshalTo(buf []byte) ([]byte, error) {
 	for i := 0; i < is.History.Len(); i++ {
 		action := is.History.actions[i]
 		buf = append(buf, action[0])
@@ -182,6 +197,7 @@ func (is *InfoSet) MarshalBinary() ([]byte, error) {
 	return buf, nil
 }
 
+// MarshalBinary implements encoding.BinaryUnmarshaler.
 func (is *InfoSet) UnmarshalBinary(buf []byte) error {
 	is.History.Clear()
 	for len(buf) > 8 {

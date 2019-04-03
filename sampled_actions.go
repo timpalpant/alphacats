@@ -3,11 +3,13 @@ package alphacats
 import (
 	"crypto/md5"
 	"math/rand"
+	"sync"
 
 	"github.com/timpalpant/go-cfr"
 )
 
 type SampledActionsPool struct {
+	mx      sync.Mutex
 	pool    []sampledActionsMap
 	bufPool *byteSlicePool
 }
@@ -20,6 +22,9 @@ func NewSampledActionsPool() *SampledActionsPool {
 }
 
 func (p *SampledActionsPool) Alloc() cfr.SampledActions {
+	p.mx.Lock()
+	defer p.mx.Unlock()
+
 	if len(p.pool) > 0 {
 		n := len(p.pool)
 		next := p.pool[n-1]
@@ -34,7 +39,9 @@ func (p *SampledActionsPool) Alloc() cfr.SampledActions {
 }
 
 func (p *SampledActionsPool) Free(m sampledActionsMap) {
+	p.mx.Lock()
 	p.pool = append(p.pool, m)
+	p.mx.Unlock()
 }
 
 // sampledActionsMap is a customized version of the one provided in go-cfr

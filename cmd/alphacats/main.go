@@ -188,13 +188,13 @@ func main() {
 
 	flag.StringVar(&params.DeepCFRParams.BufferType,
 		"deepcfr.buffer.type", "memory",
-		"Type of reservoir sample buffer (memory, rocksd)")
+		"Type of reservoir sample buffer (memory, rocksdb)")
 	flag.IntVar(&params.DeepCFRParams.BufferSize,
 		"deepcfr.buffer.size", 10000000,
 		"Number of samples to keep in reservoir sample buffer")
 	flag.IntVar(&params.DeepCFRParams.RDBParams.BlockCacheCapacity,
 		"deepcfr.buffer.block_cache_capacity", 8*MiB,
-		"Block cache capacity if using rocksd sampled actions")
+		"Block cache capacity if using rocksdb sampled actions")
 	flag.IntVar(&params.DeepCFRParams.RDBParams.WriteBuffer,
 		"deepcfr.buffer.write_buffer", 256*MiB,
 		"Write buffer if using rocksd sampled actions")

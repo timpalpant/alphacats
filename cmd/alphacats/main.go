@@ -247,7 +247,7 @@ func main() {
 		start := time.Now()
 		for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
 			sem <- struct{}{}
-			glog.V(3).Infof("[k=%d] Running CFR iteration on random game", k)
+			glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			wg.Add(1)
 			go func() {

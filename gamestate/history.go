@@ -140,7 +140,7 @@ func (h *History) AsSlice() []Action {
 func (h *History) asViewedBy(player Player) History {
 	result := *h
 	for i := 0; i < result.Len(); i++ {
-		if player != h.GetPacked(i).Player() {
+		if player != h.actions[i].Player() {
 			// Hide the non-public information.
 			result.actions[i][1] = 0
 			result.actions[i][2] = 0

@@ -10,20 +10,26 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
-	"github.com/syndtr/goleveldb/leveldb/filter"
-	"github.com/syndtr/goleveldb/leveldb/opt"
+	rocksdb "github.com/tecbot/gorocksdb"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
-	"github.com/timpalpant/go-cfr/ldbstore"
+	"github.com/timpalpant/go-cfr/rdbstore"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/model"
+)
+
+const (
+	KiB = 1024
+	MiB = 1024 * KiB
+	GiB = 1024 * MiB
 )
 
 type RunParams struct {
@@ -33,7 +39,7 @@ type RunParams struct {
 
 	SamplingParams SamplingParams
 	DeepCFRParams  DeepCFRParams
-	LDBParams      LevelDBParams
+	RDBParams      RocksDBParams
 
 	OutputDir  string
 	ResumeFrom string
@@ -41,8 +47,6 @@ type RunParams struct {
 
 type SamplingParams struct {
 	SamplingType       string
-	SampledActionsType string
-	LDBParams          LevelDBParams
 	NumSamplingThreads int
 	Seed               int64
 }
@@ -50,68 +54,52 @@ type SamplingParams struct {
 type DeepCFRParams struct {
 	BufferType        string
 	BufferSize        int
-	LDBParams         LevelDBParams
+	RDBParams         RocksDBParams
 	TraversalsPerIter int
 	ModelParams       model.Params
 }
 
-type LevelDBParams struct {
+type RocksDBParams struct {
+	Path               string
 	BlockCacheCapacity int
 	WriteBuffer        int
 	BloomFilterNumBits int
 }
 
-func (p LevelDBParams) ToOpts() *opt.Options {
-	o := &opt.Options{
-		BlockCacheCapacity:            p.BlockCacheCapacity,
-		WriteBuffer:                   p.WriteBuffer,
-		CompactionTableSize:           p.WriteBuffer,
-		CompactionTableSizeMultiplier: 2,
-		CompactionTotalSize:           p.WriteBuffer,
-		NoSync:                        true,
-		BlockSize:                     32 * opt.KiB,
-		Compression:                   opt.NoCompression,
-		BlockRestartInterval:          32,
-	}
+func (p RocksDBParams) Render(path string) rdbstore.Params {
+	params := rdbstore.DefaultParams(path)
 
+	params.Options.IncreaseParallelism(runtime.NumCPU())
+	params.Options.SetCompression(rocksdb.LZ4Compression)
+	params.Options.SetCreateIfMissing(true)
+	params.Options.SetUseFsync(false)
+	params.Options.SetWriteBufferSize(p.WriteBuffer)
+
+	bOpts := rocksdb.NewDefaultBlockBasedTableOptions()
+	bOpts.SetBlockSize(32 * 1024)
+	blockCache := rocksdb.NewLRUCache(p.BlockCacheCapacity)
+	bOpts.SetBlockCache(blockCache)
 	if p.BloomFilterNumBits > 0 {
-		o.Filter = filter.NewBloomFilter(p.BloomFilterNumBits)
+		filter := rocksdb.NewBloomFilter(p.BloomFilterNumBits)
+		bOpts.SetFilterPolicy(filter)
 	}
+	params.Options.SetBlockBasedTableFactory(bOpts)
 
-	return o
+	params.WriteOptions.DisableWAL(true)
+	params.WriteOptions.SetSync(false)
+
+	return params
 }
 
 type cfrAlgo interface {
 	Run(cfr.GameTreeNode) float32
 }
 
-func getSampledActionsFactory(params RunParams) cfr.SampledActionsFactory {
-	switch params.SamplingParams.SampledActionsType {
-	case "leveldb":
-		return func() cfr.SampledActions {
-			tmpDir, err := ioutil.TempDir(params.OutputDir, "sampled-actions-")
-			if err != nil {
-				glog.Fatal(err)
-			}
-
-			opts := params.SamplingParams.LDBParams.ToOpts()
-			ss, err := ldbstore.NewLDBSampledActions(tmpDir, opts)
-			if err != nil {
-				glog.Fatal(err)
-			}
-
-			return ss
-		}
-	default:
-		return alphacats.NewSampledActionsMap
-	}
-}
-
 func getCFRAlgo(params RunParams, policy cfr.StrategyProfile) cfrAlgo {
 	switch params.SamplingParams.SamplingType {
 	case "external":
-		sampledActionsFactory := getSampledActionsFactory(params)
-		return cfr.NewExternalSampling(policy, sampledActionsFactory)
+		sampledActionsPool := alphacats.NewSampledActionsPool()
+		return cfr.NewExternalSampling(policy, sampledActionsPool.Alloc)
 	case "outcome":
 		return cfr.NewOutcomeSampling(policy, 0.1)
 	case "chance":
@@ -123,14 +111,14 @@ func getCFRAlgo(params RunParams, policy cfr.StrategyProfile) cfrAlgo {
 
 func getReservoirBuffer(params DeepCFRParams) deepcfr.Buffer {
 	switch params.BufferType {
-	case "leveldb":
+	case "rocksdb":
 		bufPath, err := ioutil.TempDir(params.ModelParams.OutputDir, "buffer-")
 		if err != nil {
 			glog.Fatal(err)
 		}
 
-		opts := params.LDBParams.ToOpts()
-		buf, err := ldbstore.NewReservoirBuffer(bufPath, opts, params.BufferSize)
+		opts := params.RDBParams.Render(bufPath)
+		buf, err := rdbstore.NewReservoirBuffer(opts, params.BufferSize)
 		if err != nil {
 			glog.Fatal(err)
 		}
@@ -144,9 +132,9 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 	switch params.CFRType {
 	case "tabular":
 		return cfr.NewPolicyTable(cfr.DiscountParams{})
-	case "leveldb":
-		opts := params.LDBParams.ToOpts()
-		policy, err := ldbstore.New(params.OutputDir, opts, cfr.DiscountParams{})
+	case "rocksdb":
+		opts := params.RDBParams.Render(params.OutputDir)
+		policy, err := rdbstore.New(opts, cfr.DiscountParams{})
 		if err != nil {
 			glog.Fatal(err)
 		}
@@ -196,35 +184,23 @@ func main() {
 		"Type of sampling to perform (external, chance, outcome, average)")
 	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "sampling.num_sampling_threads", 256,
 		"Max number of sampling runs to perform in parallel")
-	flag.StringVar(&params.SamplingParams.SampledActionsType,
-		"sampling.sampled_actions.type", "memory",
-		"Type of storage for sampled player actions (memory, leveldb)")
-	flag.IntVar(&params.SamplingParams.LDBParams.BlockCacheCapacity,
-		"sampling.sampled_actions.block_cache_capacity", 128*opt.MiB,
-		"Block cache capacity if using leveldb sampled actions")
-	flag.IntVar(&params.SamplingParams.LDBParams.WriteBuffer,
-		"sampling.sampled_actions.write_buffer", 256*opt.MiB,
-		"Write buffer if using leveldb sampled actions")
-	flag.IntVar(&params.SamplingParams.LDBParams.BloomFilterNumBits,
-		"sampling.sampled_actions.num_bloom_bits", 10,
-		"Number of bits/sample for Bloom filter if using leveldb sampled actions")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 
 	flag.StringVar(&params.DeepCFRParams.BufferType,
 		"deepcfr.buffer.type", "memory",
-		"Type of reservoir sample buffer (memory, leveldb)")
+		"Type of reservoir sample buffer (memory, rocksd)")
 	flag.IntVar(&params.DeepCFRParams.BufferSize,
 		"deepcfr.buffer.size", 10000000,
 		"Number of samples to keep in reservoir sample buffer")
-	flag.IntVar(&params.DeepCFRParams.LDBParams.BlockCacheCapacity,
-		"deepcfr.buffer.block_cache_capacity", 8*opt.MiB,
-		"Block cache capacity if using leveldb sampled actions")
-	flag.IntVar(&params.DeepCFRParams.LDBParams.WriteBuffer,
-		"deepcfr.buffer.write_buffer", 256*opt.MiB,
-		"Write buffer if using leveldb sampled actions")
-	flag.IntVar(&params.DeepCFRParams.LDBParams.BloomFilterNumBits,
+	flag.IntVar(&params.DeepCFRParams.RDBParams.BlockCacheCapacity,
+		"deepcfr.buffer.block_cache_capacity", 8*MiB,
+		"Block cache capacity if using rocksd sampled actions")
+	flag.IntVar(&params.DeepCFRParams.RDBParams.WriteBuffer,
+		"deepcfr.buffer.write_buffer", 256*MiB,
+		"Write buffer if using rocksd sampled actions")
+	flag.IntVar(&params.DeepCFRParams.RDBParams.BloomFilterNumBits,
 		"deepcfr.buffer.bloom_bits", 10,
-		"Number of bits/sample for Bloom filter if using leveldb reservoir buffer")
+		"Number of bits/sample for Bloom filter if using rocksd reservoir buffer")
 	flag.IntVar(&params.DeepCFRParams.TraversalsPerIter,
 		"deepcfr.traversals_per_iter", 1,
 		"Number of ES-CFR traversals to perform each iteration")

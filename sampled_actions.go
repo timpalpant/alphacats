@@ -7,19 +7,19 @@ import (
 	"github.com/timpalpant/go-cfr"
 )
 
-type sampledActionsPool struct {
+type SampledActionsPool struct {
 	pool    []sampledActionsMap
 	bufPool *byteSlicePool
 }
 
-func newSampledActionsPool() *sampledActionsPool {
-	return &sampledActionsPool{
+func NewSampledActionsPool() *SampledActionsPool {
+	return &SampledActionsPool{
 		pool:    make([]sampledActionsMap, 0),
 		bufPool: &byteSlicePool{},
 	}
 }
 
-func (p *sampledActionsPool) Alloc() cfr.SampledActions {
+func (p *SampledActionsPool) Alloc() cfr.SampledActions {
 	if len(p.pool) > 0 {
 		n := len(p.pool)
 		next := p.pool[n-1]
@@ -33,7 +33,7 @@ func (p *sampledActionsPool) Alloc() cfr.SampledActions {
 	}
 }
 
-func (p *sampledActionsPool) Free(m sampledActionsMap) {
+func (p *SampledActionsPool) Free(m sampledActionsMap) {
 	p.pool = append(p.pool, m)
 }
 
@@ -42,7 +42,7 @@ func (p *sampledActionsPool) Free(m sampledActionsMap) {
 // Since we know we never have more available actions than fit in a uint8, it allows
 // us to reduce memory usage and GC pressure (map without pointers does not get GC scanned).
 type sampledActionsMap struct {
-	p *sampledActionsPool
+	p *SampledActionsPool
 	m map[[md5.Size]byte]uint8
 }
 

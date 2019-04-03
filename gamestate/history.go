@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
+	"unsafe"
 
 	"github.com/timpalpant/alphacats/cards"
 )
@@ -163,7 +164,13 @@ type InfoSet struct {
 // Key implements cfr.InfoSet.
 func (is *InfoSet) Key() string {
 	buf, _ := is.MarshalBinary()
-	return string(buf)
+	return unsafeByteSliceToString(buf)
+}
+
+// Convert byte slice to string unsafely, avoiding copy.
+// Taken from strings.Builder: https://golang.org/src/strings/builder.go#L45
+func unsafeByteSliceToString(bs []byte) string {
+	return *(*string)(unsafe.Pointer(&bs))
 }
 
 func (is *InfoSet) MarshalBinarySize() int {

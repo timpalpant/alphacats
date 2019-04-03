@@ -9,16 +9,12 @@ import (
 )
 
 type SampledActionsPool struct {
-	mx      sync.Mutex
-	pool    []sampledActionsMap
-	bufPool *byteSlicePool
+	mx   sync.Mutex
+	pool []sampledActionsMap
 }
 
 func NewSampledActionsPool() *SampledActionsPool {
-	return &SampledActionsPool{
-		pool:    make([]sampledActionsMap, 0),
-		bufPool: &byteSlicePool{},
-	}
+	return &SampledActionsPool{}
 }
 
 func (p *SampledActionsPool) Alloc() cfr.SampledActions {
@@ -33,8 +29,9 @@ func (p *SampledActionsPool) Alloc() cfr.SampledActions {
 	}
 
 	return sampledActionsMap{
-		p: p,
-		m: make(map[[md5.Size]byte]uint8),
+		p:       p,
+		m:       make(map[[md5.Size]byte]uint8),
+		bufPool: &byteSlicePool{},
 	}
 }
 
@@ -49,15 +46,16 @@ func (p *SampledActionsPool) Free(m sampledActionsMap) {
 // Since we know we never have more available actions than fit in a uint8, it allows
 // us to reduce memory usage and GC pressure (map without pointers does not get GC scanned).
 type sampledActionsMap struct {
-	p *SampledActionsPool
-	m map[[md5.Size]byte]uint8
+	p       *SampledActionsPool
+	m       map[[md5.Size]byte]uint8
+	bufPool *byteSlicePool
 }
 
 func (m sampledActionsMap) Get(node cfr.GameTreeNode, policy cfr.NodePolicy) int {
 	is := node.InfoSet(node.Player()).(*InfoSetWithAvailableActions)
-	buf := m.p.bufPool.alloc(is.History.Len() + 8) // Minimum possible capacity needed.
+	buf := m.bufPool.alloc(is.History.Len() + 8) // Minimum possible capacity needed.
 	buf, _ = is.MarshalTo(buf)
-	defer m.p.bufPool.free(buf)
+	defer m.bufPool.free(buf)
 
 	key := md5.Sum(buf)
 	i, ok := m.m[key]

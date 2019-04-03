@@ -53,3 +53,28 @@ func (p *actionSlicePool) free(s []gamestate.Action) {
 		p.pool = append(p.pool, s[:0])
 	}
 }
+
+type byteSlicePool struct {
+	pool [][]byte
+}
+
+func (p *byteSlicePool) alloc(n int) []byte {
+	if p == nil {
+		return make([]byte, 0, n)
+	}
+
+	if len(p.pool) > 0 {
+		m := len(p.pool)
+		next := p.pool[m-1]
+		p.pool = p.pool[:m-1]
+		return next
+	}
+
+	return make([]byte, 0, n)
+}
+
+func (p *byteSlicePool) free(s []byte) {
+	if p != nil && cap(s) > 0 {
+		p.pool = append(p.pool, s[:0])
+	}
+}

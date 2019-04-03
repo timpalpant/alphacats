@@ -13,7 +13,7 @@ type InfoSetWithAvailableActions struct {
 }
 
 func (is InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
-	bufSize := is.InfoSet.MarshalBinarySize() + len(is.AvailableActions)
+	bufSize := is.InfoSet.MarshalBinarySize() + len(is.AvailableActions) + 2
 	for _, action := range is.AvailableActions {
 		if action.HasPrivateInfo() {
 			bufSize += 2
@@ -35,23 +35,23 @@ func (is InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
 		// Actions are "varint" encoded: we only copy the private bits
 		// if they are non-zero, which is indicated by the last bit of
 		// the first byte.
-		if packed.HasPrivateInfo() {
+		if action.HasPrivateInfo() {
 			buf = append(buf, packed[1], packed[2])
 		}
 	}
 
 	// Append number of available actions bytes so we can split off when unmarshaling.
 	nAvailableActionBytes := len(buf) - nInfoSetBytes
-	var nBuf [4]byte
-	binary.LittleEndian.PutUint32(nBuf[:], uint32(nAvailableActionBytes))
+	var nBuf [2]byte
+	binary.LittleEndian.PutUint16(nBuf[:], uint16(nAvailableActionBytes))
 	buf = append(buf, nBuf[:]...)
 
 	return buf, nil
 }
 
 func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
-	nAvailableActionBytes := int(binary.LittleEndian.Uint32(buf[len(buf)-4:]))
-	buf = buf[:len(buf)-4]
+	nAvailableActionBytes := int(binary.LittleEndian.Uint16(buf[len(buf)-2:]))
+	buf = buf[:len(buf)-2]
 
 	actionsBuf := buf[len(buf)-nAvailableActionBytes:]
 	isBuf := buf[:len(buf)-nAvailableActionBytes]

@@ -41,9 +41,12 @@ func (t ActionType) String() string {
 
 // Action records each transition/edge in the game history.
 type Action struct {
-	Player             Player
-	Type               ActionType
-	Card               cards.Card
+	Player Player
+	Type   ActionType
+	Card   cards.Card
+	// When inserting the exploding kitten, this is the position that
+	// the player chose to insert it to. NOTE: 1-based so that we can
+	// distinguish no knowledge / random (0) from actual positions.
 	PositionInDrawPile uint8         // Private information.
 	CardsSeen          [3]cards.Card // Private information.
 }
@@ -240,7 +243,7 @@ type EncodedAction [3]uint8
 //   [1-2] Type (1 - 4, encoded as 0-3)
 //   [3-6] Card (1 - 10)
 //   [7] Indicates whether there is additional private info (remaining bits) (0 or 1)
-//   [8-11] PositionInDrawPile (0 - 13)
+//   [8-11] PositionInDrawPile (0 - 14)
 //   [12-24] 3 Cards (1 - 10)
 // Thus the first byte is public info, the second two bytes are private info.
 func EncodeAction(a Action) EncodedAction {

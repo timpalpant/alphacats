@@ -44,7 +44,9 @@ func (gs *GameState) Apply(action Action) {
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingCat:
-		gs.insertExplodingCat(action.Player, int(action.PositionInDrawPile))
+		// NOTE: Action.PositionInDrawPile is 1-based to distinguish from
+		// random placement.
+		gs.insertExplodingCat(action.Player, int(action.PositionInDrawPile)-1)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}

@@ -427,7 +427,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: uint8(i),
+			PositionInDrawPile: uint8(i + 1),
 		}
 		child.state.Apply(action)
 		gn.actions[i] = action
@@ -438,6 +438,10 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	// Place randomly.
 	child := &gn.children[nOptions]
 	child.turnType = InsertKittenRandom
+	gn.actions[nOptions] = gamestate.Action{
+		Player: gn.player,
+		Type:   gamestate.InsertExplodingCat,
+	}
 
 	// Place exploding cat on the bottom of the draw pile.
 	if nCardsInDrawPile > 5 {
@@ -445,7 +449,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: uint8(nCardsInDrawPile), // bottom
+			PositionInDrawPile: uint8(nCardsInDrawPile + 1), // bottom
 		}
 		child.state.Apply(action)
 		gn.actions[len(gn.children)-1] = action
@@ -464,7 +468,7 @@ func (gn *GameNode) buildInsertKittenRandomChildren() {
 		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingCat,
-			PositionInDrawPile: uint8(i),
+			PositionInDrawPile: uint8(i + 1),
 		}
 		child.state.Apply(action)
 		gn.actions[i] = action

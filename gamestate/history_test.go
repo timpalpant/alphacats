@@ -25,20 +25,20 @@ func TestEncodeDecode(t *testing.T) {
 func TestHasPrivateInfo(t *testing.T) {
 	action := Action{Player: 0, Type: DrawCard, Card: cards.Unknown}
 	packed := EncodeAction(action)
-	if packed.HasPrivateInfo() {
+	if action.HasPrivateInfo() || packed.HasPrivateInfo() {
 		t.Errorf("action does not have private info: %v", packed)
 	}
 
 	action.PositionInDrawPile = 1
 	packed = EncodeAction(action)
-	if !packed.HasPrivateInfo() {
+	if !action.HasPrivateInfo() || !packed.HasPrivateInfo() {
 		t.Errorf("action has private info: %v", packed)
 	}
 
 	action.PositionInDrawPile = 0
 	action.CardsSeen[0] = cards.Skip
 	packed = EncodeAction(action)
-	if !packed.HasPrivateInfo() {
+	if !action.HasPrivateInfo() || !packed.HasPrivateInfo() {
 		t.Errorf("action has private info: %v", packed)
 	}
 }

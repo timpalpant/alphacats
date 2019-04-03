@@ -24,10 +24,8 @@ import (
 )
 
 const (
-	graphTag               = "lstm"
-	outputLayer            = "output/BiasAdd"
-	maxPredictionBatchSize = 4096
-	numEncodingWorkers     = 4
+	graphTag    = "lstm"
+	outputLayer = "output/BiasAdd"
 )
 
 var (
@@ -41,8 +39,10 @@ var (
 var tfConfig = []byte{50, 2, 32, 1}
 
 type Params struct {
-	BatchSize int
-	OutputDir string
+	BatchSize              int
+	OutputDir              string
+	NumEncodingWorkers     int
+	MaxTrainingDataWorkers int
 }
 
 // LSTM is a model for AlphaCats to be used with DeepCFR
@@ -60,7 +60,7 @@ func NewLSTM(p Params) *LSTM {
 func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	glog.Infof("Training network with %d samples", len(samples.GetSamples()))
 	// Save training data to disk in a tempdir.
-	tmpDir, err := ioutil.TempDir("", "alphacats-training-data-")
+	tmpDir, err := ioutil.TempDir(m.params.OutputDir, "training-data-")
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 
 	glog.Infof("Saving training data to: %v", tmpDir)
 	trainingData := samples.GetSamples()
-	if err := saveTrainingData(trainingData, tmpDir, m.params.BatchSize); err != nil {
+	if err := saveTrainingData(trainingData, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
 		glog.Fatal(err)
 	}
 
@@ -90,7 +90,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	m.iter++
 
 	// Load trained model.
-	trained, err := LoadTrainedLSTM(outputDir)
+	trained, err := LoadTrainedLSTM(outputDir, m.params)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -129,12 +129,13 @@ func (m *LSTM) MarshalBinary() ([]byte, error) {
 }
 
 type TrainedLSTM struct {
-	dir   string
-	model *tf.SavedModel
-	reqCh chan *predictionRequest
+	dir    string
+	params Params
+	model  *tf.SavedModel
+	reqCh  chan *predictionRequest
 }
 
-func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
+func LoadTrainedLSTM(dir string, params Params) (*TrainedLSTM, error) {
 	opts := &tf.SessionOptions{Config: tfConfig}
 	model, err := tf.LoadSavedModel(dir, []string{graphTag}, opts)
 	if err != nil {
@@ -142,9 +143,10 @@ func LoadTrainedLSTM(dir string) (*TrainedLSTM, error) {
 	}
 
 	m := &TrainedLSTM{
-		dir:   dir,
-		model: model,
-		reqCh: make(chan *predictionRequest, 1),
+		dir:    dir,
+		params: params,
+		model:  model,
+		reqCh:  make(chan *predictionRequest, 1),
 	}
 	go m.bgPredictionHandler()
 	return m, nil
@@ -198,14 +200,37 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 
 // When serializing, we just serialize the path to the model already on disk.
 func (m *TrainedLSTM) GobDecode(buf []byte) error {
-	dir := string(buf)
-	model, err := LoadTrainedLSTM(dir)
+	r := bytes.NewReader(buf)
+	dec := gob.NewDecoder(r)
+
+	var dir string
+	if err := dec.Decode(&dir); err != nil {
+		return err
+	}
+
+	var params Params
+	if err := dec.Decode(&params); err != nil {
+		return err
+	}
+
+	model, err := LoadTrainedLSTM(dir, params)
 	*m = *model
 	return err
 }
 
 func (m *TrainedLSTM) GobEncode() ([]byte, error) {
-	return []byte(m.dir), nil
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+
+	if err := enc.Encode(m.dir); err != nil {
+		return nil, err
+	}
+
+	if err := enc.Encode(m.params); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (m *TrainedLSTM) Close() {
@@ -233,7 +258,7 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	// and we don't want to be bottlenecked on it. This will mean too-small batches
 	// for the first few, but we expect that at steady-state we will be rate-limited
 	// by predictions on the GPU, so the batches will still be large (just buffered).
-	for i := 0; i < numEncodingWorkers; i++ {
+	for i := 0; i < m.params.NumEncodingWorkers; i++ {
 		go handleEncoding(m.model, encodeCh, outputCh)
 	}
 
@@ -256,7 +281,7 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 				}
 
 				batch = append(batch, req)
-				if len(batch) >= maxPredictionBatchSize {
+				if len(batch) >= m.params.BatchSize {
 					encodeCh <- batch
 					break Loop
 				}

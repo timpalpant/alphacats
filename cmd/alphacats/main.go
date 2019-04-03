@@ -207,6 +207,12 @@ func main() {
 	flag.IntVar(&params.DeepCFRParams.ModelParams.BatchSize,
 		"deepcfr.model.batch_size", 4096,
 		"Size of minibatches to save for network training")
+	flag.IntVar(&params.DeepCFRParams.ModelParams.NumEncodingWorkers,
+		"deepcfr.model.num_encoding_workers", 4,
+		"Number of worker threads for prediction feature encoding")
+	flag.IntVar(&params.DeepCFRParams.ModelParams.MaxTrainingDataWorkers,
+		"deepcfr.model.max_training_data_workers", 24,
+		"Number of worker threads for training data encoding")
 	flag.Parse()
 
 	rand.Seed(params.SamplingParams.Seed)

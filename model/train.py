@@ -134,9 +134,6 @@ def main():
     output_shape = y[0].shape[0]
     model = build_model(history_shape, hand_shape, action_shape, output_shape)
     print(model.summary())
-    logging.info("All nodes in TF graph:")
-    for node in tf.get_default_graph().as_graph_def().node:
-        logging.info(node.name)
 
     model, history = train(model, data, val_data)
 

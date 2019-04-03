@@ -70,7 +70,7 @@ func (p RocksDBParams) Render(path string) rdbstore.Params {
 	params := rdbstore.DefaultParams(path)
 
 	params.Options.IncreaseParallelism(runtime.NumCPU())
-	params.Options.SetCompression(rocksdb.LZ4Compression)
+	params.Options.SetCompression(rocksdb.NoCompression)
 	params.Options.SetCreateIfMissing(true)
 	params.Options.SetUseFsync(false)
 	params.Options.SetWriteBufferSize(p.WriteBuffer)

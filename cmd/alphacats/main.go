@@ -4,22 +4,18 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
-	rocksdb "github.com/tecbot/gorocksdb"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
-	"github.com/timpalpant/go-cfr/rdbstore"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
@@ -39,7 +35,6 @@ type RunParams struct {
 
 	SamplingParams SamplingParams
 	DeepCFRParams  DeepCFRParams
-	RDBParams      RocksDBParams
 
 	OutputDir  string
 	ResumeFrom string
@@ -54,91 +49,14 @@ type SamplingParams struct {
 type DeepCFRParams struct {
 	BufferType        string
 	BufferSize        int
-	RDBParams         RocksDBParams
 	TraversalsPerIter int
 	ModelParams       model.Params
-}
-
-type RocksDBParams struct {
-	Path               string
-	BlockCacheCapacity int
-	WriteBuffer        int
-	BloomFilterNumBits int
-}
-
-func (p RocksDBParams) Render(path string) rdbstore.Params {
-	params := rdbstore.DefaultParams(path)
-
-	params.Options.IncreaseParallelism(runtime.NumCPU())
-	params.Options.SetCompression(rocksdb.NoCompression)
-	params.Options.SetCreateIfMissing(true)
-	params.Options.SetUseFsync(false)
-	params.Options.SetWriteBufferSize(p.WriteBuffer)
-
-	bOpts := rocksdb.NewDefaultBlockBasedTableOptions()
-	bOpts.SetBlockSize(32 * 1024)
-	blockCache := rocksdb.NewLRUCache(p.BlockCacheCapacity)
-	bOpts.SetBlockCache(blockCache)
-	if p.BloomFilterNumBits > 0 {
-		filter := rocksdb.NewBloomFilter(p.BloomFilterNumBits)
-		bOpts.SetFilterPolicy(filter)
-	}
-	params.Options.SetBlockBasedTableFactory(bOpts)
-
-	params.WriteOptions.DisableWAL(true)
-	params.WriteOptions.SetSync(false)
-
-	return params
-}
-
-type cfrAlgo interface {
-	Run(cfr.GameTreeNode) float32
-}
-
-func getCFRAlgo(params RunParams, policy cfr.StrategyProfile) cfrAlgo {
-	switch params.SamplingParams.SamplingType {
-	case "external":
-		sampledActionsPool := alphacats.NewSampledActionsPool()
-		return cfr.NewExternalSampling(policy, sampledActionsPool.Alloc)
-	case "outcome":
-		return cfr.NewOutcomeSampling(policy, 0.1)
-	case "chance":
-		return cfr.NewChanceSampling(policy)
-	default:
-		panic(fmt.Errorf("unsupported sampling type: %v", params.SamplingParams.SamplingType))
-	}
-}
-
-func getReservoirBuffer(params DeepCFRParams) deepcfr.Buffer {
-	switch params.BufferType {
-	case "rocksdb":
-		bufPath, err := ioutil.TempDir(params.ModelParams.OutputDir, "buffer-")
-		if err != nil {
-			glog.Fatal(err)
-		}
-
-		opts := params.RDBParams.Render(bufPath)
-		buf, err := rdbstore.NewReservoirBuffer(opts, params.BufferSize)
-		if err != nil {
-			glog.Fatal(err)
-		}
-		return buf
-	default:
-		return deepcfr.NewThreadSafeReservoirBuffer(params.BufferSize)
-	}
 }
 
 func newPolicy(params RunParams) cfr.StrategyProfile {
 	switch params.CFRType {
 	case "tabular":
 		return cfr.NewPolicyTable(cfr.DiscountParams{})
-	case "rocksdb":
-		opts := params.RDBParams.Render(params.OutputDir)
-		policy, err := rdbstore.New(opts, cfr.DiscountParams{})
-		if err != nil {
-			glog.Fatal(err)
-		}
-		return policy
 	case "deep":
 		dCFRParams := params.DeepCFRParams
 		dCFRParams.ModelParams.OutputDir = filepath.Join(params.OutputDir, "models")
@@ -148,8 +66,8 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 
 		lstm := model.NewLSTM(dCFRParams.ModelParams)
 		buffers := []deepcfr.Buffer{
-			getReservoirBuffer(dCFRParams),
-			getReservoirBuffer(dCFRParams),
+			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize),
+			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize),
 		}
 		return deepcfr.New(lstm, buffers)
 	default:
@@ -186,21 +104,9 @@ func main() {
 		"Max number of sampling runs to perform in parallel")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 
-	flag.StringVar(&params.DeepCFRParams.BufferType,
-		"deepcfr.buffer.type", "memory",
-		"Type of reservoir sample buffer (memory, rocksdb)")
 	flag.IntVar(&params.DeepCFRParams.BufferSize,
 		"deepcfr.buffer.size", 10000000,
 		"Number of samples to keep in reservoir sample buffer")
-	flag.IntVar(&params.DeepCFRParams.RDBParams.BlockCacheCapacity,
-		"deepcfr.buffer.block_cache_capacity", 8*MiB,
-		"Block cache capacity if using rocksdb sampled actions")
-	flag.IntVar(&params.DeepCFRParams.RDBParams.WriteBuffer,
-		"deepcfr.buffer.write_buffer", 256*MiB,
-		"Write buffer if using rocksd sampled actions")
-	flag.IntVar(&params.DeepCFRParams.RDBParams.BloomFilterNumBits,
-		"deepcfr.buffer.bloom_bits", 10,
-		"Number of bits/sample for Bloom filter if using rocksd reservoir buffer")
 	flag.IntVar(&params.DeepCFRParams.TraversalsPerIter,
 		"deepcfr.traversals_per_iter", 1,
 		"Number of ES-CFR traversals to perform each iteration")
@@ -228,7 +134,6 @@ func main() {
 	} else {
 		policy = loadPolicy(params)
 	}
-	opt := getCFRAlgo(params, policy)
 	deck, cardsPerPlayer := getDeck(params.DeckType)
 
 	var wg sync.WaitGroup
@@ -248,10 +153,11 @@ func main() {
 		for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
 			sem <- struct{}{}
 			glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
-			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			wg.Add(1)
 			go func() {
-				opt.Run(game)
+				game := alphacats.NewRandomGame(deck, cardsPerPlayer)
+				sampler := cfr.NewExternalSampling(policy)
+				sampler.Run(game)
 				<-sem
 				wg.Done()
 			}()

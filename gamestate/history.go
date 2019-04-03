@@ -163,7 +163,14 @@ func (is *InfoSet) Key() string {
 
 // MarshalBinary implements encoding.BinaryMarshaler.
 func (is *InfoSet) MarshalBinary() ([]byte, error) {
-	buf := make([]byte, 0, is.History.Len()+8) // Minimum possible capacity needed.
+	bufSize := 8 + is.History.Len()
+	for i := 0; i < is.History.Len(); i++ {
+		if is.History.actions[i].HasPrivateInfo() {
+			bufSize += 2
+		}
+	}
+
+	buf := make([]byte, 0, bufSize)
 	return is.MarshalTo(buf)
 }
 

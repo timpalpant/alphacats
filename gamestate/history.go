@@ -47,6 +47,11 @@ type Action struct {
 	CardsSeen          [3]cards.Card // Private information.
 }
 
+func (a Action) HasPrivateInfo() bool {
+	return a.PositionInDrawPile != 0 ||
+		a.CardsSeen[0] != 0 || a.CardsSeen[1] != 0 || a.CardsSeen[2] != 0
+}
+
 func (a Action) String() string {
 	s := fmt.Sprintf("%s:%s", a.Player, a.Type)
 	if a.Card != cards.Unknown {
@@ -161,8 +166,7 @@ func (is *InfoSet) Key() string {
 	return string(buf)
 }
 
-// MarshalBinary implements encoding.BinaryMarshaler.
-func (is *InfoSet) MarshalBinary() ([]byte, error) {
+func (is *InfoSet) MarshalBinarySize() int {
 	bufSize := 8 + is.History.Len()
 	for i := 0; i < is.History.Len(); i++ {
 		if is.History.actions[i].HasPrivateInfo() {
@@ -170,7 +174,12 @@ func (is *InfoSet) MarshalBinary() ([]byte, error) {
 		}
 	}
 
-	buf := make([]byte, 0, bufSize)
+	return bufSize
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler.
+func (is *InfoSet) MarshalBinary() ([]byte, error) {
+	buf := make([]byte, 0, is.MarshalBinarySize())
 	return is.MarshalTo(buf)
 }
 

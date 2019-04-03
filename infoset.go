@@ -13,7 +13,15 @@ type InfoSetWithAvailableActions struct {
 }
 
 func (is InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
-	buf, err := is.InfoSet.MarshalBinary()
+	bufSize := is.InfoSet.MarshalBinarySize() + len(is.AvailableActions)
+	for _, action := range is.AvailableActions {
+		if action.HasPrivateInfo() {
+			bufSize += 2
+		}
+	}
+
+	buf := make([]byte, 0, bufSize)
+	buf, err := is.InfoSet.MarshalTo(buf)
 	if err != nil {
 		return nil, err
 	}

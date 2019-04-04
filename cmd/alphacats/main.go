@@ -66,8 +66,8 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 
 		lstm := model.NewLSTM(dCFRParams.ModelParams)
 		buffers := []deepcfr.Buffer{
-			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize),
-			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize),
+			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
+			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 		}
 		return deepcfr.New(lstm, buffers)
 	default:
@@ -88,6 +88,26 @@ func getDeck(deckType string) (deck []cards.Card, cardsPerPlayer int) {
 	}
 
 	return deck, cardsPerPlayer
+}
+
+func collectSamples(policy cfr.StrategyProfile, params RunParams) {
+	deck, cardsPerPlayer := getDeck(params.DeckType)
+	sem := make(chan struct{}, params.SamplingParams.NumSamplingThreads)
+	var wg sync.WaitGroup
+	for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
+		sem <- struct{}{}
+		glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
+		wg.Add(1)
+		go func() {
+			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
+			sampler := cfr.NewExternalSampling(policy)
+			sampler.Run(game)
+			<-sem
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
 }
 
 func main() {
@@ -134,9 +154,7 @@ func main() {
 	} else {
 		policy = loadPolicy(params)
 	}
-	deck, cardsPerPlayer := getDeck(params.DeckType)
 
-	var wg sync.WaitGroup
 	// Becuse we are generally rate-limited by the speed at which we can make
 	// model predictions, and because the GPU can perform batches of predictions
 	// more efficiently (N predictions in < N x 1 sample time), we want to have
@@ -145,24 +163,11 @@ func main() {
 	//
 	// Our GPU (NVIDIA 1060) seems to top out at a concurrency of ~1024,
 	// see benchmarks in model/lstm_test.go.
-	sem := make(chan struct{}, params.SamplingParams.NumSamplingThreads)
 	for t := policy.Iter(); t <= params.NumCFRIterations; t++ {
 		glog.V(1).Infof("[t=%d] Collecting %d samples with %d threads",
-			t, params.DeepCFRParams.TraversalsPerIter, cap(sem))
+			t, params.DeepCFRParams.TraversalsPerIter, params.SamplingParams.NumSamplingThreads)
 		start := time.Now()
-		for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
-			sem <- struct{}{}
-			glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
-			wg.Add(1)
-			go func() {
-				game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-				sampler := cfr.NewExternalSampling(policy)
-				sampler.Run(game)
-				<-sem
-				wg.Done()
-			}()
-		}
-		wg.Wait()
+		collectSamples(policy, params)
 		glog.V(1).Infof("[t=%d] Finished collecting samples (took: %v)", t, time.Since(start))
 
 		glog.V(1).Infof("[t=%d] Training network", t)

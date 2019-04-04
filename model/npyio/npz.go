@@ -2,13 +2,12 @@ package npyio
 
 import (
 	"bufio"
-	"io"
 	"os"
 
 	"github.com/klauspost/compress/zip"
 )
 
-func MakeNPZ(npyFiles map[string]io.Reader, output string) error {
+func MakeNPZ(output string, entries map[string][]float32) error {
 	f, err := os.Create(output)
 	if err != nil {
 		return err
@@ -20,13 +19,13 @@ func MakeNPZ(npyFiles map[string]io.Reader, output string) error {
 	z := zip.NewWriter(b)
 	defer z.Close()
 
-	for name, r := range npyFiles {
+	for name, data := range entries {
 		w, err := z.Create(name)
 		if err != nil {
 			return err
 		}
 
-		if _, err := io.Copy(w, r); err != nil {
+		if err := Write(w, data); err != nil {
 			return err
 		}
 	}

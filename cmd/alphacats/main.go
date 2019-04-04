@@ -100,7 +100,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 		wg.Add(1)
 		go func() {
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-			sampler := cfr.NewExternalSampling(policy)
+			sampler := cfr.NewRobustSampling(policy, 3)
 			sampler.Run(game)
 			<-sem
 			wg.Done()

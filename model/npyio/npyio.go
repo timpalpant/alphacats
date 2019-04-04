@@ -1,55 +1,29 @@
 package npyio
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
-	"os"
 )
 
 var order = binary.LittleEndian
 
-type File struct {
-	f   *os.File
-	buf *bufio.Writer
-}
-
-func Create(filename string, numElements int) (*File, error) {
-	f, err := os.Create(filename)
-	if err != nil {
-		return nil, err
+func Write(w io.Writer, v []float32) error {
+	if err := writeHeader(w, len(v)); err != nil {
+		return err
 	}
 
-	buf := bufio.NewWriter(f)
-	err = writeHeader(buf, numElements)
-	if err != nil {
-		f.Close()
-		return nil, err
-	}
-
-	return &File{
-		f:   f,
-		buf: buf,
-	}, nil
-}
-
-func (f *File) Close() error {
-	f.buf.Flush()
-	return f.f.Close()
-}
-
-func (f *File) Append(v ...float32) error {
 	var buf [4]byte
 	for _, x := range v {
 		binary.LittleEndian.PutUint32(buf[:], math.Float32bits(x))
-		_, err := f.buf.Write(buf[:])
+		_, err := w.Write(buf[:])
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 

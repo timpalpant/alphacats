@@ -1,30 +1,27 @@
 package model
 
 import (
-	"bufio"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/klauspost/compress/zip"
-	"github.com/sbinet/npyio"
 	"github.com/timpalpant/go-cfr/deepcfr"
+
+	"github.com/timpalpant/alphacats"
+	"github.com/timpalpant/alphacats/cards"
+	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/model/npyio"
 )
 
-// Writing to npz files is slow, but we have to buffer the (large)
-// one-hot encoded feature tensors in memory before they are written out.
-// Each batch of 4096 samples requires ~100MB of memory, so this works
-// out to ~1.6GB required for I/O.
-const maxConcurrentIOWorkers = 16
-
-func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int) error {
+func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int, maxNumWorkers int) error {
 	// Write each batch as npz within the given directory.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	sem := make(chan struct{}, maxConcurrentIOWorkers)
+	sem := make(chan struct{}, maxNumWorkers)
 	start := time.Now()
 	var retErr error
 	for batchNum := 0; batchNum*batchSize < len(samples); batchNum++ {
@@ -60,40 +57,58 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int)
 }
 
 func saveBatch(batch []deepcfr.Sample, filename string) error {
-	return SaveNPZFile(filename, map[string]interface{}{
-		"X_history":     encodeHistories(batch),
-		"X_hand":        encodeHands(batch),
-		"X_action":      encodeActions(batch),
-		"y":             encodeTargets(batch),
-		"sample_weight": encodeSampleWeights(batch),
-	})
-}
-
-func SaveNPZFile(filename string, data map[string]interface{}) error {
-	// Open npz (zip) file.
-	f, err := os.Create(filename)
+	outputDir := filepath.Dir(filename)
+	tmpDir, err := ioutil.TempDir(outputDir, "npy-entries-")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	bufW := bufio.NewWriter(f)
-	defer bufW.Flush()
-	z := zip.NewWriter(bufW)
-	defer z.Close()
+	defer os.RemoveAll(tmpDir)
 
-	// Write each npy entry into the npz file.
-	for name, entry := range data {
-		w, err := z.Create(name)
-		if err != nil {
-			return err
-		}
-
-		if err := npyio.Write(w, entry); err != nil {
-			return err
-		}
+	nSamples := 0
+	for _, sample := range batch {
+		nSamples += len(sample.Advantages)
 	}
 
-	return nil
+	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
+	hands := make([]float32, 0, nSamples*cards.NumTypes)
+	actions := make([]float32, 0, nSamples*numActionFeatures)
+	y := make([]float32, 0, nSamples)
+	sampleWeights := make([]float32, 0, nSamples)
+
+	var is alphacats.InfoSetWithAvailableActions
+	for _, sample := range batch {
+		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
+			return err
+		}
+
+		if len(is.AvailableActions) != len(sample.Advantages) {
+			panic(fmt.Errorf("Sample has %d actions but %d advantages: sample=%v, is=%v",
+				len(is.AvailableActions), len(sample.Advantages), sample, is))
+		}
+
+		history := EncodeHistory(is.History)
+		hand := encodeHand(is.Hand)
+		w := float32(int((sample.Weight + 1.0) / 2.0))
+		for _, action := range is.AvailableActions {
+			for _, row := range history {
+				histories = append(histories, row...)
+			}
+
+			hands = append(hands, hand...)
+			actions = append(actions, encodeAction(action)...)
+			sampleWeights = append(sampleWeights, w)
+		}
+
+		y = append(y, sample.Advantages...)
+	}
+
+	return npyio.MakeNPZ(filename, map[string][]float32{
+		"X_history":     histories,
+		"X_hand":        hands,
+		"X_action":      actions,
+		"y":             y,
+		"sample_weight": sampleWeights,
+	})
 }
 
 func min(i, j int) int {

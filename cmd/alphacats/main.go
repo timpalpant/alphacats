@@ -69,7 +69,7 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 		}
-		return deepcfr.New(lstm, buffers)
+		return deepcfr.New(lstm, buffers, true)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", params.CFRType))
 	}
@@ -131,7 +131,7 @@ func main() {
 		"deepcfr.traversals_per_iter", 1,
 		"Number of ES-CFR traversals to perform each iteration")
 	flag.IntVar(&params.DeepCFRParams.ModelParams.BatchSize,
-		"deepcfr.model.batch_size", 4096,
+		"deepcfr.model.batch_size", 2000,
 		"Size of minibatches to save for network training")
 	flag.IntVar(&params.DeepCFRParams.ModelParams.NumEncodingWorkers,
 		"deepcfr.model.num_encoding_workers", 4,

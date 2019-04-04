@@ -1,7 +1,6 @@
 package alphacats
 
 import (
-	"encoding/binary"
 	"encoding/gob"
 
 	"github.com/timpalpant/alphacats/gamestate"
@@ -13,7 +12,7 @@ type InfoSetWithAvailableActions struct {
 }
 
 func (is InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
-	bufSize := is.InfoSet.MarshalBinarySize() + len(is.AvailableActions) + 2
+	bufSize := is.InfoSet.MarshalBinarySize() + len(is.AvailableActions) + 1
 	for _, action := range is.AvailableActions {
 		if action.HasPrivateInfo() {
 			bufSize += 2
@@ -41,17 +40,15 @@ func (is InfoSetWithAvailableActions) MarshalBinary() ([]byte, error) {
 	}
 
 	// Append number of available actions bytes so we can split off when unmarshaling.
-	nAvailableActionBytes := len(buf) - nInfoSetBytes
-	var nBuf [2]byte
-	binary.LittleEndian.PutUint16(nBuf[:], uint16(nAvailableActionBytes))
-	buf = append(buf, nBuf[:]...)
+	nAvailableActionBytes := uint8(len(buf) - nInfoSetBytes)
+	buf = append(buf, nAvailableActionBytes)
 
 	return buf, nil
 }
 
 func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
-	nAvailableActionBytes := int(binary.LittleEndian.Uint16(buf[len(buf)-2:]))
-	buf = buf[:len(buf)-2]
+	nAvailableActionBytes := int(uint8(buf[len(buf)-1]))
+	buf = buf[:len(buf)-1]
 
 	actionsBuf := buf[len(buf)-nAvailableActionBytes:]
 	isBuf := buf[:len(buf)-nAvailableActionBytes]

@@ -12,7 +12,10 @@ import (
 
 const testModel = "testdata/savedmodel"
 
-var testParams = Params{NumEncodingWorkers: 4}
+var testParams = Params{
+	BatchSize:          2000,
+	NumEncodingWorkers: 24,
+}
 
 // BenchmarkPredict-24				     100	  14291122 ns/op
 // BenchmarkPredictParallel-24		    2000	    783695 ns/op

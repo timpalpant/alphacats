@@ -194,7 +194,7 @@ func shouldSave(t, numIter int) bool {
 }
 
 func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
-	name := fmt.Sprintf("iter_%d.policy", iter)
+	name := fmt.Sprintf("iter_%08d.policy", iter)
 	outputFile := filepath.Join(outputDir, name)
 	glog.Infof("[t=%d] Saving current policy to %v", iter, outputFile)
 	f, err := os.Create(outputFile)

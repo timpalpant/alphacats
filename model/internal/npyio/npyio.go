@@ -1,3 +1,5 @@
+// Package npyio is a fork of github.com/sbinet/npyio that is
+// hard-coded for []float32s to avoid reflection.
 package npyio
 
 import (

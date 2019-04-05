@@ -12,7 +12,7 @@ import (
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
-	"github.com/timpalpant/alphacats/model/npyio"
+	"github.com/timpalpant/alphacats/model/internal/npyio"
 )
 
 func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int, maxNumWorkers int) error {

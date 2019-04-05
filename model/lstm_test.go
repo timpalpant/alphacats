@@ -12,6 +12,8 @@ import (
 
 const testModel = "testdata/savedmodel"
 
+var testParams = Params{NumEncodingWorkers: 4}
+
 // BenchmarkPredict-24				     100	  14291122 ns/op
 // BenchmarkPredictParallel-24		    2000	    783695 ns/op
 // BenchmarkPredictParallel-128			5000	    305617 ns/op
@@ -23,7 +25,7 @@ func BenchmarkPredict(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
 	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
-	model, err := LoadTrainedLSTM(testModel)
+	model, err := LoadTrainedLSTM(testModel, testParams)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -40,7 +42,7 @@ func BenchmarkPredictParallel(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
 	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
-	model, err := LoadTrainedLSTM(testModel)
+	model, err := LoadTrainedLSTM(testModel, testParams)
 	if err != nil {
 		b.Fatal(err)
 	}

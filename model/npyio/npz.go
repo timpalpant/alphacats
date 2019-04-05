@@ -20,7 +20,9 @@ func MakeNPZ(output string, entries map[string][]float32) error {
 	defer z.Close()
 
 	for name, data := range entries {
-		w, err := z.Create(name)
+		// Custom header so that we do not compress (Method 0=Store).
+		hdr := zip.FileHeader{Name: name}
+		w, err := z.CreateHeader(&hdr)
 		if err != nil {
 			return err
 		}

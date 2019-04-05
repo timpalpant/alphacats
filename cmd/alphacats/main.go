@@ -16,6 +16,7 @@ import (
 	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
+	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
@@ -41,7 +42,7 @@ type RunParams struct {
 }
 
 type SamplingParams struct {
-	SamplingType       string
+	RobustSamplingK    int
 	NumSamplingThreads int
 	Seed               int64
 }
@@ -100,8 +101,12 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 		wg.Add(1)
 		go func() {
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-			sampler := cfr.NewRobustSampling(policy, 3)
-			sampler.Run(game)
+			sampler := sampling.NewRobustSampler(params.SamplingParams.RobustSamplingK)
+			walker := cfr.NewGeneralizedSampling(policy, cfr.SamplingParams{
+				Sampler:               sampler,
+				ProbeUnsampledActions: true,
+			})
+			walker.Run(game)
 			<-sem
 			wg.Done()
 		}()
@@ -118,10 +123,10 @@ func main() {
 	flag.StringVar(&params.OutputDir, "output_dir", "", "Directory to save policies to")
 	flag.StringVar(&params.ResumeFrom, "resume", "", "Resume training with given model")
 
-	flag.StringVar(&params.SamplingParams.SamplingType, "sampling.type", "external",
-		"Type of sampling to perform (external, chance, outcome, average)")
 	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "sampling.num_sampling_threads", 256,
 		"Max number of sampling runs to perform in parallel")
+	flag.IntVar(&params.SamplingParams.RobustSamplingK, "sampling.max_num_actions", 3,
+		"Max number of actions to sample for traversing player in robust sampling")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 
 	flag.IntVar(&params.DeepCFRParams.BufferSize,

@@ -2,8 +2,6 @@ package model
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -57,13 +55,6 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int,
 }
 
 func saveBatch(batch []deepcfr.Sample, filename string) error {
-	outputDir := filepath.Dir(filename)
-	tmpDir, err := ioutil.TempDir(outputDir, "npy-entries-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpDir)
-
 	nSamples := 0
 	for _, sample := range batch {
 		nSamples += len(sample.Advantages)

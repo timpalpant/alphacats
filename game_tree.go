@@ -10,8 +10,6 @@ import (
 	"github.com/timpalpant/alphacats/gamestate"
 )
 
-const luckyNumber = 20181225
-
 // turnType represents the kind of turn at a given point in the game.
 type turnType uint8
 
@@ -76,7 +74,7 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:       gamestate.Player0,
 		turnType:     PlayTurn,
 		pendingTurns: 1,
-		rng:          rand.New(rand.NewSource(luckyNumber)),
+		rng:          rand.New(rand.NewSource(rand.Int63())),
 		gnPool:       &gameNodeSlicePool{},
 		aPool:        &actionSlicePool{},
 	}

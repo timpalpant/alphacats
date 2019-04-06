@@ -99,7 +99,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 		sem <- struct{}{}
 		glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
 		wg.Add(1)
-		go func() {
+		go func(k int) {
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			sampler := sampling.NewRobustSampler(params.SamplingParams.RobustSamplingK)
 			walker := cfr.NewGeneralizedSampling(policy, cfr.SamplingParams{
@@ -107,9 +107,10 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 				ProbeUnsampledActions: true,
 			})
 			walker.Run(game)
+			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem
 			wg.Done()
-		}()
+		}(k)
 	}
 
 	wg.Wait()

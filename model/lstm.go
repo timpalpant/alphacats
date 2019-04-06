@@ -21,6 +21,9 @@ import (
 	"github.com/timpalpant/go-cfr/deepcfr"
 
 	"github.com/timpalpant/alphacats"
+	"github.com/timpalpant/alphacats/cards"
+	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/model/internal/tffloats"
 )
 
 const (
@@ -160,14 +163,14 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 			len(is.AvailableActions), nActions, is.AvailableActions))
 	}
 
-	history := EncodeHistory(is.History)
-	hand := encodeHand(is.Hand)
+	history := tffloats.New2DTensor(EncodeHistory(is.History))
+	hand := tffloats.New1DTensor(encodeHand(is.Hand))
 	reqs := make([]*predictionRequest, nActions)
 	for i, action := range is.AvailableActions {
 		req := &predictionRequest{
 			history:  history,
 			hand:     hand,
-			action:   encodeAction(action),
+			action:   tffloats.New1DTensor(encodeAction(action)),
 			resultCh: make(chan float32, 1),
 		}
 
@@ -175,13 +178,12 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 		reqs[i] = req
 	}
 
-	prediction := make([]float32, len(reqs))
+	advantages := make([]float32, len(reqs))
 	for i, req := range reqs {
-		prediction[i] = <-req.resultCh
+		advantages[i] = <-req.resultCh
 	}
 
-	glog.V(3).Infof("Predicted advantages: %v", prediction)
-	advantages := prediction[:nActions]
+	glog.V(3).Infof("Predicted advantages: %v", advantages)
 	makePositive(advantages)
 	total := sum(advantages)
 
@@ -238,9 +240,9 @@ func (m *TrainedLSTM) Close() {
 }
 
 type predictionRequest struct {
-	history  [][]float32
-	hand     []float32
-	action   []float32
+	history  []byte
+	hand     []byte
+	action   []byte
 	resultCh chan float32
 }
 
@@ -292,28 +294,49 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	}
 }
 
+func concat(batch []*predictionRequest) (histories, hands, actions []byte) {
+	historyLen := 0
+	handsLen := 0
+	actionsLen := 0
+	for _, req := range batch {
+		historyLen += len(req.history)
+		handsLen += len(req.hand)
+		actionsLen += len(req.action)
+	}
+
+	histories = make([]byte, 0, historyLen)
+	hands = make([]byte, 0, handsLen)
+	actions = make([]byte, 0, actionsLen)
+	for _, req := range batch {
+		histories = append(histories, req.history...)
+		hands = append(hands, req.hand...)
+		actions = append(actions, req.action...)
+	}
+
+	return histories, hands, actions
+}
+
 func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, outputCh chan *batchPredictionRequest) {
 	for batch := range batchCh {
-		histories := make([][][]float32, len(batch))
-		hands := make([][]float32, len(batch))
-		actions := make([][]float32, len(batch))
-		for i, req := range batch {
-			histories[i] = req.history
-			hands[i] = req.hand
-			actions[i] = req.action
-		}
-
-		historyTensor, err := tf.NewTensor(histories)
+		// TODO: Shapes should be passed in to avoid coupling here.
+		historiesBuf, handsBuf, actionsBuf := concat(batch)
+		historiesReader := bytes.NewReader(historiesBuf)
+		historiesShape := []int64{int64(len(batch)), gamestate.MaxNumActions, numActionFeatures}
+		historyTensor, err := tf.ReadTensor(tf.Float, historiesShape, historiesReader)
 		if err != nil {
 			glog.Fatal(err)
 		}
 
-		handTensor, err := tf.NewTensor(hands)
+		handsReader := bytes.NewReader(handsBuf)
+		handsShape := []int64{int64(len(batch)), int64(cards.NumTypes)}
+		handTensor, err := tf.ReadTensor(tf.Float, handsShape, handsReader)
 		if err != nil {
 			glog.Fatal(err)
 		}
 
-		actionTensor, err := tf.NewTensor(actions)
+		actionsReader := bytes.NewReader(actionsBuf)
+		actionsShape := []int64{int64(len(batch)), numActionFeatures}
+		actionTensor, err := tf.ReadTensor(tf.Float, actionsShape, actionsReader)
 		if err != nil {
 			glog.Fatal(err)
 		}

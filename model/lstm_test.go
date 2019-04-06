@@ -14,7 +14,7 @@ const testModel = "testdata/savedmodel"
 
 var testParams = Params{
 	BatchSize:          2000,
-	NumEncodingWorkers: 24,
+	NumEncodingWorkers: 16,
 }
 
 // BenchmarkPredict-24				     100	  14291122 ns/op

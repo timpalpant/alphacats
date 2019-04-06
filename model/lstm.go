@@ -357,20 +357,26 @@ type batchPredictionRequest struct {
 	batch   []*predictionRequest
 }
 
+type batchResult struct {
+	batch        []*predictionRequest
+	resultTensor *tf.Tensor
+}
+
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
+	resultsCh := make(chan batchResult, 1)
+	defer close(resultsCh)
+	go handleResults(resultsCh)
+
 	defer model.Session.Close()
 	for req := range reqCh {
-		result := predictBatch(model, req.history, req.hand, req.action)
-		for i, req := range req.batch {
-			req.resultCh <- result[i][0]
-		}
-
+		resultTensor := predictBatch(model, req.history, req.hand, req.action)
+		resultsCh <- batchResult{req.batch, resultTensor}
 		samplesPredicted.Add(int64(len(req.batch)))
 		batchesPredicted.Add(1)
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hand, action *tf.Tensor) [][]float32 {
+func predictBatch(model *tf.SavedModel, history, hand, action *tf.Tensor) *tf.Tensor {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
 			model.Graph.Operation("history").Output(0): history,
@@ -387,7 +393,16 @@ func predictBatch(model *tf.SavedModel, history, hand, action *tf.Tensor) [][]fl
 		glog.Fatal(err)
 	}
 
-	return result[0].Value().([][]float32)
+	return result[0]
+}
+
+func handleResults(resultsCh chan batchResult) {
+	for batchResult := range resultsCh {
+		result := batchResult.resultTensor.Value().([][]float32)
+		for i, req := range batchResult.batch {
+			req.resultCh <- result[i][0]
+		}
+	}
 }
 
 func makePositive(v []float32) {

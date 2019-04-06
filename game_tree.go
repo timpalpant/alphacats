@@ -1,6 +1,7 @@
 package alphacats
 
 import (
+	"expvar"
 	"fmt"
 	"math/rand"
 
@@ -8,6 +9,13 @@ import (
 
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
+)
+
+var (
+	nodesVisited         = expvar.NewInt("nodes_visited")
+	terminalNodesVisited = expvar.NewInt("nodes_visited/terminal")
+	playerNodesVisited   = expvar.NewInt("nodes_visited/player")
+	chanceNodesVisited   = expvar.NewInt("nodes_visited/chance")
 )
 
 // turnType represents the kind of turn at a given point in the game.
@@ -247,6 +255,16 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
+	nodesVisited.Add(1)
+	switch gn.Type() {
+	case cfr.TerminalNode:
+		terminalNodesVisited.Add(1)
+	case cfr.PlayerNode:
+		playerNodesVisited.Add(1)
+	case cfr.ChanceNode:
+		chanceNodesVisited.Add(1)
+	}
+
 	gn.gnPool.free(gn.children)
 	gn.children = nil
 	gn.aPool.free(gn.actions)

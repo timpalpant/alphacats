@@ -49,14 +49,23 @@ func main() {
 	var p0Wins int
 	for i := 0; i < *numGames; i++ {
 		game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-		winner := playGame(policy0, policy1, game)
-		if winner == 0 {
-			p0Wins++
+		// Alternate which player goes first.
+		if i%2 == 0 {
+			winner := playGame(policy0, policy1, game)
+			if winner == 0 {
+				p0Wins++
+			}
+		} else {
+			winner := playGame(policy1, policy0, game)
+			if winner == 1 {
+				p0Wins++
+			}
 		}
 	}
 
 	winRate := float64(p0Wins) / float64(*numGames)
-	glog.Infof("Player 0 won %d (%.3f %%) of games", p0Wins, 100*winRate)
+	glog.Infof("Policy 0 won %d (%.3f %%) of games", p0Wins, 100*winRate)
+	glog.Infof("Policy 1 won %d (%.3f %%) of games", 1-p0Wins, 100*(1-winRate))
 }
 
 func mustLoadPolicy(filename string) cfr.StrategyProfile {

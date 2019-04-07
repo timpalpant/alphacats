@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"flag"
 	"math/rand"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
-	"github.com/timpalpant/go-cfr/deepcfr"
+	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
@@ -23,8 +24,10 @@ func main() {
 	strat0 := flag.String("strategy0", "", "File with policy for player 0")
 	strat1 := flag.String("strategy1", "", "File with policy for player 1")
 	numGames := flag.Int("num_games", 10000, "Number of random games to play")
+	seed := flag.Int64("seed", 1234, "Random seed")
 	flag.Parse()
 
+	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
 	deck := cards.TestDeck.AsSlice()
@@ -69,29 +72,9 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 		glog.Fatal(err)
 	}
 
-	policy, err := cfr.LoadStrategyTable(r)
-	if err != nil {
-		// Gross hack: we should write a header with the type.
-		return mustLoadDeepCFR(filename)
-	}
-
-	return policy
-}
-
-func mustLoadDeepCFR(filename string) cfr.StrategyProfile {
-	f, err := os.Open(filename)
-	if err != nil {
-		glog.Fatal(err)
-	}
-	defer f.Close()
-
-	r, err := gzip.NewReader(f)
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	policy, err := deepcfr.Load(r)
-	if err != nil {
+	var policy cfr.StrategyProfile
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&policy); err != nil {
 		glog.Fatal(err)
 	}
 
@@ -101,31 +84,17 @@ func mustLoadDeepCFR(filename string) cfr.StrategyProfile {
 func playGame(policy0, policy1 cfr.StrategyProfile, game cfr.GameTreeNode) int {
 	for game.Type() != cfr.TerminalNode {
 		if game.Type() == cfr.ChanceNode {
-			game, _ = cfr.SampleChanceNode(game)
+			game, _ = game.SampleChild()
 		} else if game.Player() == 0 {
-			strategy := policy0.GetStrategy(game).GetAverageStrategy()
-			selected := sampleStrategy(strategy)
+			p := policy0.GetPolicy(game).GetAverageStrategy()
+			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 		} else {
-			strategy := policy1.GetStrategy(game).GetAverageStrategy()
-			selected := sampleStrategy(strategy)
+			p := policy1.GetPolicy(game).GetAverageStrategy()
+			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 		}
 	}
 
 	return int(game.Player())
-}
-
-func sampleStrategy(strat []float32) int {
-	x := rand.Float32()
-	var cumProb float32
-	for i, p := range strat {
-		cumProb += p
-		if cumProb > x {
-			return i
-		}
-	}
-
-	// Shouldn't ever happen unless probability distribution does not sum to 1.
-	return len(strat) - 1
 }

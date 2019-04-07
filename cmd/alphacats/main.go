@@ -70,7 +70,7 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 		}
-		return deepcfr.New(lstm, buffers, true)
+		return deepcfr.New(lstm, buffers)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", params.CFRType))
 	}

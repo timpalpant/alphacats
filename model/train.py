@@ -95,8 +95,8 @@ def train(model, data, val_data):
         epochs=50,
         validation_data=val_data,
         use_multiprocessing=False,
-        workers=8,
-        max_queue_size=16,
+        workers=4,
+        max_queue_size=8,
         callbacks=[
             EarlyStopping(
                 monitor='val_loss', min_delta=0.001, patience=3,
@@ -114,6 +114,7 @@ def main():
     parser.add_argument("output", help="Directory to save trained model to")
     parser.add_argument("--validation_split", type=float, default=0.1,
                         help="Fraction of data to hold out for validation / early-stopping")
+    parser.add_argument("--initial_weights", help="Load initial weights from saved model")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
@@ -135,16 +136,21 @@ def main():
     model = build_model(history_shape, hand_shape, action_shape, output_shape)
     print(model.summary())
 
+    if args.initial_weights:
+        model.load_weights(args.initial_weights)
+
     model, history = train(model, data, val_data)
 
     if os.path.exists(args.output):
-      shutil.rmtree(args.output)
+        shutil.rmtree(args.output)
 
     logging.info("Saving model to %s", args.output)
     builder = tf.saved_model.builder.SavedModelBuilder(args.output)
     # Tag the model, required for Go
     builder.add_meta_graph_and_variables(sess, [TF_GRAPH_TAG])
     builder.save()
+    # Save keras model weights for re-initialization on next iteration.
+    model.save_weights(os.path.join(args.output, "weights.h5"))
 
 
 if __name__ == "__main__":

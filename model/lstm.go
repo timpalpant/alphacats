@@ -51,12 +51,17 @@ type Params struct {
 // LSTM is a model for AlphaCats to be used with DeepCFR
 // and implements deepcfr.Model.
 type LSTM struct {
-	params Params
-	iter   int
+	params      Params
+	iter        int
+	lastWeights []string
 }
 
 func NewLSTM(p Params) *LSTM {
-	return &LSTM{params: p}
+	return &LSTM{
+		params:      p,
+		iter:        1,
+		lastWeights: make([]string, 2),
+	}
 }
 
 // Train implements deepcfr.Model.
@@ -77,7 +82,12 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 
 	// Shell out to Python to train the network.
 	outputDir := filepath.Join(m.params.OutputDir, fmt.Sprintf("model_%08d", m.iter))
-	cmd := exec.Command("python", "model/train.py", tmpDir, outputDir)
+	args := []string{"model/train.py", tmpDir, outputDir}
+	initialWeights := m.lastWeights[(m.iter+1)%2]
+	if initialWeights != "" {
+		args = append(args, "--initial_weights", initialWeights)
+	}
+	cmd := exec.Command("python", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	glog.Infof("Running: %v", cmd.Args)
@@ -91,6 +101,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	glog.V(1).Infof("Finished training (took %v, %v samples/sec)",
 		elapsed, sps)
 	m.iter++
+	m.lastWeights[m.iter%2] = filepath.Join(outputDir, "weights.h5")
 
 	// Load trained model.
 	trained, err := LoadTrainedLSTM(outputDir, m.params)
@@ -113,6 +124,10 @@ func (m *LSTM) UnmarshalBinary(buf []byte) error {
 		return err
 	}
 
+	if err := dec.Decode(&m.lastWeights); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -125,6 +140,10 @@ func (m *LSTM) MarshalBinary() ([]byte, error) {
 	}
 
 	if err := enc.Encode(m.iter); err != nil {
+		return nil, err
+	}
+
+	if err := enc.Encode(m.lastWeights); err != nil {
 		return nil, err
 	}
 

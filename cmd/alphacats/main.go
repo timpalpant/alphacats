@@ -42,7 +42,8 @@ type RunParams struct {
 }
 
 type SamplingParams struct {
-	RobustSamplingK    int
+	MaxNumActionsK     int
+	ExplorationEps     float64
 	NumSamplingThreads int
 	Seed               int64
 }
@@ -101,7 +102,9 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 		wg.Add(1)
 		go func(k int) {
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-			sampler := sampling.NewRobustSampler(params.SamplingParams.RobustSamplingK)
+			sampler := sampling.NewMultiOutcomeSampler(
+				params.SamplingParams.MaxNumActionsK,
+				float32(params.SamplingParams.ExplorationEps))
 			walker := cfr.NewGeneralizedSampling(policy, cfr.SamplingParams{
 				Sampler:               sampler,
 				ProbeUnsampledActions: true,
@@ -126,8 +129,10 @@ func main() {
 
 	flag.IntVar(&params.SamplingParams.NumSamplingThreads, "sampling.num_sampling_threads", 256,
 		"Max number of sampling runs to perform in parallel")
-	flag.IntVar(&params.SamplingParams.RobustSamplingK, "sampling.max_num_actions", 3,
-		"Max number of actions to sample for traversing player in robust sampling")
+	flag.IntVar(&params.SamplingParams.MaxNumActionsK, "sampling.max_num_actions", 3,
+		"Max number of actions to sample for traversing player in multi-outcome sampling")
+	flag.Float64Var(&params.SamplingParams.ExplorationEps, "sampling.exploration_eps", 0.1,
+		"Exploration factor used in multi-outcome sampling")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 
 	flag.IntVar(&params.DeepCFRParams.BufferSize,

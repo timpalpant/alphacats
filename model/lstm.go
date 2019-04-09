@@ -235,8 +235,12 @@ func (m *TrainedLSTM) GobDecode(buf []byte) error {
 	}
 
 	model, err := LoadTrainedLSTM(dir, params)
+	if err != nil {
+		return err
+	}
+
 	*m = *model
-	return err
+	return nil
 }
 
 func (m *TrainedLSTM) GobEncode() ([]byte, error) {

@@ -23,12 +23,6 @@ import (
 	"github.com/timpalpant/alphacats/model"
 )
 
-const (
-	KiB = 1024
-	MiB = 1024 * KiB
-	GiB = 1024 * MiB
-)
-
 type RunParams struct {
 	DeckType         string
 	CFRType          string

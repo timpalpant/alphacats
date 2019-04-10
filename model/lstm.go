@@ -203,19 +203,6 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	}
 
 	glog.V(3).Infof("Predicted advantages: %v", advantages)
-	makePositive(advantages)
-	total := sum(advantages)
-
-	if total > 0 {
-		for i := range advantages {
-			advantages[i] /= total
-		}
-	} else { // Uniform probability.
-		for i := range advantages {
-			advantages[i] = 1.0 / float32(len(advantages))
-		}
-	}
-
 	return advantages
 }
 
@@ -426,23 +413,6 @@ func handleResults(resultsCh chan batchResult) {
 			req.resultCh <- result[i][0]
 		}
 	}
-}
-
-func makePositive(v []float32) {
-	for i := range v {
-		if v[i] < 0 {
-			v[i] = 0.0
-		}
-	}
-}
-
-func sum(v []float32) float32 {
-	var total float32
-	for _, x := range v {
-		total += x
-	}
-
-	return total
 }
 
 func init() {

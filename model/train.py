@@ -11,7 +11,6 @@ from keras.callbacks import (
     ModelCheckpoint,
 )
 from keras.layers import (
-    BatchNormalization,
     concatenate,
     CuDNNLSTM,
     Dense,
@@ -73,11 +72,13 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
 
     # Concatenate and predict advantages.
     merged = concatenate([lstm, hand_input, action_input])
-    merged_hidden_1 = Dense(128, activation='relu')(merged)
-    merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
-    merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
-    normalization = BatchNormalization()(merged_hidden_3)
-    advantages_output = Dense(1, activation='linear', name='output')(normalization)
+    merged_dropout_1 = Dropout(0.3)(merged)
+    merged_hidden_1 = Dense(128, activation='relu')(merged_dropout_1)
+    merged_dropout_2 = Dropout(0.3)(merged_hidden_1)
+    merged_hidden_2 = Dense(128, activation='relu')(merged_dropout_2)
+    merged_dropout_3 = Dropout(0.3)(merged_hidden_2)
+    merged_hidden_3 = Dense(128, activation='relu')(merged_dropout_3)
+    advantages_output = Dense(1, activation='linear', name='output')(merged_hidden_3)
 
     model = Model(
         inputs=[history_input, hand_input, action_input],

@@ -21,6 +21,7 @@ from keras.layers import (
 from keras.layers.wrappers import Bidirectional
 from keras.models import Model
 from keras.utils import Sequence
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
@@ -108,6 +109,19 @@ def train(model, data, val_data):
     return model, history
 
 
+def plot_metrics(history, output):
+    plt.figure()
+    for metric in ['loss', 'val_loss']:
+        epochs = np.arange(len(history.history[metric])) + 1
+        plt.plot(epochs, history.history[metric], label=metric)
+    plt.xticks(epochs)
+    plt.legend()
+    plt.title('Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('MSE')
+    plt.savefig(output)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run training on a batch of advantages samples")
     parser.add_argument("input", help="Input directory with batches of training data (npz)")
@@ -154,6 +168,7 @@ def main():
     builder.save()
     # Save keras model weights for re-initialization on next iteration.
     model.save_weights(os.path.join(args.output, "weights.h5"))
+    plot_metrics(history, os.path.join(args.output, "metrics.pdf"))
 
 
 if __name__ == "__main__":

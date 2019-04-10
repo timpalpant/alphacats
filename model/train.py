@@ -118,7 +118,10 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    sess = tf.Session()
+    config = tf.ConfigProto(
+      gpu_options=tf.GPUOptions(allow_growth=True),
+    )
+    sess = tf.Session(config=config)
     K.set_session(sess)
 
     batches = sorted(glob.glob(os.path.join(args.input, "batch_*.npz")))

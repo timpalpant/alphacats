@@ -14,7 +14,6 @@ import (
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
-	"github.com/timpalpant/go-cfr/deepcfr"
 	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
@@ -51,29 +50,15 @@ func main() {
 	glog.Infof("Playing %d games", *numGames)
 	var p0Wins int64
 	for i := 0; i < *numGames; i++ {
-		// Gross hack because we have not fully implemented SD-CFR.
-		var gamePolicy0, gamePolicy1 cfr.StrategyProfile
-		if deepCFRPolicy0, ok := policy0.(*deepcfr.DeepCFR); ok {
-			gamePolicy0 = deepCFRPolicy0.SampleModel()
-		} else {
-			gamePolicy0 = policy0
-		}
-
-		if deepCFRPolicy1, ok := policy1.(*deepcfr.DeepCFR); ok {
-			gamePolicy1 = deepCFRPolicy1.SampleModel()
-		} else {
-			gamePolicy1 = policy1
-		}
-
 		game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 		// Alternate which player goes first.
 		if i%2 == 0 {
-			gamePolicy0, gamePolicy1 = gamePolicy1, gamePolicy0
+			policy0, policy1 = policy1, policy0
 		}
 
 		wg.Add(1)
 		playGame := func(i int) {
-			winner := playGame(gamePolicy0, gamePolicy1, game)
+			winner := playGame(policy0, policy1, game)
 			if winner == (i+1)%2 {
 				atomic.AddInt64(&p0Wins, 1)
 			}
@@ -117,8 +102,8 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 }
 
 func playGame(policy0, policy1 cfr.StrategyProfile, game cfr.GameTreeNode) int {
-	for game.Type() != cfr.TerminalNode {
-		if game.Type() == cfr.ChanceNode {
+	for game.Type() != cfr.TerminalNodeType {
+		if game.Type() == cfr.ChanceNodeType {
 			game, _ = game.SampleChild()
 		} else if game.Player() == 0 {
 			p := policy0.GetPolicy(game).GetAverageStrategy()

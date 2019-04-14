@@ -64,6 +64,7 @@ type GameNode struct {
 	// actions are the action taken by the player to reach each child.
 	// len(actions) must always equal len(children).
 	actions []gamestate.Action
+	parent  *GameNode
 
 	rng    *rand.Rand
 	gnPool *gameNodeSlicePool
@@ -111,11 +112,11 @@ func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
 func (gn *GameNode) Type() cfr.NodeType {
 	switch gn.turnType {
 	case ShuffleDrawPile, InsertKittenRandom:
-		return cfr.ChanceNode
+		return cfr.ChanceNodeType
 	case GameOver:
-		return cfr.TerminalNode
+		return cfr.TerminalNodeType
 	default:
-		return cfr.PlayerNode
+		return cfr.PlayerNodeType
 	}
 }
 
@@ -146,7 +147,7 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 
 // Utility implements cfr.GameTreeNode.
 func (gn *GameNode) Utility(player int) float64 {
-	if gn.Type() != cfr.TerminalNode {
+	if gn.Type() != cfr.TerminalNodeType {
 		panic("cannot get the utility of a non-terminal node")
 	}
 
@@ -176,6 +177,7 @@ func (gn *GameNode) allocChildren(n int) {
 	childPrototype := *gn
 	childPrototype.children = nil
 	childPrototype.actions = nil
+	childPrototype.parent = gn
 	for i := 0; i < n; i++ {
 		gn.children = append(gn.children, childPrototype)
 		gn.actions = append(gn.actions, gamestate.Action{})
@@ -240,9 +242,13 @@ func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 	return &gn.children[i]
 }
 
+func (gn *GameNode) Parent() cfr.GameTreeNode {
+	return gn.parent
+}
+
 // GetChildProbability implements cfr.GameTreeNode.
 func (gn *GameNode) GetChildProbability(i int) float64 {
-	if gn.Type() != cfr.ChanceNode {
+	if gn.Type() != cfr.ChanceNodeType {
 		panic("cannot get the probability of a non-chance node")
 	}
 
@@ -261,11 +267,11 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
 	switch gn.Type() {
-	case cfr.TerminalNode:
+	case cfr.TerminalNodeType:
 		terminalNodesVisited.Add(1)
-	case cfr.PlayerNode:
+	case cfr.PlayerNodeType:
 		playerNodesVisited.Add(1)
-	case cfr.ChanceNode:
+	case cfr.ChanceNodeType:
 		chanceNodesVisited.Add(1)
 	}
 

@@ -99,10 +99,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 			sampler := sampling.NewMultiOutcomeSampler(
 				params.SamplingParams.MaxNumActionsK,
 				float32(params.SamplingParams.ExplorationEps))
-			walker := cfr.NewGeneralizedSampling(policy, cfr.SamplingParams{
-				Sampler:               sampler,
-				ProbeUnsampledActions: true,
-			})
+			walker := cfr.NewGeneralizedSampling(policy, sampler)
 			walker.Run(game)
 			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem

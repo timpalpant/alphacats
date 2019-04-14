@@ -15,14 +15,16 @@ from keras.layers import (
     concatenate,
     CuDNNLSTM,
     Dense,
-    Dropout,
     Input,
-    multiply,
+    LeakyReLU,
 )
 from keras.layers.wrappers import Bidirectional
 from keras.models import Model
 from keras.optimizers import Adam
-from keras.utils import Sequence
+from keras.utils import (
+    plot_model,
+    Sequence,
+)
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
@@ -68,19 +70,26 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
 
     # The private hand arm of the model.
     hand_input = Input(name="hand", shape=hand_shape)
+    hand_hidden_1 = Dense(64)(hand_input)
+    hand_activation_1 = LeakyReLU(alpha=0.1)(hand_hidden_1)
 
     # The action we are evaluating.
     action_input = Input(name="action", shape=action_shape)
+    action_hidden_1 = Dense(64)(action_input)
+    action_activation_1 = LeakyReLU(alpha=0.1)(action_hidden_1)
 
     # Concatenate and predict advantages.
-    merged = concatenate([lstm, hand_input, action_input])
-    merged_dropout_1 = Dropout(0.3)(merged)
-    merged_hidden_1 = Dense(128, activation='relu')(merged_dropout_1)
-    merged_dropout_2 = Dropout(0.3)(merged_hidden_1)
-    merged_hidden_2 = Dense(128, activation='relu')(merged_dropout_2)
-    merged_dropout_3 = Dropout(0.3)(merged_hidden_2)
-    merged_hidden_3 = Dense(128, activation='relu')(merged_dropout_3)
-    normalization = BatchNormalization()(merged_hidden_3)
+    merged_inputs = concatenate([lstm, hand_activation_1, action_activation_1])
+    merged_hidden_1 = Dense(256)(merged_inputs)
+    merged_activation_1 = LeakyReLU(alpha=0.1)(merged_hidden_1)
+
+    merged_hidden_2 = Dense(128)(merged_activation_1)
+    merged_activation_2 = LeakyReLU(alpha=0.1)(merged_hidden_2)
+
+    merged_hidden_3 = Dense(64)(merged_activation_2)
+    merged_activation_3 = LeakyReLU(alpha=0.1)(merged_hidden_3)
+
+    normalization = BatchNormalization()(merged_activation_3)
     advantages_output = Dense(1, activation='linear', name='output')(normalization)
 
     model = Model(
@@ -135,6 +144,10 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
+    if os.path.exists(args.output):
+        shutil.rmtree(args.output)
+    os.makedirs(args.output)
+
     config = tf.ConfigProto(
       gpu_options=tf.GPUOptions(allow_growth=True),
     )
@@ -155,14 +168,13 @@ def main():
     output_shape = y[0].shape[0]
     model = build_model(history_shape, hand_shape, action_shape, output_shape)
     print(model.summary())
+    plot_model(model, to_file=os.path.join(args.output, 'model.pdf'),
+               show_layer_names=False, show_shapes=True)
 
     if args.initial_weights:
         model.load_weights(args.initial_weights)
 
     model, history = train(model, data, val_data)
-
-    if os.path.exists(args.output):
-        shutil.rmtree(args.output)
 
     logging.info("Saving model to %s", args.output)
     builder = tf.saved_model.builder.SavedModelBuilder(args.output)

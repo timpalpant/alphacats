@@ -43,6 +43,7 @@ prometheus-client==0.6.0
 prompt-toolkit==2.0.9
 protobuf==3.6.1
 ptyprocess==0.6.0
+pydot==1.4.1
 Pygments==2.3.1
 pyparsing==2.3.1
 pyrsistent==0.14.11
@@ -50,9 +51,11 @@ python-dateutil==2.8.0
 PyYAML==3.13
 pyzmq==18.0.1
 qtconsole==4.4.3
+scikit-learn==0.20.3
 scipy==1.2.1
 Send2Trash==1.5.0
 six==1.12.0
+sklearn==0.0
 tensorboard==1.13.1
 tensorflow==1.13.1
 tensorflow-estimator==1.13.0

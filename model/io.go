@@ -21,6 +21,7 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int,
 	normalizeSampleWeights(samples)
 
 	// Write each batch as npz within the given directory.
+	glog.V(1).Infof("Writing batches to %v", directory)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	sem := make(chan struct{}, maxNumWorkers)
@@ -134,8 +135,8 @@ func normalizeSampleWeights(samples []deepcfr.Sample) {
 	}
 
 	glog.V(1).Infof("Normalizing sample weights by infoset")
-	for _, s := range samples {
+	for i, s := range samples {
 		stats := byInfoSet[string(s.InfoSet)]
-		s.Weight /= stats.mean()
+		samples[i].Weight /= stats.mean() // NB: modify the slice
 	}
 }

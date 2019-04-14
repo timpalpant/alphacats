@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
@@ -26,12 +27,13 @@ func main() {
 	strat1 := flag.String("strategy1", "", "File with policy for player 1")
 	numGames := flag.Int("num_games", 10000, "Number of random games to play")
 	seed := flag.Int64("seed", 1234, "Random seed")
+	parallel := flag.Bool("parallel", false, "Play games in parallel (DeepCFR only)")
 	flag.Parse()
 
 	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	deck := cards.TestDeck.AsSlice()
+	deck := cards.CoreDeck.AsSlice()
 	cardsPerPlayer := (len(deck) / 2) - 1
 	var wg sync.WaitGroup
 	var policy0, policy1 cfr.StrategyProfile
@@ -69,12 +71,24 @@ func main() {
 			gamePolicy0, gamePolicy1 = gamePolicy1, gamePolicy0
 		}
 
-		winner := playGame(gamePolicy0, gamePolicy1, game)
-		if winner == (i+1)%2 {
-			p0Wins++
+		wg.Add(1)
+		playGame := func(i int) {
+			winner := playGame(gamePolicy0, gamePolicy1, game)
+			if winner == (i+1)%2 {
+				atomic.AddInt64(&p0Wins, 1)
+			}
+
+			wg.Done()
+		}
+
+		if *parallel {
+			go playGame(i)
+		} else {
+			playGame(i)
 		}
 	}
 
+	wg.Wait()
 	winRate := float64(p0Wins) / float64(*numGames)
 	glog.Infof("Policy 0 won %d (%.3f %%) of games", p0Wins, 100*winRate)
 	glog.Infof("Policy 1 won %d (%.3f %%) of games", int64(*numGames)-p0Wins, 100*(1-winRate))

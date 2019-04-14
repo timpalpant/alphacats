@@ -66,7 +66,8 @@ func NewLSTM(p Params) *LSTM {
 
 // Train implements deepcfr.Model.
 func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
-	glog.Infof("Training network with %d samples", len(samples.GetSamples()))
+	trainingData := samples.GetSamples()
+	glog.Infof("Training network with %d samples", len(trainingData))
 	// Save training data to disk in a tempdir.
 	tmpDir, err := ioutil.TempDir(m.params.OutputDir, "training-data-")
 	if err != nil {
@@ -75,7 +76,6 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	defer os.RemoveAll(tmpDir)
 
 	glog.Infof("Saving training data to: %v", tmpDir)
-	trainingData := samples.GetSamples()
 	if err := saveTrainingData(trainingData, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
 		glog.Fatal(err)
 	}

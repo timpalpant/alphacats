@@ -16,6 +16,10 @@ import (
 )
 
 func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int, maxNumWorkers int) error {
+	// Normalize sample weights to have mean 1 for each sampled infoset.
+	// Only the relative weights within an infoset matter for correctness in expectation.
+	normalizeSampleWeights(samples)
+
 	// Write each batch as npz within the given directory.
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -108,4 +112,30 @@ func min(i, j int) int {
 	}
 
 	return j
+}
+
+type sampleWeightStats struct {
+	total float64
+	count int
+}
+
+func (s sampleWeightStats) mean() float32 {
+	return float32(s.total / float64(s.count))
+}
+
+func normalizeSampleWeights(samples []deepcfr.Sample) {
+	glog.V(1).Infof("Bucketing samples by infoset")
+	byInfoSet := make(map[string]sampleWeightStats)
+	for _, s := range samples {
+		stats := byInfoSet[string(s.InfoSet)]
+		stats.total += float64(s.Weight)
+		stats.count++
+		byInfoSet[string(s.InfoSet)] = stats
+	}
+
+	glog.V(1).Infof("Normalizing sample weights by infoset")
+	for _, s := range samples {
+		stats := byInfoSet[string(s.InfoSet)]
+		s.Weight /= stats.mean()
+	}
 }

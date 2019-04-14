@@ -11,6 +11,7 @@ from keras.callbacks import (
     ModelCheckpoint,
 )
 from keras.layers import (
+    BatchNormalization,
     concatenate,
     CuDNNLSTM,
     Dense,
@@ -20,6 +21,7 @@ from keras.layers import (
 )
 from keras.layers.wrappers import Bidirectional
 from keras.models import Model
+from keras.optimizers import Adam
 from keras.utils import Sequence
 import matplotlib.pyplot as plt
 import numpy as np
@@ -78,14 +80,15 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
     merged_hidden_2 = Dense(128, activation='relu')(merged_dropout_2)
     merged_dropout_3 = Dropout(0.3)(merged_hidden_2)
     merged_hidden_3 = Dense(128, activation='relu')(merged_dropout_3)
-    advantages_output = Dense(1, activation='linear', name='output')(merged_hidden_3)
+    normalization = BatchNormalization()(merged_hidden_3)
+    advantages_output = Dense(1, activation='linear', name='output')(normalization)
 
     model = Model(
         inputs=[history_input, hand_input, action_input],
         outputs=[advantages_output])
     model.compile(
         loss='mean_squared_error',
-        optimizer='adam',
+        optimizer=Adam(clipnorm=1.0),
         metrics=['mean_absolute_error'])
     return model
 

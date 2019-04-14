@@ -124,6 +124,10 @@ func (gn *GameNode) Player() int {
 	return int(gn.player)
 }
 
+func (gn *GameNode) GetHistory() gamestate.History {
+	return gn.state.GetHistory()
+}
+
 func (gn *GameNode) LastAction() gamestate.Action {
 	return gn.state.LastAction()
 }

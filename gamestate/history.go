@@ -62,7 +62,11 @@ func (a Action) String() string {
 		s += ":" + a.Card.String()
 	}
 	if a.Type == InsertExplodingCat {
-		s += fmt.Sprintf(":%d", a.PositionInDrawPile)
+		if a.PositionInDrawPile == 0 {
+			s += fmt.Sprintf(":RANDOM")
+		} else {
+			s += fmt.Sprintf(":%dth", a.PositionInDrawPile-1)
+		}
 	}
 	if a.CardsSeen[0] != cards.Unknown {
 		if a.CardsSeen[1] != cards.Unknown || a.CardsSeen[2] != cards.Unknown {

@@ -100,6 +100,10 @@ func (gs *GameState) GetInfoSet(player Player) InfoSet {
 	return gs.history.GetInfoSet(player, hand)
 }
 
+func (gs *GameState) GetHistory() History {
+	return gs.history
+}
+
 func (gs *GameState) giveCard(player Player, card cards.Card) {
 	if player == Player0 {
 		gs.player0Hand.Remove(card)

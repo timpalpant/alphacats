@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -135,8 +136,25 @@ func normalizeSampleWeights(samples []deepcfr.Sample) {
 	}
 
 	glog.V(1).Infof("Normalizing sample weights by infoset")
+	counts := make(map[int]int)
 	for i, s := range samples {
 		stats := byInfoSet[string(s.InfoSet)]
+		counts[stats.count]++
 		samples[i].Weight /= stats.mean() // NB: modify the slice
 	}
+
+	glog.V(1).Info("Infoset duplication:")
+	for k := range sortedKeys(counts) {
+		glog.V(1).Infof("%d: %d", k, counts[k])
+	}
+}
+
+func sortedKeys(counts map[int]int) []int {
+	result := make([]int, 0, len(counts))
+	for k := range counts {
+		result = append(result, k)
+	}
+
+	sort.Ints(result)
+	return result
 }

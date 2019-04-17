@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"expvar"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -22,6 +23,8 @@ import (
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/model"
 )
+
+var gamesInProgress = expvar.NewInt("games_in_progress")
 
 type RunParams struct {
 	DeckType         string
@@ -94,6 +97,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 		sem <- struct{}{}
 		glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
 		wg.Add(1)
+		gamesInProgress.Add(1)
 		go func(k int) {
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
 			sampler := sampling.NewMultiOutcomeSampler(
@@ -103,6 +107,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 			walker.Run(game)
 			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem
+			gamesInProgress.Add(-1)
 			wg.Done()
 		}(k)
 	}
@@ -141,6 +146,9 @@ func main() {
 	flag.IntVar(&params.DeepCFRParams.ModelParams.MaxTrainingDataWorkers,
 		"deepcfr.model.max_training_data_workers", 24,
 		"Number of worker threads for training data encoding")
+	flag.IntVar(&params.DeepCFRParams.ModelParams.MaxInferenceBatchSize,
+		"deepcfr.model.max_inference_batch_size", 3000,
+		"Max size of batches for prediction")
 	flag.Parse()
 
 	rand.Seed(params.SamplingParams.Seed)

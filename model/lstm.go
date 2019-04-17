@@ -46,6 +46,7 @@ type Params struct {
 	OutputDir              string
 	NumEncodingWorkers     int
 	MaxTrainingDataWorkers int
+	MaxInferenceBatchSize  int
 }
 
 // LSTM is a model for AlphaCats to be used with DeepCFR
@@ -293,7 +294,7 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 				}
 
 				batch = append(batch, req)
-				if len(batch) >= m.params.BatchSize {
+				if len(batch) >= m.params.MaxInferenceBatchSize {
 					encodeCh <- batch
 					break Loop
 				}

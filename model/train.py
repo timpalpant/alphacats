@@ -15,6 +15,7 @@ from keras.layers import (
     concatenate,
     CuDNNLSTM,
     Dense,
+    Dropout,
     Input,
     LeakyReLU,
 )
@@ -66,30 +67,38 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
-    lstm = Bidirectional(CuDNNLSTM(128, return_sequences=False))(history_input)
+    lstm = Bidirectional(CuDNNLSTM(96, return_sequences=False))(history_input)
 
     # The private hand arm of the model.
     hand_input = Input(name="hand", shape=hand_shape)
-    hand_hidden_1 = Dense(64)(hand_input)
-    hand_activation_1 = LeakyReLU(alpha=0.1)(hand_hidden_1)
 
     # The action we are evaluating.
     action_input = Input(name="action", shape=action_shape)
-    action_hidden_1 = Dense(64)(action_input)
-    action_activation_1 = LeakyReLU(alpha=0.1)(action_hidden_1)
 
     # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hand_activation_1, action_activation_1])
-    merged_hidden_1 = Dense(256)(merged_inputs)
+    merged_inputs = concatenate([lstm, hand_input, action_input])
+    dropout_1 = Dropout(0.1)(merged_inputs)
+    merged_hidden_1 = Dense(128)(dropout_1)
     merged_activation_1 = LeakyReLU(alpha=0.1)(merged_hidden_1)
 
-    merged_hidden_2 = Dense(128)(merged_activation_1)
+    dropout_2 = Dropout(0.1)(merged_activation_1)
+    merged_hidden_2 = Dense(128)(dropout_2)
     merged_activation_2 = LeakyReLU(alpha=0.1)(merged_hidden_2)
 
-    merged_hidden_3 = Dense(64)(merged_activation_2)
+    dropout_3 = Dropout(0.1)(merged_activation_2)
+    merged_hidden_3 = Dense(128)(dropout_3)
     merged_activation_3 = LeakyReLU(alpha=0.1)(merged_hidden_3)
 
-    normalization = BatchNormalization()(merged_activation_3)
+    dropout_4 = Dropout(0.1)(merged_activation_3)
+    merged_hidden_4 = Dense(64)(dropout_4)
+    merged_activation_4 = LeakyReLU(alpha=0.1)(merged_hidden_4)
+
+    dropout_5 = Dropout(0.1)(merged_activation_4)
+    merged_hidden_5 = Dense(64)(dropout_5)
+    merged_activation_5 = LeakyReLU(alpha=0.1)(merged_hidden_5)
+
+    dropout_6 = Dropout(0.1)(merged_activation_5)
+    normalization = BatchNormalization()(dropout_6)
     advantages_output = Dense(1, activation='linear', name='output')(normalization)
 
     model = Model(
@@ -144,10 +153,6 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    if os.path.exists(args.output):
-        shutil.rmtree(args.output)
-    os.makedirs(args.output)
-
     config = tf.ConfigProto(
       gpu_options=tf.GPUOptions(allow_growth=True),
     )
@@ -168,13 +173,14 @@ def main():
     output_shape = y[0].shape[0]
     model = build_model(history_shape, hand_shape, action_shape, output_shape)
     print(model.summary())
-    plot_model(model, to_file=os.path.join(args.output, 'model.pdf'),
-               show_layer_names=False, show_shapes=True)
 
     if args.initial_weights:
         model.load_weights(args.initial_weights)
 
     model, history = train(model, data, val_data)
+
+    if os.path.exists(args.output):
+        shutil.rmtree(args.output)
 
     logging.info("Saving model to %s", args.output)
     builder = tf.saved_model.builder.SavedModelBuilder(args.output)
@@ -183,6 +189,8 @@ def main():
     builder.save()
     # Save keras model weights for re-initialization on next iteration.
     model.save_weights(os.path.join(args.output, "weights.h5"))
+    plot_model(model, to_file=os.path.join(args.output, 'model.pdf'),
+               show_layer_names=False, show_shapes=True)
     plot_metrics(history, os.path.join(args.output, "metrics.pdf"))
 
 

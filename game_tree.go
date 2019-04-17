@@ -243,7 +243,13 @@ func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
 }
 
 func (gn *GameNode) Parent() cfr.GameTreeNode {
-	return gn.parent
+	// NOTE: Make sure to return explicit nil, so we don't fall into
+	// the non-nil interface gotcha.
+	if gn.parent != nil {
+		return gn.parent
+	}
+
+	return nil
 }
 
 // GetChildProbability implements cfr.GameTreeNode.

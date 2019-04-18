@@ -4,13 +4,14 @@ package tffloats
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"unsafe"
 )
 
 func New1DTensor(v []float32) []byte {
 	buf := make([]byte, 4*len(v))
-	encodeF32s(v, buf)
+	EncodeF32s(v, buf)
 	return buf
 }
 
@@ -19,7 +20,7 @@ func New2DTensor(v [][]float32) []byte {
 	nElem := d0 * d1
 	buf := make([]byte, 4*nElem)
 	for i, vi := range v {
-		encodeF32s(vi, buf[4*i*d1:])
+		EncodeF32s(vi, buf[4*i*d1:])
 	}
 
 	return buf
@@ -32,14 +33,19 @@ func New3DTensor(v [][][]float32) []byte {
 	for i, vi := range v {
 		for j, vj := range vi {
 			startIdx := 4 * ((i*d1 + j) * d2)
-			encodeF32s(vj, buf[startIdx:])
+			EncodeF32s(vj, buf[startIdx:])
 		}
 	}
 
 	return buf
 }
 
-func encodeF32s(v []float32, buf []byte) {
+func EncodeF32s(v []float32, buf []byte) {
+	if len(buf) != 4*len(v) {
+		panic(fmt.Errorf("trying to encode %d float32s into buffer of size %d",
+			len(v), len(buf)))
+	}
+
 	for i, x := range v {
 		bits := math.Float32bits(x)
 		nativeEndian.PutUint32(buf[4*i:], bits)

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -23,7 +24,6 @@ import (
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
-	"github.com/timpalpant/alphacats/model/internal/tffloats"
 )
 
 const (
@@ -175,6 +175,27 @@ func LoadTrainedLSTM(dir string, params Params) (*TrainedLSTM, error) {
 	return m, nil
 }
 
+var tfHistoryPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4*gamestate.MaxNumActions*numActionFeatures)
+	},
+}
+
+var tfHandPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4*cards.NumTypes)
+	},
+}
+
+var predictionRequestPool = sync.Pool{
+	New: func() interface{} {
+		return &predictionRequest{
+			action:   make([]byte, 4*numActionFeatures),
+			resultCh: make(chan float32, 1),
+		}
+	},
+}
+
 // Predict implements deepcfr.TrainedModel.
 func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	is := infoSet.(*alphacats.InfoSetWithAvailableActions)
@@ -183,27 +204,32 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 			len(is.AvailableActions), nActions, is.AvailableActions))
 	}
 
-	history := tffloats.New2DTensor(EncodeHistory(is.History))
-	hand := tffloats.New1DTensor(encodeHand(is.Hand))
-	reqs := make([]*predictionRequest, nActions)
+	tfHistory := tfHistoryPool.Get().([]byte)
+	encodeHistoryTF(is.History, tfHistory)
+	tfHand := tfHandPool.Get().([]byte)
+	encodeHandTF(is.Hand, tfHand)
+	var reqs [gamestate.MaxNumActions]*predictionRequest
 	for i, action := range is.AvailableActions {
-		req := &predictionRequest{
-			history:  history,
-			hand:     hand,
-			action:   tffloats.New1DTensor(encodeAction(action)),
-			resultCh: make(chan float32, 1),
-		}
+		req := predictionRequestPool.Get().(*predictionRequest)
+		req.history = tfHistory
+		req.hand = tfHand
+		encodeActionTF(action, req.action)
 
 		m.reqCh <- req
 		reqs[i] = req
 	}
 
 	advantages := make([]float32, len(reqs))
-	for i, req := range reqs {
+	for i := range advantages {
+		req := reqs[i]
 		advantages[i] = <-req.resultCh
+		tfHistoryPool.Put(req.history)
+		tfHandPool.Put(req.hand)
+		req.history = nil
+		req.hand = nil
+		predictionRequestPool.Put(req)
 	}
 
-	glog.V(3).Infof("Predicted advantages: %v", advantages)
 	return advantages
 }
 

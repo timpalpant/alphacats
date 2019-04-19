@@ -155,7 +155,7 @@ type TrainedLSTM struct {
 	dir    string
 	params Params
 	model  *tf.SavedModel
-	reqCh  chan *predictionRequest
+	reqsCh chan []*predictionRequest
 }
 
 func LoadTrainedLSTM(dir string, params Params) (*TrainedLSTM, error) {
@@ -169,68 +169,10 @@ func LoadTrainedLSTM(dir string, params Params) (*TrainedLSTM, error) {
 		dir:    dir,
 		params: params,
 		model:  model,
-		reqCh:  make(chan *predictionRequest, 1),
+		reqsCh: make(chan []*predictionRequest, 1),
 	}
 	go m.bgPredictionHandler()
 	return m, nil
-}
-
-var tfHistoryPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 4*gamestate.MaxNumActions*numActionFeatures)
-	},
-}
-
-var tfHandPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 4*cards.NumTypes)
-	},
-}
-
-var predictionRequestPool = sync.Pool{
-	New: func() interface{} {
-		return &predictionRequest{
-			action:   make([]byte, 4*numActionFeatures),
-			resultCh: make(chan float32, 1),
-		}
-	},
-}
-
-// Predict implements deepcfr.TrainedModel.
-func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
-	is := infoSet.(*alphacats.InfoSetWithAvailableActions)
-	if len(is.AvailableActions) != nActions {
-		panic(fmt.Errorf("InfoSet has %d actions but expected %d: %v",
-			len(is.AvailableActions), nActions, is.AvailableActions))
-	}
-
-	tfHistory := tfHistoryPool.Get().([]byte)
-	encodeHistoryTF(is.History, tfHistory)
-	tfHand := tfHandPool.Get().([]byte)
-	encodeHandTF(is.Hand, tfHand)
-	var reqs [gamestate.MaxNumActions]*predictionRequest
-	for i, action := range is.AvailableActions {
-		req := predictionRequestPool.Get().(*predictionRequest)
-		req.history = tfHistory
-		req.hand = tfHand
-		encodeActionTF(action, req.action)
-
-		m.reqCh <- req
-		reqs[i] = req
-	}
-
-	advantages := make([]float32, len(reqs))
-	for i := range advantages {
-		req := reqs[i]
-		advantages[i] = <-req.resultCh
-		tfHistoryPool.Put(req.history)
-		tfHandPool.Put(req.hand)
-		req.history = nil
-		req.hand = nil
-		predictionRequestPool.Put(req)
-	}
-
-	return advantages
 }
 
 // When serializing, we just serialize the path to the model already on disk.
@@ -273,7 +215,64 @@ func (m *TrainedLSTM) GobEncode() ([]byte, error) {
 }
 
 func (m *TrainedLSTM) Close() {
-	close(m.reqCh)
+	close(m.reqsCh)
+}
+
+var tfHistoryPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4*gamestate.MaxNumActions*numActionFeatures)
+	},
+}
+
+var tfHandPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 4*cards.NumTypes)
+	},
+}
+
+var predictionRequestPool = sync.Pool{
+	New: func() interface{} {
+		return &predictionRequest{
+			action:   make([]byte, 4*numActionFeatures),
+			resultCh: make(chan float32, 1),
+		}
+	},
+}
+
+// Predict implements deepcfr.TrainedModel.
+func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
+	is := infoSet.(*alphacats.InfoSetWithAvailableActions)
+	if len(is.AvailableActions) != nActions {
+		panic(fmt.Errorf("InfoSet has %d actions but expected %d: %v",
+			len(is.AvailableActions), nActions, is.AvailableActions))
+	}
+
+	tfHistory := tfHistoryPool.Get().([]byte)
+	encodeHistoryTF(is.History, tfHistory)
+	tfHand := tfHandPool.Get().([]byte)
+	encodeHandTF(is.Hand, tfHand)
+	var reqs [gamestate.MaxNumActions]*predictionRequest
+	for i, action := range is.AvailableActions {
+		req := predictionRequestPool.Get().(*predictionRequest)
+		req.history = tfHistory
+		req.hand = tfHand
+		encodeActionTF(action, req.action)
+		reqs[i] = req
+	}
+
+	m.reqsCh <- reqs[:nActions]
+	advantages := make([]float32, len(reqs))
+	for i := range advantages {
+		req := reqs[i]
+		advantages[i] = <-req.resultCh
+		tfHistoryPool.Put(req.history)
+		tfHandPool.Put(req.hand)
+		req.history = nil
+		req.hand = nil
+		predictionRequestPool.Put(req)
+	}
+
+	return advantages
 }
 
 type predictionRequest struct {
@@ -303,23 +302,22 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 
 	for {
 		// Wait for first request so we know we have at least one.
-		req, ok := <-m.reqCh
+		batch, ok := <-m.reqsCh
 		if !ok {
 			return
 		}
 
 		// Drain any additional requests as long as we're waiting for an encoding spot.
-		batch := []*predictionRequest{req}
 	Loop:
 		for {
 			select {
-			case req, ok := <-m.reqCh:
+			case reqs, ok := <-m.reqsCh:
 				if !ok {
 					encodeCh <- batch
 					return
 				}
 
-				batch = append(batch, req)
+				batch = append(batch, reqs...)
 				if len(batch) >= m.params.MaxInferenceBatchSize {
 					encodeCh <- batch
 					break Loop

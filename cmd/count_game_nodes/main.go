@@ -41,12 +41,12 @@ func main() {
 
 func countNodes(node cfr.GameTreeNode, rng *rand.Rand, sampledActions map[string]int) int {
 	switch node.Type() {
-	case cfr.ChanceNode:
+	case cfr.ChanceNodeType:
 		child, _ := node.SampleChild()
 		total := countNodes(child, rng, sampledActions) + 1
 		node.Close()
 		return total
-	case cfr.PlayerNode:
+	case cfr.PlayerNodeType:
 		if node.Player() == 0 {
 			total := 1
 			for i := 0; i < node.NumChildren(); i++ {

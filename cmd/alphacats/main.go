@@ -24,7 +24,10 @@ import (
 	"github.com/timpalpant/alphacats/model"
 )
 
-var gamesInProgress = expvar.NewInt("games_in_progress")
+var (
+	gamesInProgress = expvar.NewInt("games_in_progress")
+	gamesRemaining  = expvar.NewInt("games_remaining")
+)
 
 type RunParams struct {
 	DeckType         string
@@ -93,6 +96,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 	deck, cardsPerPlayer := getDeck(params.DeckType)
 	sem := make(chan struct{}, params.SamplingParams.NumSamplingThreads)
 	var wg sync.WaitGroup
+	gamesRemaining.Add(int64(params.DeepCFRParams.TraversalsPerIter))
 	for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
 		sem <- struct{}{}
 		glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
@@ -108,6 +112,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem
 			gamesInProgress.Add(-1)
+			gamesRemaining.Add(-1)
 			wg.Done()
 		}(k)
 	}

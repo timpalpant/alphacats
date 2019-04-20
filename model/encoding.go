@@ -12,20 +12,26 @@ const (
 	numActionFeatures = 59
 )
 
-var (
-	historyPool = &floatHistoryPool{}
-	actionPool  = &floatSlicePool{}
-	handPool    = &floatSlicePool{}
-)
-
 func encodeHistoryTF(h gamestate.History, result []byte) {
-	oneHot := historyPool.alloc()
-	EncodeHistory(h, oneHot)
-	for i, row := range oneHot {
-		resultOffset := result[4*i*len(row) : 4*(i+1)*len(row)]
-		tffloats.EncodeF32s(row, resultOffset)
+	// We encode actions directly, rather than reuse EncodeHistory,
+	// to avoid needing to allocate large intermediate one-hot [][]float32.
+	idx := 0
+	for i := 0; i < h.Len(); i++ {
+		encodeActionTF(h.Get(i), result[idx:])
+		idx += 4 * numActionFeatures
 	}
-	historyPool.free(oneHot)
+
+	for i := idx; i < len(result); i++ {
+		result[i] = 0
+	}
+}
+
+func newOneHotHistory() [][]float32 {
+	result := make([][]float32, gamestate.MaxNumActions)
+	for i := range result {
+		result[i] = make([]float32, numActionFeatures)
+	}
+	return result
 }
 
 // Game history is encoded as: MaxHistory (48) x
@@ -45,10 +51,9 @@ func EncodeHistory(h gamestate.History, result [][]float32) {
 }
 
 func encodeActionTF(action gamestate.Action, result []byte) {
-	oneHot := actionPool.alloc(numActionFeatures)
-	encodeAction(action, oneHot)
-	tffloats.EncodeF32s(oneHot, result)
-	actionPool.free(oneHot)
+	var oneHot [numActionFeatures]float32
+	encodeAction(action, oneHot[:])
+	tffloats.EncodeF32s(oneHot[:], result)
 }
 
 func encodeAction(action gamestate.Action, result []float32) {
@@ -65,10 +70,9 @@ func encodeAction(action gamestate.Action, result []float32) {
 }
 
 func encodeHandTF(hand cards.Set, result []byte) {
-	oneHot := handPool.alloc(cards.NumTypes)
-	encodeHand(hand, oneHot)
-	tffloats.EncodeF32s(oneHot, result)
-	handPool.free(oneHot)
+	var oneHot [cards.NumTypes]float32
+	encodeHand(hand, oneHot[:])
+	tffloats.EncodeF32s(oneHot[:], result)
 }
 
 func encodeHand(hand cards.Set, result []float32) {

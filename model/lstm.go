@@ -223,11 +223,6 @@ const (
 	tfHandSize    = 4 * cards.NumTypes
 )
 
-var (
-	tfHistoryPool = &byteSlicePool{}
-	tfHandPool    = &byteSlicePool{}
-)
-
 var predictionRequestPool = sync.Pool{
 	New: func() interface{} {
 		return &predictionRequest{
@@ -245,9 +240,9 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 			len(is.AvailableActions), nActions, is.AvailableActions))
 	}
 
-	tfHistory := tfHistoryPool.alloc(tfHistorySize)
+	tfHistory := make([]byte, tfHistorySize)
 	encodeHistoryTF(is.History, tfHistory)
-	tfHand := tfHandPool.alloc(tfHandSize)
+	tfHand := make([]byte, tfHandSize)
 	encodeHandTF(is.Hand, tfHand)
 	reqs := make([]*predictionRequest, nActions)
 	for i, action := range is.AvailableActions {
@@ -263,8 +258,6 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	for i := range advantages {
 		req := reqs[i]
 		advantages[i] = <-req.resultCh
-		tfHistoryPool.free(req.history)
-		tfHandPool.free(req.hand)
 		req.history = nil
 		req.hand = nil
 		predictionRequestPool.Put(req)

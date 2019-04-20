@@ -73,6 +73,9 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 	sampleWeights := make([]float32, 0, nSamples)
 
 	var is alphacats.InfoSetWithAvailableActions
+	history := newOneHotHistory()
+	var hand [cards.NumTypes]float32
+	var oneHotAction [numActionFeatures]float32
 	for _, sample := range batch {
 		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
 			return err
@@ -83,26 +86,20 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 				len(is.AvailableActions), len(sample.Advantages), sample, is))
 		}
 
-		history := historyPool.alloc()
 		EncodeHistory(is.History, history)
-		hand := handPool.alloc(cards.NumTypes)
-		encodeHand(is.Hand, hand)
+		encodeHand(is.Hand, hand[:])
 		w := float32(int((sample.Weight + 1.0) / 2.0))
 		for _, action := range is.AvailableActions {
 			for _, row := range history {
 				histories = append(histories, row...)
 			}
 
-			hands = append(hands, hand...)
-			oneHotAction := actionPool.alloc(numActionFeatures)
-			encodeAction(action, oneHotAction)
-			actions = append(actions, oneHotAction...)
-			actionPool.free(oneHotAction)
+			hands = append(hands, hand[:]...)
+			encodeAction(action, oneHotAction[:])
+			actions = append(actions, oneHotAction[:]...)
 			sampleWeights = append(sampleWeights, w)
 		}
 
-		historyPool.free(history)
-		handPool.free(hand)
 		y = append(y, sample.Advantages...)
 	}
 

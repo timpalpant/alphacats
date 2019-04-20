@@ -83,9 +83,9 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 				len(is.AvailableActions), len(sample.Advantages), sample, is))
 		}
 
-		history := historyPool.Get().([][]float32)
+		history := historyPool.alloc()
 		EncodeHistory(is.History, history)
-		hand := handPool.Get().([]float32)
+		hand := handPool.alloc(cards.NumTypes)
 		encodeHand(is.Hand, hand)
 		w := float32(int((sample.Weight + 1.0) / 2.0))
 		for _, action := range is.AvailableActions {
@@ -94,13 +94,15 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 			}
 
 			hands = append(hands, hand...)
-			oneHotAction := actionPool.Get().([]float32)
+			oneHotAction := actionPool.alloc(numActionFeatures)
 			encodeAction(action, oneHotAction)
 			actions = append(actions, oneHotAction...)
-			actionPool.Put(oneHotAction)
+			actionPool.free(oneHotAction)
 			sampleWeights = append(sampleWeights, w)
 		}
 
+		historyPool.free(history)
+		handPool.free(hand)
 		y = append(y, sample.Advantages...)
 	}
 

@@ -1,8 +1,6 @@
 package model
 
 import (
-	"sync"
-
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 	"github.com/timpalpant/alphacats/model/internal/tffloats"
@@ -14,36 +12,20 @@ const (
 	numActionFeatures = 59
 )
 
-var historyPool = sync.Pool{
-	New: func() interface{} {
-		result := make([][]float32, gamestate.MaxNumActions)
-		for i := range result {
-			result[i] = make([]float32, numActionFeatures)
-		}
-		return result
-	},
-}
-
-var actionPool = sync.Pool{
-	New: func() interface{} {
-		return make([]float32, numActionFeatures)
-	},
-}
-
-var handPool = sync.Pool{
-	New: func() interface{} {
-		return make([]float32, cards.NumTypes)
-	},
-}
+var (
+	historyPool = &floatHistoryPool{}
+	actionPool  = &floatSlicePool{}
+	handPool    = &floatSlicePool{}
+)
 
 func encodeHistoryTF(h gamestate.History, result []byte) {
-	oneHot := historyPool.Get().([][]float32)
+	oneHot := historyPool.alloc()
 	EncodeHistory(h, oneHot)
 	for i, row := range oneHot {
 		resultOffset := result[4*i*len(row) : 4*(i+1)*len(row)]
 		tffloats.EncodeF32s(row, resultOffset)
 	}
-	historyPool.Put(oneHot)
+	historyPool.free(oneHot)
 }
 
 // Game history is encoded as: MaxHistory (48) x
@@ -63,10 +45,10 @@ func EncodeHistory(h gamestate.History, result [][]float32) {
 }
 
 func encodeActionTF(action gamestate.Action, result []byte) {
-	oneHot := actionPool.Get().([]float32)
+	oneHot := actionPool.alloc(numActionFeatures)
 	encodeAction(action, oneHot)
 	tffloats.EncodeF32s(oneHot, result)
-	actionPool.Put(oneHot)
+	actionPool.free(oneHot)
 }
 
 func encodeAction(action gamestate.Action, result []float32) {
@@ -83,17 +65,17 @@ func encodeAction(action gamestate.Action, result []float32) {
 }
 
 func encodeHandTF(hand cards.Set, result []byte) {
-	oneHot := handPool.Get().([]float32)
+	oneHot := handPool.alloc(cards.NumTypes)
 	encodeHand(hand, oneHot)
 	tffloats.EncodeF32s(oneHot, result)
-	handPool.Put(oneHot)
+	handPool.free(oneHot)
 }
 
 func encodeHand(hand cards.Set, result []float32) {
 	clear(result)
-	for _, card := range hand.AsSlice() {
-		result[int(card)] += 1.0
-	}
+	hand.Iter(func(card cards.Card, count uint8) {
+		result[int(card)] = float32(count)
+	})
 }
 
 func clear(result []float32) {

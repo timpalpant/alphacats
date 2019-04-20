@@ -218,17 +218,15 @@ func (m *TrainedLSTM) Close() {
 	close(m.reqsCh)
 }
 
-var tfHistoryPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 4*gamestate.MaxNumActions*numActionFeatures)
-	},
-}
+const (
+	tfHistorySize = 4 * gamestate.MaxNumActions * numActionFeatures
+	tfHandSize    = 4 * cards.NumTypes
+)
 
-var tfHandPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 4*cards.NumTypes)
-	},
-}
+var (
+	tfHistoryPool = &byteSlicePool{}
+	tfHandPool    = &byteSlicePool{}
+)
 
 var predictionRequestPool = sync.Pool{
 	New: func() interface{} {
@@ -247,11 +245,11 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 			len(is.AvailableActions), nActions, is.AvailableActions))
 	}
 
-	tfHistory := tfHistoryPool.Get().([]byte)
+	tfHistory := tfHistoryPool.alloc(tfHistorySize)
 	encodeHistoryTF(is.History, tfHistory)
-	tfHand := tfHandPool.Get().([]byte)
+	tfHand := tfHandPool.alloc(tfHandSize)
 	encodeHandTF(is.Hand, tfHand)
-	var reqs [gamestate.MaxNumActions]*predictionRequest
+	reqs := make([]*predictionRequest, nActions)
 	for i, action := range is.AvailableActions {
 		req := predictionRequestPool.Get().(*predictionRequest)
 		req.history = tfHistory
@@ -261,12 +259,12 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	}
 
 	m.reqsCh <- reqs[:nActions]
-	advantages := make([]float32, len(reqs))
+	advantages := make([]float32, nActions)
 	for i := range advantages {
 		req := reqs[i]
 		advantages[i] = <-req.resultCh
-		tfHistoryPool.Put(req.history)
-		tfHandPool.Put(req.hand)
+		tfHistoryPool.free(req.history)
+		tfHandPool.free(req.hand)
 		req.history = nil
 		req.hand = nil
 		predictionRequestPool.Put(req)

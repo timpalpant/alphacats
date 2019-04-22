@@ -41,7 +41,7 @@ func New3DTensor(v [][][]float32) []byte {
 }
 
 func EncodeF32s(v []float32, buf []byte) {
-	if len(buf) != 4*len(v) {
+	if len(buf) < 4*len(v) {
 		panic(fmt.Errorf("trying to encode %d float32s into buffer of size %d",
 			len(v), len(buf)))
 	}

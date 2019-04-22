@@ -13,8 +13,9 @@ import (
 const testModel = "testdata/savedmodel"
 
 var testParams = Params{
-	BatchSize:          2000,
-	NumEncodingWorkers: 16,
+	MaxInferenceBatchSize: 3000,
+	NumEncodingWorkers:    4,
+	NumPredictionWorkers:  2,
 }
 
 // BenchmarkPredict-24				     100	  14291122 ns/op
@@ -71,9 +72,12 @@ func BenchmarkBatchSize(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
 	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
-	history := EncodeHistory(is.History)
-	hand := encodeHand(is.Hand)
-	action := encodeAction(is.AvailableActions[0])
+	history := newOneHotHistory()
+	EncodeHistory(is.History, history)
+	hand := make([]float32, cards.NumTypes)
+	encodeHand(is.Hand, hand)
+	action := make([]float32, numActionFeatures)
+	encodeAction(is.AvailableActions[0], action)
 
 	opts := &tf.SessionOptions{Config: tfConfig}
 	model, err := tf.LoadSavedModel(testModel, []string{graphTag}, opts)

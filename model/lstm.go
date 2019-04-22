@@ -47,6 +47,7 @@ type Params struct {
 	NumEncodingWorkers     int
 	MaxTrainingDataWorkers int
 	MaxInferenceBatchSize  int
+	NumPredictionWorkers   int
 }
 
 // LSTM is a model for AlphaCats to be used with DeepCFR
@@ -279,7 +280,9 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	// large as possible until we are ready to process it.
 	outputCh := make(chan *batchPredictionRequest)
 	defer close(outputCh)
-	go handleBatchPredictions(m.model, outputCh)
+	for i := 0; i < m.params.NumPredictionWorkers; i++ {
+		go handleBatchPredictions(m.model, outputCh)
+	}
 
 	encodeCh := make(chan []*predictionRequest)
 	defer close(encodeCh)
@@ -389,14 +392,13 @@ type batchResult struct {
 }
 
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
-	resultsCh := make(chan batchResult, 1)
-	defer close(resultsCh)
-	go handleResults(resultsCh)
-
 	defer model.Session.Close()
 	for req := range reqCh {
 		resultTensor := predictBatch(model, req.history, req.hand, req.action)
-		resultsCh <- batchResult{req.batch, resultTensor}
+		result := resultTensor.Value().([][]float32)
+		for i, req := range req.batch {
+			req.resultCh <- result[i][0]
+		}
 		samplesPredicted.Add(int64(len(req.batch)))
 		batchesPredicted.Add(1)
 	}
@@ -420,15 +422,6 @@ func predictBatch(model *tf.SavedModel, history, hand, action *tf.Tensor) *tf.Te
 	}
 
 	return result[0]
-}
-
-func handleResults(resultsCh chan batchResult) {
-	for batchResult := range resultsCh {
-		result := batchResult.resultTensor.Value().([][]float32)
-		for i, req := range batchResult.batch {
-			req.resultCh <- result[i][0]
-		}
-	}
 }
 
 func init() {

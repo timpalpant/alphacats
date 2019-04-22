@@ -148,6 +148,9 @@ func main() {
 	flag.IntVar(&params.DeepCFRParams.ModelParams.NumEncodingWorkers,
 		"deepcfr.model.num_encoding_workers", 4,
 		"Number of worker threads for prediction feature encoding")
+	flag.IntVar(&params.DeepCFRParams.ModelParams.NumPredictionWorkers,
+		"deepcfr.model.num_prediction_workers", 2,
+		"Number of worker threads for making predictions on GPU")
 	flag.IntVar(&params.DeepCFRParams.ModelParams.MaxTrainingDataWorkers,
 		"deepcfr.model.max_training_data_workers", 24,
 		"Number of worker threads for training data encoding")

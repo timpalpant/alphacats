@@ -122,6 +122,11 @@ func (m *LSTM) UnmarshalBinary(buf []byte) error {
 		return err
 	}
 
+	// TODO(palpant): Remove after migration.
+	if m.params.NumPredictionWorkers == 0 {
+		m.params.NumPredictionWorkers = 2
+	}
+
 	if err := dec.Decode(&m.iter); err != nil {
 		return err
 	}
@@ -189,6 +194,11 @@ func (m *TrainedLSTM) GobDecode(buf []byte) error {
 	var params Params
 	if err := dec.Decode(&params); err != nil {
 		return err
+	}
+
+	// TODO(palpant): Remove after migration.
+	if params.NumPredictionWorkers == 0 {
+		params.NumPredictionWorkers = 2
 	}
 
 	model, err := LoadTrainedLSTM(dir, params)
@@ -280,6 +290,8 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	// large as possible until we are ready to process it.
 	outputCh := make(chan *batchPredictionRequest)
 	defer close(outputCh)
+	glog.V(1).Infof("Starting %d batch prediction workers",
+		m.params.NumPredictionWorkers)
 	for i := 0; i < m.params.NumPredictionWorkers; i++ {
 		go handleBatchPredictions(m.model, outputCh)
 	}
@@ -290,6 +302,8 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	// and we don't want to be bottlenecked on it. This will mean too-small batches
 	// for the first few, but we expect that at steady-state we will be rate-limited
 	// by predictions on the GPU, so the batches will still be large (just buffered).
+	glog.V(1).Infof("Starting %d batch encoding workers",
+		m.params.NumEncodingWorkers)
 	for i := 0; i < m.params.NumEncodingWorkers; i++ {
 		go handleEncoding(m.model, encodeCh, outputCh)
 	}

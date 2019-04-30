@@ -10,6 +10,8 @@ const (
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
 	numActionFeatures = 59
+	// The number of extra engineered features derived from history.
+	numExtraFeatures = maxDrawPileCards + cards.NumTypes
 )
 
 func encodeHistoryTF(h gamestate.History, result []byte) {
@@ -34,7 +36,7 @@ func newOneHotHistory() [][]float32 {
 	return result
 }
 
-// Game history is encoded as: MaxHistory (48) x
+// Game history is encoded as: MaxHistory (56) x
 //  - One hot encoded player (2)
 //  - One hot encoded action type (4)
 //  - One hot encoded Card (10)
@@ -80,6 +82,18 @@ func encodeHand(hand cards.Set, result []float32) {
 	hand.Iter(func(card cards.Card, count uint8) {
 		result[int(card)] = float32(count)
 	})
+}
+
+func encodeExtraTF(h gamestate.History, hand cards.Set, result []byte) {
+	var oneHot [numExtraFeatures]float32
+	encodeExtra(h, hand, oneHot[:])
+	tffloats.EncodeF32s(oneHot[:], result)
+}
+
+func encodeExtra(h gamestate.History, hand cards.Set, result []float32) {
+	n := 0
+	n += explodingKittenProbabilities(h, result[n:])
+	n += discardPile(h, result[n:])
 }
 
 func clear(result []float32) {

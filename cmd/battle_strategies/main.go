@@ -59,7 +59,7 @@ func main() {
 		wg.Add(1)
 		playGame := func(i int) {
 			winner := playGame(policy0, policy1, game)
-			if winner == (i+1)%2 {
+			if (i%2 == 0 && winner == 1) || (i%2 == 1 && winner == 0) {
 				atomic.AddInt64(&p0Wins, 1)
 			}
 
@@ -70,6 +70,10 @@ func main() {
 			go playGame(i)
 		} else {
 			playGame(i)
+		}
+
+		if i%(*numGames/10) == 0 {
+			glog.Infof("Played %d games", i)
 		}
 	}
 

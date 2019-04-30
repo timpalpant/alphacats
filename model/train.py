@@ -34,9 +34,10 @@ import tensorflow as tf
 # These constants must be kept in sync with the Go code.
 TF_GRAPH_TAG = "lstm"
 
-MAX_HISTORY = 48
+MAX_HISTORY = 56
 N_ACTION_FEATURES = 59
 NUM_CARD_TYPES = 10
+NUM_EXTRA_FEATURES = 13 + 10
 
 
 class TrainingSequence(Sequence):
@@ -53,30 +54,35 @@ class TrainingSequence(Sequence):
         X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
         X_hand = batch["X_hand"].reshape((n_samples, NUM_CARD_TYPES))
         X_action = batch["X_action"].reshape((n_samples, N_ACTION_FEATURES))
-        X = {"history": X_history, "hand": X_hand, "action": X_action}
+        X_extra = batch["X_extra"].reshape((n_samples, NUM_EXTRA_FEATURES))
+        X = {"history": X_history, "hand": X_hand, "action": X_action, "extra": X_extra}
         y = batch["y"].reshape((n_samples, 1))
         return X, y, batch["sample_weight"]
 
 
-def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, output_shape: int):
+def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, extra_shape: tuple, output_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)
     logging.info("Hand input shape: %s", hand_shape)
     logging.info("Action input shape: %s", action_shape)
+    logging.info("Extra input shape: %s", extra_shape)
     logging.info("Output shape: %s", output_shape)
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
-    lstm = Bidirectional(CuDNNLSTM(96, return_sequences=False))(history_input)
+    lstm = Bidirectional(CuDNNLSTM(32, return_sequences=False))(history_input)
 
     # The private hand arm of the model.
     hand_input = Input(name="hand", shape=hand_shape)
+
+    # Engineered extra features derived from history.
+    extra_input = Input(name="extra", shape=extra_shape)
 
     # The action we are evaluating.
     action_input = Input(name="action", shape=action_shape)
 
     # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hand_input, action_input])
+    merged_inputs = concatenate([lstm, hand_input, extra_input, action_input])
     dropout_1 = Dropout(0.1)(merged_inputs)
     merged_hidden_1 = Dense(128)(dropout_1)
     merged_activation_1 = LeakyReLU(alpha=0.1)(merged_hidden_1)
@@ -102,7 +108,7 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
     advantages_output = Dense(1, activation='linear', name='output')(normalization)
 
     model = Model(
-        inputs=[history_input, hand_input, action_input],
+        inputs=[history_input, hand_input, extra_input, action_input],
         outputs=[advantages_output])
     model.compile(
         loss='mean_squared_error',
@@ -169,9 +175,10 @@ def main():
     X, y, _ = data[0]
     history_shape = X["history"][0].shape
     hand_shape = X["hand"][0].shape
+    extra_shape = X["extra"][0].shape
     action_shape = X["action"][0].shape
     output_shape = y[0].shape[0]
-    model = build_model(history_shape, hand_shape, action_shape, output_shape)
+    model = build_model(history_shape, hand_shape, action_shape, extra_shape, output_shape)
     print(model.summary())
 
     if args.initial_weights:

@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"math/rand"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -20,6 +21,10 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int,
 	// Normalize sample weights to have mean 1 for each sampled infoset.
 	// Only the relative weights within an infoset matter for correctness in expectation.
 	normalizeSampleWeights(samples)
+
+	rand.Shuffle(len(samples), func(i, j int) {
+		samples[i], samples[j] = samples[j], samples[i]
+	})
 
 	// Write each batch as npz within the given directory.
 	glog.V(1).Infof("Writing batches to %v", directory)
@@ -69,6 +74,7 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
 	hands := make([]float32, 0, nSamples*cards.NumTypes)
 	actions := make([]float32, 0, nSamples*numActionFeatures)
+	extra := make([]float32, 0, nSamples*numExtraFeatures)
 	y := make([]float32, 0, nSamples)
 	sampleWeights := make([]float32, 0, nSamples)
 
@@ -76,6 +82,7 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 	history := newOneHotHistory()
 	var hand [cards.NumTypes]float32
 	var oneHotAction [numActionFeatures]float32
+	var oneHotExtra [numExtraFeatures]float32
 	for _, sample := range batch {
 		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
 			return err
@@ -88,7 +95,7 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 
 		EncodeHistory(is.History, history)
 		encodeHand(is.Hand, hand[:])
-		w := float32(int((sample.Weight + 1.0) / 2.0))
+		encodeExtra(is.History, is.Hand, oneHotExtra[:])
 		for _, action := range is.AvailableActions {
 			for _, row := range history {
 				histories = append(histories, row...)
@@ -97,7 +104,8 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 			hands = append(hands, hand[:]...)
 			encodeAction(action, oneHotAction[:])
 			actions = append(actions, oneHotAction[:]...)
-			sampleWeights = append(sampleWeights, w)
+			extra = append(extra, oneHotExtra[:]...)
+			sampleWeights = append(sampleWeights, sample.Weight)
 		}
 
 		y = append(y, sample.Advantages...)
@@ -107,6 +115,7 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 		"X_history":     histories,
 		"X_hand":        hands,
 		"X_action":      actions,
+		"X_extra":       extra,
 		"y":             y,
 		"sample_weight": sampleWeights,
 	})
@@ -140,15 +149,17 @@ func normalizeSampleWeights(samples []deepcfr.Sample) {
 	}
 
 	glog.V(1).Infof("Normalizing sample weights by infoset")
-	counts := make(map[int]int)
 	for i, s := range samples {
 		stats := byInfoSet[string(s.InfoSet)]
-		counts[stats.count]++
 		samples[i].Weight /= stats.mean() // NB: modify the slice
 	}
 
 	glog.V(1).Info("Infoset duplication:")
-	for k := range sortedKeys(counts) {
+	counts := make(map[int]int)
+	for _, stats := range byInfoSet {
+		counts[stats.count]++
+	}
+	for _, k := range sortedKeys(counts) {
 		glog.V(1).Infof("%d: %d", k, counts[k])
 	}
 }

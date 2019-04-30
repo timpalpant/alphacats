@@ -7,7 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"runtime"
-	"time"
+	"sync"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
@@ -20,30 +20,68 @@ func main() {
 	seed := flag.Int64("seed", 123, "Seed for random game")
 	flag.Parse()
 
-	go http.ListenAndServe("localhost:4124", nil)
-
-	go func() {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for _ = range ticker.C {
-			logMemUsage()
-		}
-	}()
+	rand.Seed(*seed)
+	go http.ListenAndServe("localhost:4125", nil)
 
 	deck := cards.CoreDeck.AsSlice()
 	game := alphacats.NewRandomGame(deck, 4)
-	rng := rand.New(rand.NewSource(*seed))
-	sampledActions := make(map[string]int)
-	total := countNodes(game, rng, sampledActions)
-	glog.Infof("%d sampled actions, %d nodes in game", len(sampledActions), total)
-	logMemUsage()
+
+	workQueue := make(chan cfr.GameTreeNode, runtime.NumCPU())
+	for i := 0; i < cap(workQueue); i++ {
+		rng := rand.New(rand.NewSource(rand.Int63()))
+		go countNodes(workQueue)
+	}
+
+	total := countNodesParallel(game, workQueue)
+	glog.Infof("%d nodes in game", total)
 }
 
-func countNodes(node cfr.GameTreeNode, rng *rand.Rand, sampledActions map[string]int) int {
+type countJob struct {
+	root   cfr.GameTreeNode
+	result chan int
+}
+
+func countNodesParallel(node cfr.GameTreeNode, workQueue chan cfr.GameTreeNode) int {
 	switch node.Type() {
 	case cfr.ChanceNodeType:
 		child, _ := node.SampleChild()
-		total := countNodes(child, rng, sampledActions) + 1
+		total := countNodesParallel(child, sem) + 1
+		node.Close()
+		return total
+	case cfr.PlayerNodeType:
+		total := 1
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		for i := 0; i < node.NumChildren(); i++ {
+			child := node.GetChild(i)
+
+			sem <- struct{}{}
+			wg.Add(1)
+			go func() {
+				rng := rand.New(rand.NewSource(rand.Int63()))
+				n := countNodes(child, rng)
+				mu.Lock()
+				total += n
+				mu.Unlock()
+				<-sem
+				wg.Done()
+			}()
+		}
+
+		wg.Done()
+		node.Close()
+		return total
+	}
+
+	return 1
+
+}
+
+func countNodes(node cfr.GameTreeNode, rng *rand.Rand) int {
+	switch node.Type() {
+	case cfr.ChanceNodeType:
+		child, _ := node.SampleChild()
+		total := countNodes(child, rng) + 1
 		node.Close()
 		return total
 	case cfr.PlayerNodeType:
@@ -51,7 +89,7 @@ func countNodes(node cfr.GameTreeNode, rng *rand.Rand, sampledActions map[string
 			total := 1
 			for i := 0; i < node.NumChildren(); i++ {
 				child := node.GetChild(i)
-				total += countNodes(child, rng, sampledActions)
+				total += countNodes(child, rng)
 			}
 
 			node.Close()
@@ -59,27 +97,11 @@ func countNodes(node cfr.GameTreeNode, rng *rand.Rand, sampledActions map[string
 		} else {
 			selected := rng.Intn(node.NumChildren())
 			child := node.GetChild(selected)
-			total := countNodes(child, rng, sampledActions) + 1
+			total := countNodes(child, rng) + 1
 			node.Close()
 			return total
 		}
 	}
 
 	return 1
-}
-
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
-// of garage collection cycles completed.
-func logMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	glog.Infof("Alloc = %v MiB", bToMb(m.Alloc))
-	glog.Infof("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-	glog.Infof("\tSys = %v MiB", bToMb(m.Sys))
-	glog.Infof("\tNumGC = %v\n", m.NumGC)
-}
-
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
 }

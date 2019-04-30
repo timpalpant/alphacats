@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
-	"unsafe"
 
 	"github.com/timpalpant/alphacats/cards"
 )
@@ -78,7 +77,7 @@ func (a Action) String() string {
 	return s
 }
 
-const MaxNumActions = 48
+const MaxNumActions = 56
 
 // History records the history of game actions to reach this state.
 // It is pre-sized to avoid allocations and keep GameState easily copyable.
@@ -170,14 +169,9 @@ type InfoSet struct {
 
 // Key implements cfr.InfoSet.
 func (is *InfoSet) Key() string {
-	buf, _ := is.MarshalBinary()
-	return unsafeByteSliceToString(buf)
-}
-
-// Convert byte slice to string unsafely, avoiding copy.
-// Taken from strings.Builder: https://golang.org/src/strings/builder.go#L45
-func unsafeByteSliceToString(bs []byte) string {
-	return *(*string)(unsafe.Pointer(&bs))
+	var buf [3 * MaxNumActions]byte
+	bufSlice, _ := is.MarshalTo(buf[:])
+	return string(bufSlice)
 }
 
 func (is *InfoSet) MarshalBinarySize() int {

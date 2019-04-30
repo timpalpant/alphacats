@@ -9,37 +9,6 @@ import (
 	"unsafe"
 )
 
-func New1DTensor(v []float32) []byte {
-	buf := make([]byte, 4*len(v))
-	EncodeF32s(v, buf)
-	return buf
-}
-
-func New2DTensor(v [][]float32) []byte {
-	d0, d1 := len(v), len(v[0])
-	nElem := d0 * d1
-	buf := make([]byte, 4*nElem)
-	for i, vi := range v {
-		EncodeF32s(vi, buf[4*i*d1:])
-	}
-
-	return buf
-}
-
-func New3DTensor(v [][][]float32) []byte {
-	d0, d1, d2 := len(v), len(v[0]), len(v[0][0])
-	nElem := d0 * d1 * d2
-	buf := make([]byte, 4*nElem)
-	for i, vi := range v {
-		for j, vj := range vi {
-			startIdx := 4 * ((i*d1 + j) * d2)
-			EncodeF32s(vj, buf[startIdx:])
-		}
-	}
-
-	return buf
-}
-
 func EncodeF32s(v []float32, buf []byte) {
 	if len(buf) < 4*len(v) {
 		panic(fmt.Errorf("trying to encode %d float32s into buffer of size %d",

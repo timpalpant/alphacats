@@ -34,9 +34,10 @@ func main() {
 	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	deck := cards.CoreDeck.AsSlice()
+	deck := cards.TestDeck.AsSlice()
+	cardsPerPlayer := (len(deck) / 2) - 1
 	policy := mustLoadPolicy(*strat)
-	var game cfr.GameTreeNode = alphacats.NewRandomGame(deck, 4)
+	var game cfr.GameTreeNode = alphacats.NewRandomGame(deck, cardsPerPlayer)
 
 	for game.Type() != cfr.TerminalNodeType {
 		if game.Type() == cfr.ChanceNodeType {

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/gob"
 	"expvar"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -58,7 +58,9 @@ type DeepCFRParams struct {
 func newPolicy(params RunParams) cfr.StrategyProfile {
 	switch params.CFRType {
 	case "tabular":
-		return cfr.NewPolicyTable(cfr.DiscountParams{})
+		return cfr.NewPolicyTable(cfr.DiscountParams{
+			LinearWeighting: true,
+		})
 	case "deep":
 		dCFRParams := params.DeepCFRParams
 		dCFRParams.ModelParams.OutputDir = filepath.Join(params.OutputDir, "models")
@@ -219,10 +221,13 @@ func savePolicy(policy cfr.StrategyProfile, outputDir string, iter int) error {
 	w := gzip.NewWriter(f)
 	defer w.Close()
 
-	enc := gob.NewEncoder(w)
-	// Need to pass pointer to interface so that Gob sees the interface rather
-	// than the concrete type. See the example in encoding/gob.
-	return enc.Encode(&policy)
+	buf, err := policy.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	_, err = w.Write(buf)
+	return err
 }
 
 func loadPolicy(params RunParams) cfr.StrategyProfile {
@@ -240,9 +245,13 @@ func loadPolicy(params RunParams) cfr.StrategyProfile {
 	}
 	defer r.Close()
 
-	var policy cfr.StrategyProfile
-	dec := gob.NewDecoder(r)
-	if err := dec.Decode(&policy); err != nil {
+	buf, err := ioutil.ReadAll(r)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	policy := newPolicy(params)
+	if err := policy.UnmarshalBinary(buf); err != nil {
 		glog.Fatal(err)
 	}
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -17,11 +16,10 @@ import (
 	"github.com/timpalpant/alphacats/model/internal/npyio"
 )
 
-func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int, maxNumWorkers int) error {
+func saveTrainingData(samples []*deepcfr.ExperienceTuple, directory string, batchSize int, maxNumWorkers int) error {
 	// Normalize sample weights to have mean 1 for each sampled infoset.
 	// Only the relative weights within an infoset matter for correctness in expectation.
 	normalizeSampleWeights(samples)
-
 	rand.Shuffle(len(samples), func(i, j int) {
 		samples[i], samples[j] = samples[j], samples[i]
 	})
@@ -65,16 +63,12 @@ func saveTrainingData(samples []deepcfr.Sample, directory string, batchSize int,
 	return retErr
 }
 
-func saveBatch(batch []deepcfr.Sample, filename string) error {
-	nSamples := 0
-	for _, sample := range batch {
-		nSamples += len(sample.Advantages)
-	}
+func saveBatch(batch []*deepcfr.ExperienceTuple, filename string) error {
+	nSamples := len(batch)
 
 	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
 	hands := make([]float32, 0, nSamples*cards.NumTypes)
 	actions := make([]float32, 0, nSamples*numActionFeatures)
-	extra := make([]float32, 0, nSamples*numExtraFeatures)
 	y := make([]float32, 0, nSamples)
 	sampleWeights := make([]float32, 0, nSamples)
 
@@ -82,40 +76,28 @@ func saveBatch(batch []deepcfr.Sample, filename string) error {
 	history := newOneHotHistory()
 	var hand [cards.NumTypes]float32
 	var oneHotAction [numActionFeatures]float32
-	var oneHotExtra [numExtraFeatures]float32
 	for _, sample := range batch {
 		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
 			return err
 		}
 
-		if len(is.AvailableActions) != len(sample.Advantages) {
-			panic(fmt.Errorf("Sample has %d actions but %d advantages: sample=%v, is=%v",
-				len(is.AvailableActions), len(sample.Advantages), sample, is))
-		}
-
 		EncodeHistory(is.History, history)
-		encodeHand(is.Hand, hand[:])
-		encodeExtra(is.History, is.Hand, oneHotExtra[:])
-		for _, action := range is.AvailableActions {
-			for _, row := range history {
-				histories = append(histories, row...)
-			}
-
-			hands = append(hands, hand[:]...)
-			encodeAction(action, oneHotAction[:])
-			actions = append(actions, oneHotAction[:]...)
-			extra = append(extra, oneHotExtra[:]...)
-			sampleWeights = append(sampleWeights, sample.Weight)
+		for _, row := range history {
+			histories = append(histories, row...)
 		}
+		encodeHand(is.Hand, hand[:])
+		hands = append(hands, hand[:]...)
+		encodeAction(is.AvailableActions[sample.Action], oneHotAction[:])
+		actions = append(actions, oneHotAction[:]...)
+		sampleWeights = append(sampleWeights, sample.Weight)
 
-		y = append(y, sample.Advantages...)
+		y = append(y, sample.Value)
 	}
 
 	return npyio.MakeNPZ(filename, map[string][]float32{
 		"X_history":     histories,
 		"X_hand":        hands,
 		"X_action":      actions,
-		"X_extra":       extra,
 		"y":             y,
 		"sample_weight": sampleWeights,
 	})
@@ -129,47 +111,14 @@ func min(i, j int) int {
 	return j
 }
 
-type sampleWeightStats struct {
-	total float64
-	count int
-}
-
-func (s sampleWeightStats) mean() float32 {
-	return float32(s.total / float64(s.count))
-}
-
-func normalizeSampleWeights(samples []deepcfr.Sample) {
-	glog.V(1).Infof("Bucketing samples by infoset")
-	byInfoSet := make(map[string]sampleWeightStats)
+func normalizeSampleWeights(samples []*deepcfr.ExperienceTuple) {
+	var mean float32
 	for _, s := range samples {
-		stats := byInfoSet[string(s.InfoSet)]
-		stats.total += float64(s.Weight)
-		stats.count++
-		byInfoSet[string(s.InfoSet)] = stats
+		mean += s.Weight / float32(len(samples))
 	}
 
-	glog.V(1).Infof("Normalizing sample weights by infoset")
 	for i, s := range samples {
-		stats := byInfoSet[string(s.InfoSet)]
-		samples[i].Weight /= stats.mean() // NB: modify the slice
+		s.Weight /= mean
+		samples[i] = s
 	}
-
-	glog.V(1).Info("Infoset duplication:")
-	counts := make(map[int]int)
-	for _, stats := range byInfoSet {
-		counts[stats.count]++
-	}
-	for _, k := range sortedKeys(counts) {
-		glog.V(1).Infof("%d: %d", k, counts[k])
-	}
-}
-
-func sortedKeys(counts map[int]int) []int {
-	result := make([]int, 0, len(counts))
-	for k := range counts {
-		result = append(result, k)
-	}
-
-	sort.Ints(result)
-	return result
 }

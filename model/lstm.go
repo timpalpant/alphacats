@@ -65,9 +65,14 @@ func NewLSTM(p Params) *LSTM {
 }
 
 // Train implements deepcfr.Model.
-func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
-	trainingData := samples.GetSamples()
-	glog.Infof("Training network with %d samples", len(trainingData))
+func (m *LSTM) Train(buffer deepcfr.Buffer) deepcfr.TrainedModel {
+	samples := buffer.GetSamples()
+	tuples := make([]*deepcfr.ExperienceTuple, len(samples))
+	for i, s := range samples {
+		tuples[i] = s.(*deepcfr.ExperienceTuple)
+	}
+
+	glog.Infof("Training network with %d samples", len(samples))
 	// Save training data to disk in a tempdir.
 	tmpDir, err := ioutil.TempDir(m.params.OutputDir, "training-data-")
 	if err != nil {
@@ -76,7 +81,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	defer os.RemoveAll(tmpDir)
 
 	glog.Infof("Saving training data to: %v", tmpDir)
-	if err := saveTrainingData(trainingData, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
+	if err := saveTrainingData(tuples, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
 		glog.Fatal(err)
 	}
 
@@ -93,7 +98,7 @@ func (m *LSTM) Train(samples deepcfr.Buffer) deepcfr.TrainedModel {
 	}
 
 	elapsed := time.Since(start)
-	sps := float64(len(trainingData)) / elapsed.Seconds()
+	sps := float64(len(samples)) / elapsed.Seconds()
 	glog.V(1).Infof("Finished training (took %v, %v samples/sec)",
 		elapsed, sps)
 	m.iter++
@@ -216,7 +221,6 @@ func (m *TrainedLSTM) Close() {
 
 const (
 	tfHistorySize = 4 * gamestate.MaxNumActions * numActionFeatures
-	tfExtraSize   = 4 * numExtraFeatures
 	tfHandSize    = 4 * cards.NumTypes
 )
 
@@ -241,14 +245,11 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	encodeHistoryTF(is.History, tfHistory)
 	tfHand := make([]byte, tfHandSize)
 	encodeHandTF(is.Hand, tfHand)
-	tfExtra := make([]byte, tfExtraSize)
-	encodeExtraTF(is.History, is.Hand, tfExtra)
 	reqs := make([]*predictionRequest, nActions)
 	for i, action := range is.AvailableActions {
 		req := predictionRequestPool.Get().(*predictionRequest)
 		req.history = tfHistory
 		req.hand = tfHand
-		req.extra = tfExtra
 		encodeActionTF(action, req.action)
 		reqs[i] = req
 	}
@@ -260,7 +261,6 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 		advantages[i] = <-req.resultCh
 		req.history = nil
 		req.hand = nil
-		req.extra = nil
 		predictionRequestPool.Put(req)
 	}
 
@@ -271,7 +271,6 @@ type predictionRequest struct {
 	history  []byte
 	hand     []byte
 	action   []byte
-	extra    []byte
 	resultCh chan float32
 }
 
@@ -328,36 +327,32 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	}
 }
 
-func concat(batch []*predictionRequest) (histories, hands, actions, extra []byte) {
+func concat(batch []*predictionRequest) (histories, hands, actions []byte) {
 	historyLen := 0
 	handsLen := 0
 	actionsLen := 0
-	extraLen := 0
 	for _, req := range batch {
 		historyLen += len(req.history)
 		handsLen += len(req.hand)
 		actionsLen += len(req.action)
-		extraLen += len(req.extra)
 	}
 
 	histories = make([]byte, 0, historyLen)
 	hands = make([]byte, 0, handsLen)
 	actions = make([]byte, 0, actionsLen)
-	extra = make([]byte, 0, extraLen)
 	for _, req := range batch {
 		histories = append(histories, req.history...)
 		hands = append(hands, req.hand...)
 		actions = append(actions, req.action...)
-		extra = append(extra, req.extra...)
 	}
 
-	return histories, hands, actions, extra
+	return histories, hands, actions
 }
 
 func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, outputCh chan *batchPredictionRequest) {
 	for batch := range batchCh {
 		// TODO: Shapes should be passed in to avoid coupling here.
-		historiesBuf, handsBuf, actionsBuf, extraBuf := concat(batch)
+		historiesBuf, handsBuf, actionsBuf := concat(batch)
 		historiesReader := bytes.NewReader(historiesBuf)
 		historiesShape := []int64{int64(len(batch)), gamestate.MaxNumActions, numActionFeatures}
 		historyTensor, err := tf.ReadTensor(tf.Float, historiesShape, historiesReader)
@@ -379,18 +374,10 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 			glog.Fatal(err)
 		}
 
-		extraReader := bytes.NewReader(extraBuf)
-		extraShape := []int64{int64(len(batch)), int64(numExtraFeatures)}
-		extraTensor, err := tf.ReadTensor(tf.Float, extraShape, extraReader)
-		if err != nil {
-			glog.Fatal(err)
-		}
-
 		outputCh <- &batchPredictionRequest{
 			history: historyTensor,
 			hand:    handTensor,
 			action:  actionTensor,
-			extra:   extraTensor,
 			batch:   batch,
 		}
 	}
@@ -400,14 +387,13 @@ type batchPredictionRequest struct {
 	history *tf.Tensor
 	hand    *tf.Tensor
 	action  *tf.Tensor
-	extra   *tf.Tensor
 	batch   []*predictionRequest
 }
 
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
 	defer model.Session.Close()
 	for req := range reqCh {
-		resultTensor := predictBatch(model, req.history, req.hand, req.action, req.extra)
+		resultTensor := predictBatch(model, req.history, req.hand, req.action)
 		result := resultTensor.Value().([][]float32)
 		for i, req := range req.batch {
 			req.resultCh <- result[i][0]
@@ -417,13 +403,12 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hand, action, extra *tf.Tensor) *tf.Tensor {
+func predictBatch(model *tf.SavedModel, history, hand, action *tf.Tensor) *tf.Tensor {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
 			model.Graph.Operation("history").Output(0): history,
 			model.Graph.Operation("hand").Output(0):    hand,
 			model.Graph.Operation("action").Output(0):  action,
-			model.Graph.Operation("extra").Output(0):   extra,
 		},
 		[]tf.Output{
 			model.Graph.Operation(outputLayer).Output(0),

@@ -73,7 +73,8 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 		}
-		return deepcfr.New(lstm, buffers)
+		baselineBuffer := deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads)
+		return deepcfr.NewVRSingleDeepCFR(lstm, buffers, baselineBuffer)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", params.CFRType))
 	}
@@ -109,7 +110,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 			sampler := sampling.NewMultiOutcomeSampler(
 				params.SamplingParams.MaxNumActionsK,
 				float32(params.SamplingParams.ExplorationEps))
-			walker := cfr.NewGeneralizedSampling(policy, sampler)
+			walker := cfr.NewVRMCCFR(policy, sampler, 0.5)
 			walker.Run(game)
 			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem

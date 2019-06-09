@@ -2,8 +2,8 @@
 package main
 
 import (
-	"encoding/gob"
 	"flag"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -14,11 +14,12 @@ import (
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
+	"github.com/timpalpant/go-cfr/deepcfr"
 	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
-	_ "github.com/timpalpant/alphacats/model"
+	"github.com/timpalpant/alphacats/model"
 )
 
 func main() {
@@ -32,17 +33,17 @@ func main() {
 	rand.Seed(*seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	deck := cards.CoreDeck.AsSlice()
+	deck := cards.TestDeck.AsSlice()
 	cardsPerPlayer := (len(deck) / 2) - 1
 	var wg sync.WaitGroup
 	var policy0, policy1 cfr.StrategyProfile
 	wg.Add(2)
 	go func() {
-		policy0 = mustLoadPolicy(*strat0)
+		policy0 = mustLoadTabularPolicy(*strat0)
 		wg.Done()
 	}()
 	go func() {
-		policy1 = mustLoadPolicy(*strat1)
+		policy1 = mustLoadDeepCFRPolicy(*strat1)
 		wg.Done()
 	}()
 	wg.Wait()
@@ -51,21 +52,23 @@ func main() {
 	var p0Wins int64
 	for i := 0; i < *numGames; i++ {
 		game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-		// Alternate which player goes first.
-		if i%2 == 0 {
-			policy0, policy1 = policy1, policy0
-		}
 
-		wg.Add(1)
 		playGame := func(i int) {
-			winner := playGame(policy0, policy1, game)
-			if (i%2 == 0 && winner == 1) || (i%2 == 1 && winner == 0) {
-				atomic.AddInt64(&p0Wins, 1)
+			// Alternate which player goes first.
+			if i%2 == 0 {
+				if winner := playGame(policy0, policy1, game); winner == 0 {
+					atomic.AddInt64(&p0Wins, 1)
+				}
+			} else {
+				if winner := playGame(policy1, policy0, game); winner == 1 {
+					atomic.AddInt64(&p0Wins, 1)
+				}
 			}
 
 			wg.Done()
 		}
 
+		wg.Add(1)
 		if *parallel {
 			go playGame(i)
 		} else {
@@ -83,7 +86,21 @@ func main() {
 	glog.Infof("Policy 1 won %d (%.3f %%) of games", int64(*numGames)-p0Wins, 100*(1-winRate))
 }
 
-func mustLoadPolicy(filename string) cfr.StrategyProfile {
+func mustLoadTabularPolicy(filename string) cfr.StrategyProfile {
+	policy := cfr.NewPolicyTable(cfr.DiscountParams{})
+	mustLoadPolicy(filename, policy)
+	return policy
+}
+
+func mustLoadDeepCFRPolicy(filename string) cfr.StrategyProfile {
+	dnn := model.NewLSTM(model.Params{})
+	buffers := []deepcfr.Buffer{}
+	policy := deepcfr.New(dnn, buffers)
+	mustLoadPolicy(filename, policy)
+	return policy
+}
+
+func mustLoadPolicy(filename string, policy cfr.StrategyProfile) {
 	glog.Infof("Loading strategy from: %v", filename)
 	f, err := os.Open(filename)
 	if err != nil {
@@ -96,13 +113,14 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 		glog.Fatal(err)
 	}
 
-	var policy cfr.StrategyProfile
-	dec := gob.NewDecoder(r)
-	if err := dec.Decode(&policy); err != nil {
+	buf, err := ioutil.ReadAll(r)
+	if err != nil {
 		glog.Fatal(err)
 	}
 
-	return policy
+	if err := policy.UnmarshalBinary(buf); err != nil {
+		glog.Fatal(err)
+	}
 }
 
 func playGame(policy0, policy1 cfr.StrategyProfile, game cfr.GameTreeNode) int {

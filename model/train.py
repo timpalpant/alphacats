@@ -15,9 +15,7 @@ from keras.layers import (
     concatenate,
     CuDNNLSTM,
     Dense,
-    Dropout,
     Input,
-    LeakyReLU,
 )
 from keras.layers.wrappers import Bidirectional
 from keras.models import Model
@@ -77,28 +75,12 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
 
     # Concatenate and predict advantages.
     merged_inputs = concatenate([lstm, hand_input, action_input])
-    dropout_1 = Dropout(0.1)(merged_inputs)
-    merged_hidden_1 = Dense(128)(dropout_1)
-    merged_activation_1 = LeakyReLU(alpha=0.1)(merged_hidden_1)
-
-    dropout_2 = Dropout(0.1)(merged_activation_1)
-    merged_hidden_2 = Dense(128)(dropout_2)
-    merged_activation_2 = LeakyReLU(alpha=0.1)(merged_hidden_2)
-
-    dropout_3 = Dropout(0.1)(merged_activation_2)
-    merged_hidden_3 = Dense(128)(dropout_3)
-    merged_activation_3 = LeakyReLU(alpha=0.1)(merged_hidden_3)
-
-    dropout_4 = Dropout(0.1)(merged_activation_3)
-    merged_hidden_4 = Dense(64)(dropout_4)
-    merged_activation_4 = LeakyReLU(alpha=0.1)(merged_hidden_4)
-
-    dropout_5 = Dropout(0.1)(merged_activation_4)
-    merged_hidden_5 = Dense(64)(dropout_5)
-    merged_activation_5 = LeakyReLU(alpha=0.1)(merged_hidden_5)
-
-    dropout_6 = Dropout(0.1)(merged_activation_5)
-    normalization = BatchNormalization()(dropout_6)
+    merged_hidden_1 = Dense(128, activation='relu')(merged_inputs)
+    merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
+    merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
+    merged_hidden_4 = Dense(64, activation='relu')(merged_hidden_3)
+    merged_hidden_5 = Dense(64, activation='relu')(merged_hidden_4)
+    normalization = BatchNormalization()(merged_hidden_5)
     advantage_output = Dense(1, activation='linear', name='output')(normalization)
 
     model = Model(

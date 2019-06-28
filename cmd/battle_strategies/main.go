@@ -39,7 +39,7 @@ func main() {
 	var policy0, policy1 cfr.StrategyProfile
 	wg.Add(2)
 	go func() {
-		policy0 = mustLoadTabularPolicy(*strat0)
+		policy0 = mustLoadDeepCFRPolicy(*strat0)
 		wg.Done()
 	}()
 	go func() {
@@ -93,9 +93,10 @@ func mustLoadTabularPolicy(filename string) cfr.StrategyProfile {
 }
 
 func mustLoadDeepCFRPolicy(filename string) cfr.StrategyProfile {
-	dnn := model.NewLSTM(model.Params{})
+	lstm := model.NewLSTM(model.Params{})
 	buffers := []deepcfr.Buffer{}
-	policy := deepcfr.New(dnn, buffers)
+	baselineBuffers := []deepcfr.Buffer{}
+	policy := deepcfr.NewVRSingleDeepCFR(lstm, buffers, baselineBuffers)
 	mustLoadPolicy(filename, policy)
 	return policy
 }

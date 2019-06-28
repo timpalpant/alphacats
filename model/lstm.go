@@ -69,7 +69,8 @@ func (m *LSTM) Train(buffer deepcfr.Buffer) deepcfr.TrainedModel {
 	samples := buffer.GetSamples()
 	tuples := make([]*deepcfr.ExperienceTuple, len(samples))
 	for i, s := range samples {
-		tuples[i] = s.(*deepcfr.ExperienceTuple)
+		x := *s.(*deepcfr.ExperienceTuple)
+		tuples[i] = &x
 	}
 
 	glog.Infof("Training network with %d samples", len(samples))

@@ -108,6 +108,12 @@ func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
 	return NewGame(drawPile, p0Deal, p1Deal)
 }
 
+func (gn *GameNode) Liberate() {
+	gn.rng = rand.New(rand.NewSource(rand.Int63()))
+	gn.gnPool = &gameNodeSlicePool{}
+	gn.aPool = &actionSlicePool{}
+}
+
 // Type implements cfr.GameTreeNode.
 func (gn *GameNode) Type() cfr.NodeType {
 	switch gn.turnType {
@@ -250,6 +256,14 @@ func (gn *GameNode) Parent() cfr.GameTreeNode {
 	}
 
 	return nil
+}
+
+func (gn *GameNode) Depth() int {
+	count := 0
+	for node := gn.parent; node != nil; node = node.parent {
+		count++
+	}
+	return count
 }
 
 // GetChildProbability implements cfr.GameTreeNode.

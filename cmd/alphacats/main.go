@@ -10,18 +10,27 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
+	rocksdb "github.com/tecbot/gorocksdb"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/deepcfr"
+	"github.com/timpalpant/go-cfr/rdbstore"
 	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/model"
+)
+
+const (
+	KiB = 1024
+	MiB = 1024 * KiB
+	GiB = 1024 * MiB
 )
 
 var (
@@ -36,6 +45,7 @@ type RunParams struct {
 
 	SamplingParams SamplingParams
 	DeepCFRParams  DeepCFRParams
+	RDBParams      RocksDBParams
 
 	OutputDir  string
 	ResumeFrom string
@@ -46,6 +56,38 @@ type SamplingParams struct {
 	ExplorationEps     float64
 	NumSamplingThreads int
 	Seed               int64
+}
+
+type RocksDBParams struct {
+	Path               string
+	BlockCacheCapacity int
+	WriteBuffer        int
+	BloomFilterNumBits int
+}
+
+func (p RocksDBParams) Render(path string) rdbstore.Params {
+	params := rdbstore.DefaultParams(path)
+
+	params.Options.IncreaseParallelism(runtime.NumCPU())
+	params.Options.SetCompression(rocksdb.LZ4Compression)
+	params.Options.SetCreateIfMissing(true)
+	params.Options.SetUseFsync(false)
+	params.Options.SetWriteBufferSize(p.WriteBuffer)
+
+	bOpts := rocksdb.NewDefaultBlockBasedTableOptions()
+	bOpts.SetBlockSize(32 * 1024)
+	blockCache := rocksdb.NewLRUCache(p.BlockCacheCapacity)
+	bOpts.SetBlockCache(blockCache)
+	if p.BloomFilterNumBits > 0 {
+		filter := rocksdb.NewBloomFilter(p.BloomFilterNumBits)
+		bOpts.SetFilterPolicy(filter)
+	}
+	params.Options.SetBlockBasedTableFactory(bOpts)
+
+	params.WriteOptions.DisableWAL(true)
+	params.WriteOptions.SetSync(false)
+
+	return params
 }
 
 type DeepCFRParams struct {
@@ -59,8 +101,21 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 	switch params.CFRType {
 	case "tabular":
 		return cfr.NewPolicyTable(cfr.DiscountParams{
-			LinearWeighting: true,
+			LinearWeighting:       true,
+			UseRegretMatchingPlus: true,
 		})
+	case "rocksdb":
+		opts := params.RDBParams.Render(params.OutputDir)
+		policy, err := rdbstore.New(opts, cfr.DiscountParams{
+			LinearWeighting:       true,
+			UseRegretMatchingPlus: true,
+		})
+
+		if err != nil {
+			glog.Fatal(err)
+		}
+
+		return policy
 	case "deep":
 		dCFRParams := params.DeepCFRParams
 		dCFRParams.ModelParams.OutputDir = filepath.Join(params.OutputDir, "models")
@@ -73,8 +128,11 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 		}
-		baselineBuffer := deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads)
-		return deepcfr.NewVRSingleDeepCFR(lstm, buffers, baselineBuffer)
+		baselineBuffers := []deepcfr.Buffer{
+			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
+			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
+		}
+		return deepcfr.NewVRSingleDeepCFR(lstm, buffers, baselineBuffers)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", params.CFRType))
 	}
@@ -107,10 +165,12 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 		gamesInProgress.Add(1)
 		go func(k int) {
 			game := alphacats.NewRandomGame(deck, cardsPerPlayer)
-			sampler := sampling.NewMultiOutcomeSampler(
+			traversingSampler := sampling.NewMultiOutcomeSampler(
 				params.SamplingParams.MaxNumActionsK,
 				float32(params.SamplingParams.ExplorationEps))
-			walker := cfr.NewVRMCCFR(policy, sampler, 0.5)
+			notTraversingSampler := sampling.NewOutcomeSampler(
+				float32(params.SamplingParams.ExplorationEps))
+			walker := cfr.NewVRMCCFR(policy, traversingSampler, notTraversingSampler)
 			walker.Run(game)
 			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem
@@ -121,6 +181,24 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 	}
 
 	wg.Wait()
+}
+
+type cfrAlgo interface {
+	Run(node cfr.GameTreeNode) float32
+}
+
+func collectOneSample(walker cfrAlgo, params RunParams) {
+	deck, cardsPerPlayer := getDeck(params.DeckType)
+	gamesRemaining.Add(int64(params.DeepCFRParams.TraversalsPerIter))
+	for k := 1; k <= params.DeepCFRParams.TraversalsPerIter; k++ {
+		gamesInProgress.Add(1)
+		glog.V(2).Infof("[k=%d] Running CFR iteration on random game", k)
+		game := alphacats.NewRandomGame(deck, cardsPerPlayer)
+		walker.Run(game)
+		glog.V(2).Infof("[k=%d] CFR run complete", k)
+		gamesInProgress.Add(-1)
+		gamesRemaining.Add(-1)
+	}
 }
 
 func main() {
@@ -160,6 +238,15 @@ func main() {
 	flag.IntVar(&params.DeepCFRParams.ModelParams.MaxInferenceBatchSize,
 		"deepcfr.model.max_inference_batch_size", 3000,
 		"Max size of batches for prediction")
+	flag.IntVar(&params.RDBParams.BlockCacheCapacity,
+		"deepcfr.buffer.block_cache_capacity", 8*MiB,
+		"Block cache capacity if using rocksd sampled actions")
+	flag.IntVar(&params.RDBParams.WriteBuffer,
+		"deepcfr.buffer.write_buffer", 256*MiB,
+		"Write buffer if using rocksd sampled actions")
+	flag.IntVar(&params.RDBParams.BloomFilterNumBits,
+		"deepcfr.buffer.bloom_bits", 10,
+		"Number of bits/sample for Bloom filter if using rocksdb reservoir buffer")
 	flag.Parse()
 
 	rand.Seed(params.SamplingParams.Seed)
@@ -176,6 +263,13 @@ func main() {
 		policy = loadPolicy(params)
 	}
 
+	traversingSampler := sampling.NewMultiOutcomeSampler(
+		params.SamplingParams.MaxNumActionsK,
+		float32(params.SamplingParams.ExplorationEps))
+	notTraversingSampler := sampling.NewOutcomeSampler(
+		float32(params.SamplingParams.ExplorationEps))
+	walker := cfr.NewVRMCCFR(policy, traversingSampler, notTraversingSampler)
+
 	// Becuse we are generally rate-limited by the speed at which we can make
 	// model predictions, and because the GPU can perform batches of predictions
 	// more efficiently (N predictions in < N x 1 sample time), we want to have
@@ -188,7 +282,11 @@ func main() {
 		glog.V(1).Infof("[t=%d] Collecting %d samples with %d threads",
 			t, params.DeepCFRParams.TraversalsPerIter, params.SamplingParams.NumSamplingThreads)
 		start := time.Now()
-		collectSamples(policy, params)
+		if params.SamplingParams.NumSamplingThreads > 1 {
+			collectSamples(policy, params)
+		} else {
+			collectOneSample(walker, params)
+		}
 		glog.V(1).Infof("[t=%d] Finished collecting samples (took: %v)", t, time.Since(start))
 
 		glog.V(1).Infof("[t=%d] Training network", t)

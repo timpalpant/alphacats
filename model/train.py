@@ -32,7 +32,7 @@ import tensorflow as tf
 # These constants must be kept in sync with the Go code.
 TF_GRAPH_TAG = "lstm"
 
-MAX_HISTORY = 56
+MAX_HISTORY = 58
 N_ACTION_FEATURES = 59
 NUM_CARD_TYPES = 10
 

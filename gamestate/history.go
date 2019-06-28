@@ -77,7 +77,7 @@ func (a Action) String() string {
 	return s
 }
 
-const MaxNumActions = 56
+const MaxNumActions = 58
 
 // History records the history of game actions to reach this state.
 // It is pre-sized to avoid allocations and keep GameState easily copyable.

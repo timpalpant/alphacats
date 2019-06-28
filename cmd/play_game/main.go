@@ -2,9 +2,9 @@ package main
 
 import (
 	"bufio"
-	"encoding/gob"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -15,12 +15,13 @@ import (
 	"github.com/golang/glog"
 	gzip "github.com/klauspost/pgzip"
 	"github.com/timpalpant/go-cfr"
+	"github.com/timpalpant/go-cfr/deepcfr"
 	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
-	_ "github.com/timpalpant/alphacats/model"
+	"github.com/timpalpant/alphacats/model"
 )
 
 var stdin = bufio.NewReader(os.Stdin)
@@ -36,7 +37,7 @@ func main() {
 
 	deck := cards.TestDeck.AsSlice()
 	cardsPerPlayer := (len(deck) / 2) - 1
-	policy := mustLoadPolicy(*strat)
+	policy := mustLoadTabularPolicy(*strat)
 	var game cfr.GameTreeNode = alphacats.NewRandomGame(deck, cardsPerPlayer)
 
 	for game.Type() != cfr.TerminalNodeType {
@@ -88,7 +89,22 @@ func hidePrivateInfo(a gamestate.Action) gamestate.Action {
 	return a
 }
 
-func mustLoadPolicy(filename string) cfr.StrategyProfile {
+func mustLoadTabularPolicy(filename string) cfr.StrategyProfile {
+	policy := cfr.NewPolicyTable(cfr.DiscountParams{})
+	mustLoadPolicy(filename, policy)
+	return policy
+}
+
+func mustLoadDeepCFRPolicy(filename string) cfr.StrategyProfile {
+	dnn := model.NewLSTM(model.Params{})
+	buffers := []deepcfr.Buffer{}
+	baselineBuffers := []deepcfr.Buffer{}
+	policy := deepcfr.NewVRSingleDeepCFR(dnn, buffers, baselineBuffers)
+	mustLoadPolicy(filename, policy)
+	return policy
+}
+
+func mustLoadPolicy(filename string, policy cfr.StrategyProfile) {
 	glog.Infof("Loading strategy from: %v", filename)
 	f, err := os.Open(filename)
 	if err != nil {
@@ -101,13 +117,14 @@ func mustLoadPolicy(filename string) cfr.StrategyProfile {
 		glog.Fatal(err)
 	}
 
-	var policy cfr.StrategyProfile
-	dec := gob.NewDecoder(r)
-	if err := dec.Decode(&policy); err != nil {
+	buf, err := ioutil.ReadAll(r)
+	if err != nil {
 		glog.Fatal(err)
 	}
 
-	return policy
+	if err := policy.UnmarshalBinary(buf); err != nil {
+		glog.Fatal(err)
+	}
 }
 
 func prompt(msg string) int {

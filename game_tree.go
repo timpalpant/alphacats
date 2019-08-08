@@ -12,10 +12,7 @@ import (
 )
 
 var (
-	nodesVisited         = expvar.NewInt("nodes_visited")
-	terminalNodesVisited = expvar.NewInt("nodes_visited/terminal")
-	playerNodesVisited   = expvar.NewInt("nodes_visited/player")
-	chanceNodesVisited   = expvar.NewInt("nodes_visited/chance")
+	nodesVisited = expvar.NewInt("nodes_visited")
 )
 
 // turnType represents the kind of turn at a given point in the game.

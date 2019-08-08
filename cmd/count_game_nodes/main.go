@@ -11,7 +11,6 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
-	"github.com/timpalpant/go-cfr/tree"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
@@ -53,7 +52,15 @@ func doJob(job countJob, workCh chan countJob) {
 
 func countParallel(node cfr.GameTreeNode, workCh chan countJob) int {
 	glog.Infof("Counting children for node: %v", node)
-	node.(*alphacats.GameNode).Liberate()
+	defer node.Close()
+	switch node.Type() {
+	case cfr.ChanceNodeType:
+		child, _ := node.SampleChild()
+		return countParallel(child, workCh) + 1
+	case cfr.TerminalNodeType:
+		return 1
+	}
+
 	resultCh := make(chan int, node.NumChildren())
 	var wg sync.WaitGroup
 	for i := 0; i < node.NumChildren(); i++ {
@@ -65,7 +72,7 @@ func countParallel(node cfr.GameTreeNode, workCh chan countJob) int {
 		default:
 			glog.Info("No workers available, counting children directly")
 			workInProgress.Add(1)
-			resultCh <- tree.CountNodes(child)
+			resultCh <- chanceSampling(child)
 			workInProgress.Add(-1)
 		}
 	}
@@ -90,5 +97,23 @@ func countParallel(node cfr.GameTreeNode, workCh chan countJob) int {
 
 			total += result
 		}
+	}
+}
+
+func chanceSampling(node cfr.GameTreeNode) int {
+	defer node.Close()
+	switch node.Type() {
+	case cfr.ChanceNodeType:
+		child, _ := node.SampleChild()
+		return chanceSampling(child) + 1
+	case cfr.TerminalNodeType:
+		return 1
+	default:
+		total := 1
+		for i := 0; i < node.NumChildren(); i++ {
+			child := node.GetChild(i)
+			total += chanceSampling(child)
+		}
+		return total
 	}
 }

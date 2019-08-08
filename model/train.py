@@ -35,6 +35,8 @@ TF_GRAPH_TAG = "lstm"
 MAX_HISTORY = 58
 N_ACTION_FEATURES = 59
 NUM_CARD_TYPES = 10
+MAX_CARDS_IN_DRAW_PILE = 13
+N_OUTPUTS = NUM_CARD_TYPES + MAX_CARDS_IN_DRAW_PILE + 1
 
 
 class TrainingSequence(Sequence):
@@ -50,17 +52,15 @@ class TrainingSequence(Sequence):
         n_samples = len(batch["sample_weight"])
         X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
         X_hand = batch["X_hand"].reshape((n_samples, NUM_CARD_TYPES))
-        X_action = batch["X_action"].reshape((n_samples, N_ACTION_FEATURES))
-        X = {"history": X_history, "hand": X_hand, "action": X_action}
-        y = batch["y"].reshape((n_samples, 1))
+        X = {"history": X_history, "hand": X_hand}
+        y = batch["y"].reshape((n_samples, N_OUTPUTS))
         return X, y, batch["sample_weight"]
 
 
-def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, output_shape: int):
+def build_model(history_shape: tuple, hand_shape: tuple, output_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)
     logging.info("Hand input shape: %s", hand_shape)
-    logging.info("Action input shape: %s", action_shape)
     logging.info("Output shape: %s", output_shape)
 
     # The history (LSTM) arm of the model.
@@ -70,22 +70,19 @@ def build_model(history_shape: tuple, hand_shape: tuple, action_shape: tuple, ou
     # The private hand arm of the model.
     hand_input = Input(name="hand", shape=hand_shape)
 
-    # The action we are evaluating.
-    action_input = Input(name="action", shape=action_shape)
-
     # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hand_input, action_input])
+    merged_inputs = concatenate([lstm, hand_input])
     merged_hidden_1 = Dense(128, activation='relu')(merged_inputs)
     merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
     merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
     merged_hidden_4 = Dense(64, activation='relu')(merged_hidden_3)
     merged_hidden_5 = Dense(64, activation='relu')(merged_hidden_4)
     normalization = BatchNormalization()(merged_hidden_5)
-    advantage_output = Dense(1, activation='linear', name='output')(normalization)
+    advantages_output = Dense(N_OUTPUTS, activation='linear', name='output')(normalization)
 
     model = Model(
-        inputs=[history_input, hand_input, action_input],
-        outputs=[advantage_output])
+        inputs=[history_input, hand_input],
+        outputs=[advantages_output])
     model.compile(
         loss='mean_squared_error',
         optimizer=Adam(clipnorm=1.0),
@@ -151,9 +148,8 @@ def main():
     X, y, _ = data[0]
     history_shape = X["history"][0].shape
     hand_shape = X["hand"][0].shape
-    action_shape = X["action"][0].shape
     output_shape = y[0].shape[0]
-    model = build_model(history_shape, hand_shape, action_shape, output_shape)
+    model = build_model(history_shape, hand_shape, output_shape)
     print(model.summary())
 
     if args.initial_weights:

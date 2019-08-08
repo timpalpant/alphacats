@@ -16,7 +16,7 @@ import (
 	"github.com/timpalpant/alphacats/model/internal/npyio"
 )
 
-func saveTrainingData(samples []*deepcfr.ExperienceTuple, directory string, batchSize int, maxNumWorkers int) error {
+func saveTrainingData(samples []*deepcfr.RegretSample, directory string, batchSize int, maxNumWorkers int) error {
 	// Normalize sample weights to have mean 1 for each sampled infoset.
 	// Only the relative weights within an infoset matter for correctness in expectation.
 	normalizeSampleWeights(samples)
@@ -63,22 +63,26 @@ func saveTrainingData(samples []*deepcfr.ExperienceTuple, directory string, batc
 	return retErr
 }
 
-func saveBatch(batch []*deepcfr.ExperienceTuple, filename string) error {
+func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 	nSamples := len(batch)
 
 	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
 	hands := make([]float32, 0, nSamples*cards.NumTypes)
-	actions := make([]float32, 0, nSamples*numActionFeatures)
-	y := make([]float32, 0, nSamples)
+	y := make([]float32, 0, nSamples*outputDimension)
 	sampleWeights := make([]float32, 0, nSamples)
 
 	var is alphacats.InfoSetWithAvailableActions
 	history := newOneHotHistory()
 	var hand [cards.NumTypes]float32
-	var oneHotAction [numActionFeatures]float32
+	var outputs [outputDimension]float32
 	for _, sample := range batch {
 		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
 			return err
+		}
+
+		if len(is.AvailableActions) != len(sample.Advantages) {
+			panic(fmt.Errorf("InfoSet has %d actions but expected %d: %v",
+				len(is.AvailableActions), len(sample.Advantages), is.AvailableActions))
 		}
 
 		EncodeHistory(is.History, history)
@@ -87,17 +91,15 @@ func saveBatch(batch []*deepcfr.ExperienceTuple, filename string) error {
 		}
 		encodeHand(is.Hand, hand[:])
 		hands = append(hands, hand[:]...)
-		encodeAction(is.AvailableActions[sample.Action], oneHotAction[:])
-		actions = append(actions, oneHotAction[:]...)
 		sampleWeights = append(sampleWeights, sample.Weight)
 
-		y = append(y, sample.Value)
+		encodeOutputs(is.AvailableActions, sample.Advantages, outputs[:])
+		y = append(y, outputs[:]...)
 	}
 
 	return npyio.MakeNPZ(filename, map[string][]float32{
 		"X_history":     histories,
 		"X_hand":        hands,
-		"X_action":      actions,
 		"y":             y,
 		"sample_weight": sampleWeights,
 	})
@@ -111,7 +113,7 @@ func min(i, j int) int {
 	return j
 }
 
-func normalizeSampleWeights(samples []*deepcfr.ExperienceTuple) {
+func normalizeSampleWeights(samples []*deepcfr.RegretSample) {
 	var mean float32
 	for _, s := range samples {
 		mean += s.Weight / float32(len(samples))

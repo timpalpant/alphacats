@@ -1,6 +1,8 @@
 package model
 
 import (
+	"fmt"
+
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 	"github.com/timpalpant/alphacats/model/internal/tffloats"
@@ -10,6 +12,10 @@ const (
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
 	numActionFeatures = 59
+	// Vector size of output predictions: one for each card type,
+	// one for each insertion position, and one for drawing a card.
+	maxCardsInDrawPile = 13
+	outputDimension    = cards.NumTypes + maxCardsInDrawPile + 1
 )
 
 func encodeHistoryTF(h gamestate.History, result []byte) {
@@ -80,6 +86,27 @@ func encodeHand(hand cards.Set, result []float32) {
 	hand.Iter(func(card cards.Card, count uint8) {
 		result[int(card)] = float32(count)
 	})
+}
+
+func encodeOutputs(availableActions []gamestate.Action, advantages, result []float32) {
+	clear(result)
+	for i, action := range availableActions {
+		switch action.Type {
+		case gamestate.DrawCard:
+			// First position is always the advantages of ending turn by drawing a card,
+			// since this corresponds to the "Unknown" card enum.
+			result[0] = advantages[i]
+		case gamestate.PlayCard, gamestate.GiveCard:
+			// Next 9 positions correspond to playing/giving each card type.
+			result[action.Card] = advantages[i]
+		case gamestate.InsertExplodingCat:
+			// Remaining correspond to inserting cat at each position.
+			idx := cards.NumTypes + int(action.PositionInDrawPile)
+			result[idx] = advantages[i]
+		default:
+			panic(fmt.Errorf("unsupported action: %v", action))
+		}
+	}
 }
 
 func clear(result []float32) {

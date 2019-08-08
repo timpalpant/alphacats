@@ -69,7 +69,7 @@ func (p RocksDBParams) Render(path string) rdbstore.Params {
 	params := rdbstore.DefaultParams(path)
 
 	params.Options.IncreaseParallelism(runtime.NumCPU())
-	params.Options.SetCompression(rocksdb.LZ4Compression)
+	params.Options.SetCompression(rocksdb.NoCompression)
 	params.Options.SetCreateIfMissing(true)
 	params.Options.SetUseFsync(false)
 	params.Options.SetWriteBufferSize(p.WriteBuffer)
@@ -100,10 +100,7 @@ type DeepCFRParams struct {
 func newPolicy(params RunParams) cfr.StrategyProfile {
 	switch params.CFRType {
 	case "tabular":
-		return cfr.NewPolicyTable(cfr.DiscountParams{
-			LinearWeighting:       true,
-			UseRegretMatchingPlus: true,
-		})
+		return cfr.NewPolicyTable(cfr.DiscountParams{})
 	case "rocksdb":
 		opts := params.RDBParams.Render(params.OutputDir)
 		policy, err := rdbstore.New(opts, cfr.DiscountParams{
@@ -128,11 +125,7 @@ func newPolicy(params RunParams) cfr.StrategyProfile {
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
 		}
-		baselineBuffers := []deepcfr.Buffer{
-			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
-			deepcfr.NewReservoirBuffer(dCFRParams.BufferSize, params.SamplingParams.NumSamplingThreads),
-		}
-		return deepcfr.NewVRSingleDeepCFR(lstm, buffers, baselineBuffers)
+		return deepcfr.NewSingleDeepCFR(lstm, buffers)
 	default:
 		panic(fmt.Errorf("unknown CFR type: %v", params.CFRType))
 	}
@@ -168,9 +161,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 			traversingSampler := sampling.NewMultiOutcomeSampler(
 				params.SamplingParams.MaxNumActionsK,
 				float32(params.SamplingParams.ExplorationEps))
-			notTraversingSampler := sampling.NewOutcomeSampler(
-				float32(params.SamplingParams.ExplorationEps))
-			walker := cfr.NewVRMCCFR(policy, traversingSampler, notTraversingSampler)
+			walker := cfr.NewMCCFR(policy, traversingSampler)
 			walker.Run(game)
 			glog.V(2).Infof("[k=%d] CFR run complete", k)
 			<-sem
@@ -239,13 +230,13 @@ func main() {
 		"deepcfr.model.max_inference_batch_size", 3000,
 		"Max size of batches for prediction")
 	flag.IntVar(&params.RDBParams.BlockCacheCapacity,
-		"deepcfr.buffer.block_cache_capacity", 8*MiB,
-		"Block cache capacity if using rocksd sampled actions")
+		"rocksdb.block_cache_capacity", 32*GiB,
+		"Block cache capacity for RocksDB policy store")
 	flag.IntVar(&params.RDBParams.WriteBuffer,
-		"deepcfr.buffer.write_buffer", 256*MiB,
+		"rocksdb.write_buffer", 16*GiB,
 		"Write buffer if using rocksd sampled actions")
 	flag.IntVar(&params.RDBParams.BloomFilterNumBits,
-		"deepcfr.buffer.bloom_bits", 10,
+		"rocksdb.bloom_bits", 10,
 		"Number of bits/sample for Bloom filter if using rocksdb reservoir buffer")
 	flag.Parse()
 
@@ -263,12 +254,10 @@ func main() {
 		policy = loadPolicy(params)
 	}
 
-	traversingSampler := sampling.NewMultiOutcomeSampler(
+	sampler := sampling.NewMultiOutcomeSampler(
 		params.SamplingParams.MaxNumActionsK,
 		float32(params.SamplingParams.ExplorationEps))
-	notTraversingSampler := sampling.NewOutcomeSampler(
-		float32(params.SamplingParams.ExplorationEps))
-	walker := cfr.NewVRMCCFR(policy, traversingSampler, notTraversingSampler)
+	walker := cfr.NewOnlineOutcomeSamplingCFR(policy, sampler)
 
 	// Becuse we are generally rate-limited by the speed at which we can make
 	// model predictions, and because the GPU can perform batches of predictions

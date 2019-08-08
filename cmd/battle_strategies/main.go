@@ -39,11 +39,11 @@ func main() {
 	var policy0, policy1 cfr.StrategyProfile
 	wg.Add(2)
 	go func() {
-		policy0 = mustLoadDeepCFRPolicy(*strat0)
+		policy0 = mustLoadTabularPolicy(*strat0)
 		wg.Done()
 	}()
 	go func() {
-		policy1 = mustLoadDeepCFRPolicy(*strat1)
+		policy1 = mustLoadTabularPolicy(*strat1)
 		wg.Done()
 	}()
 	wg.Wait()

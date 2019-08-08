@@ -286,14 +286,6 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
-	switch gn.Type() {
-	case cfr.TerminalNodeType:
-		terminalNodesVisited.Add(1)
-	case cfr.PlayerNodeType:
-		playerNodesVisited.Add(1)
-	case cfr.ChanceNodeType:
-		chanceNodesVisited.Add(1)
-	}
 
 	gn.gnPool.free(gn.children)
 	gn.children = nil

@@ -51,7 +51,7 @@ class TrainingSequence(Sequence):
         batch = np.load(self.batches[idx])
         n_samples = len(batch["sample_weight"])
         X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
-        X_hands = batch["X_hands"].reshape((n_samples, NUM_CARD_TYPES))
+        X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
         X = {"history": X_history, "hands": X_hands}
         y = batch["y"].reshape((n_samples, N_OUTPUTS))
         return X, y, batch["sample_weight"]
@@ -68,7 +68,7 @@ def build_model(history_shape: tuple, hands_shape: tuple, output_shape: int):
     lstm = Bidirectional(CuDNNLSTM(32, return_sequences=False))(history_input)
 
     # The private hand arm of the model.
-    hands_input = Input(name="hands", shape=hand_shape)
+    hands_input = Input(name="hands", shape=hands_shape)
 
     # Concatenate and predict advantages.
     merged_inputs = concatenate([lstm, hands_input])

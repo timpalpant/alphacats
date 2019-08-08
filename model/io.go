@@ -102,7 +102,7 @@ func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 
 	return npyio.MakeNPZ(filename, map[string][]float32{
 		"X_history":     histories,
-		"X_hand":        hands,
+		"X_hands":       hands,
 		"y":             y,
 		"sample_weight": sampleWeights,
 	})

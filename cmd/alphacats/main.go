@@ -36,6 +36,7 @@ const (
 var (
 	gamesInProgress = expvar.NewInt("games_in_progress")
 	gamesRemaining  = expvar.NewInt("games_remaining")
+	numTraversals   = expvar.NewInt("num_traversals")
 )
 
 type RunParams struct {
@@ -100,7 +101,9 @@ type DeepCFRParams struct {
 func newPolicy(params RunParams) cfr.StrategyProfile {
 	switch params.CFRType {
 	case "tabular":
-		return cfr.NewPolicyTable(cfr.DiscountParams{})
+		return cfr.NewPolicyTable(cfr.DiscountParams{
+			LinearWeighting: true,
+		})
 	case "rocksdb":
 		opts := params.RDBParams.Render(params.OutputDir)
 		policy, err := rdbstore.New(opts, cfr.DiscountParams{
@@ -167,6 +170,7 @@ func collectSamples(policy cfr.StrategyProfile, params RunParams) {
 			<-sem
 			gamesInProgress.Add(-1)
 			gamesRemaining.Add(-1)
+			numTraversals.Add(1)
 			wg.Done()
 		}(k)
 	}
@@ -189,6 +193,7 @@ func collectOneSample(walker cfrAlgo, params RunParams) {
 		glog.V(2).Infof("[k=%d] CFR run complete", k)
 		gamesInProgress.Add(-1)
 		gamesRemaining.Add(-1)
+		numTraversals.Add(1)
 	}
 }
 
@@ -257,7 +262,7 @@ func main() {
 	sampler := sampling.NewMultiOutcomeSampler(
 		params.SamplingParams.MaxNumActionsK,
 		float32(params.SamplingParams.ExplorationEps))
-	walker := cfr.NewOnlineOutcomeSamplingCFR(policy, sampler)
+	walker := cfr.NewGeneralizedSampling(policy, sampler)
 
 	// Becuse we are generally rate-limited by the speed at which we can make
 	// model predictions, and because the GPU can perform batches of predictions

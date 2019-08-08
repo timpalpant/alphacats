@@ -12,7 +12,6 @@ import (
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
-	"github.com/timpalpant/alphacats/gamestate"
 	"github.com/timpalpant/alphacats/model/internal/npyio"
 )
 
@@ -66,12 +65,12 @@ func saveTrainingData(samples []*deepcfr.RegretSample, directory string, batchSi
 func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 	nSamples := len(batch)
 
-	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
-	hands := make([]float32, 0, nSamples*cards.NumTypes)
+	histories := make([]float32, 0, nSamples*alphacats.MaxMemory*numActionFeatures)
+	hands := make([]float32, 0, nSamples*3*cards.NumTypes)
 	y := make([]float32, 0, nSamples*outputDimension)
 	sampleWeights := make([]float32, 0, nSamples)
 
-	var is alphacats.InfoSetWithAvailableActions
+	var is alphacats.AbstractedInfoSet
 	history := newOneHotHistory()
 	var hand [cards.NumTypes]float32
 	var outputs [outputDimension]float32
@@ -85,11 +84,15 @@ func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 				len(is.AvailableActions), len(sample.Advantages), is.AvailableActions))
 		}
 
-		EncodeHistory(is.History, history)
+		EncodeHistory(is.RecentHistory, history)
 		for _, row := range history {
 			histories = append(histories, row...)
 		}
 		encodeHand(is.Hand, hand[:])
+		hands = append(hands, hand[:]...)
+		encodeHand(is.P0PlayedCards, hand[:])
+		hands = append(hands, hand[:]...)
+		encodeHand(is.P1PlayedCards, hand[:])
 		hands = append(hands, hand[:]...)
 		sampleWeights = append(sampleWeights, sample.Weight)
 
@@ -119,8 +122,7 @@ func normalizeSampleWeights(samples []*deepcfr.RegretSample) {
 		mean += s.Weight / float32(len(samples))
 	}
 
-	for i, s := range samples {
+	for _, s := range samples {
 		s.Weight /= mean
-		samples[i] = s
 	}
 }

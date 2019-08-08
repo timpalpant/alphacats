@@ -32,7 +32,7 @@ import tensorflow as tf
 # These constants must be kept in sync with the Go code.
 TF_GRAPH_TAG = "lstm"
 
-MAX_HISTORY = 58
+MAX_HISTORY = 4
 N_ACTION_FEATURES = 59
 NUM_CARD_TYPES = 10
 MAX_CARDS_IN_DRAW_PILE = 13
@@ -51,16 +51,16 @@ class TrainingSequence(Sequence):
         batch = np.load(self.batches[idx])
         n_samples = len(batch["sample_weight"])
         X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
-        X_hand = batch["X_hand"].reshape((n_samples, NUM_CARD_TYPES))
-        X = {"history": X_history, "hand": X_hand}
+        X_hands = batch["X_hands"].reshape((n_samples, NUM_CARD_TYPES))
+        X = {"history": X_history, "hands": X_hands}
         y = batch["y"].reshape((n_samples, N_OUTPUTS))
         return X, y, batch["sample_weight"]
 
 
-def build_model(history_shape: tuple, hand_shape: tuple, output_shape: int):
+def build_model(history_shape: tuple, hands_shape: tuple, output_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)
-    logging.info("Hand input shape: %s", hand_shape)
+    logging.info("Hands input shape: %s", hands_shape)
     logging.info("Output shape: %s", output_shape)
 
     # The history (LSTM) arm of the model.
@@ -68,10 +68,10 @@ def build_model(history_shape: tuple, hand_shape: tuple, output_shape: int):
     lstm = Bidirectional(CuDNNLSTM(32, return_sequences=False))(history_input)
 
     # The private hand arm of the model.
-    hand_input = Input(name="hand", shape=hand_shape)
+    hands_input = Input(name="hands", shape=hand_shape)
 
     # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hand_input])
+    merged_inputs = concatenate([lstm, hands_input])
     merged_hidden_1 = Dense(128, activation='relu')(merged_inputs)
     merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
     merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
@@ -81,7 +81,7 @@ def build_model(history_shape: tuple, hand_shape: tuple, output_shape: int):
     advantages_output = Dense(N_OUTPUTS, activation='linear', name='output')(normalization)
 
     model = Model(
-        inputs=[history_input, hand_input],
+        inputs=[history_input, hands_input],
         outputs=[advantages_output])
     model.compile(
         loss='mean_squared_error',
@@ -147,9 +147,9 @@ def main():
 
     X, y, _ = data[0]
     history_shape = X["history"][0].shape
-    hand_shape = X["hand"][0].shape
+    hands_shape = X["hands"][0].shape
     output_shape = y[0].shape[0]
-    model = build_model(history_shape, hand_shape, output_shape)
+    model = build_model(history_shape, hands_shape, output_shape)
     print(model.summary())
 
     if args.initial_weights:

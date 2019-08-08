@@ -145,10 +145,8 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 		gn.buildChildren()
 	}
 
-	return &InfoSetWithAvailableActions{
-		InfoSet:          gn.state.GetInfoSet(gamestate.Player(player)),
-		AvailableActions: gn.actions,
-	}
+	is := gn.state.GetInfoSet(gamestate.Player(player))
+	return newAbstractedInfoSet(is, gn.actions)
 }
 
 // Utility implements cfr.GameTreeNode.

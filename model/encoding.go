@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 
+	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 	"github.com/timpalpant/alphacats/model/internal/tffloats"
@@ -33,14 +34,14 @@ func encodeHistoryTF(h gamestate.History, result []byte) {
 }
 
 func newOneHotHistory() [][]float32 {
-	result := make([][]float32, gamestate.MaxNumActions)
+	result := make([][]float32, alphacats.MaxMemory)
 	for i := range result {
 		result[i] = make([]float32, numActionFeatures)
 	}
 	return result
 }
 
-// Game history is encoded as: MaxHistory (56) x
+// Game history is encoded as: MaxMemory (4) x
 //  - One hot encoded player (2)
 //  - One hot encoded action type (4)
 //  - One hot encoded Card (10)

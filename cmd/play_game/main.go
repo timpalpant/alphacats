@@ -46,7 +46,7 @@ func main() {
 			game, p = game.SampleChild()
 			glog.Infof("[chance] Sampled child node with probability %v", p)
 		} else if game.Player() == *player {
-			is := game.InfoSet(game.Player()).(*alphacats.InfoSetWithAvailableActions)
+			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			glog.Infof("[player] Your turn. %d cards remaining in draw pile.",
 				game.(*alphacats.GameNode).GetDrawPile().Len())
 			glog.Infof("[player] Hand: %v, Choices:", is.InfoSet.Hand)

@@ -39,4 +39,19 @@ func TestMarshalInfoset(t *testing.T) {
 	if !reflect.DeepEqual(isWithAvailableActions, reloaded) {
 		t.Errorf("expected: %v, got: %v", isWithAvailableActions, reloaded)
 	}
+
+	abstracted := newAbstractedInfoSet(isWithAvailableActions.InfoSet, isWithAvailableActions.AvailableActions)
+	buf, err = abstracted.MarshalBinary()
+	if err != nil {
+		t.Error(err)
+	}
+
+	var reloadedAbstracted AbstractedInfoSet
+	if err := reloadedAbstracted.UnmarshalBinary(buf); err != nil {
+		t.Error(err)
+	}
+
+	if !reflect.DeepEqual(*abstracted, reloadedAbstracted) {
+		t.Errorf("expected: %v, got: %v", abstracted, reloadedAbstracted)
+	}
 }

@@ -2,7 +2,9 @@ AlphaCats
 =========
 
 AlphaCats was a failed attempt to solve the game of [Exploding Kittens](https://explodingkittens.com) using [Deep Counterfactual Regret Minimization](https://arxiv.org/abs/1811.00164). AlphaCats is built around the [`go-cfr`](https://github.com/timpalpant/go-cfr) package.
+
 Due to the depth of the game tree, external sampling is intractable, and other forms of MC-CFR sampling (such as outcome sampling), led to high-variance samples and a model that struggled to converge.
+
 Future areas of investigation could include variance-reduction and improved sampling techniques.
 
 [![No Maintenance Intended](http://unmaintained.tech/badge.svg)](http://unmaintained.tech/)
@@ -28,6 +30,10 @@ Future areas of investigation could include variance-reduction and improved samp
 
 This will run DeepCFR with a reservoir buffer of size 10 million, and sample the
 game tree using [robust sampling](https://arxiv.org/abs/1812.10607) with K=2.
+
+Tabular CFR can also be launched with `-cfrtype tabular`. It requires a large amount
+of memory and therefore a smaller test game can be selected with `-decktype test`.
+Tabular CFR is not thread-safe and must be run with `-sampling.num_sampling_threads 1`.
 
 # Model
 

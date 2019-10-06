@@ -8,7 +8,7 @@ Due to the depth of the game tree, external sampling is intractable, and other f
 Future areas of investigation could include variance-reduction and improved sampling techniques.
 
 [![No Maintenance Intended](http://unmaintained.tech/badge.svg)](http://unmaintained.tech/)
-[![GoDoc](https://godoc.org/github.com/timpalpant/go-cfr?status.svg)](http://godoc.org/github.com/timpalpant/go-cfr)
+[![GoDoc](https://godoc.org/github.com/timpalpant/alphacats?status.svg)](http://godoc.org/github.com/timpalpant/alphacats)
 
 # Usage
 

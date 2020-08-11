@@ -63,7 +63,6 @@ type GameNode struct {
 	actions []gamestate.Action
 	parent  *GameNode
 
-	rng    *rand.Rand
 	gnPool *gameNodeSlicePool
 	aPool  *actionSlicePool
 }
@@ -80,35 +79,20 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:       gamestate.Player0,
 		turnType:     PlayTurn,
 		pendingTurns: 1,
-		rng:          rand.New(rand.NewSource(rand.Int63())),
 		gnPool:       &gameNodeSlicePool{},
 		aPool:        &actionSlicePool{},
 	}
 }
 
-// NewRandomGame creates a root node for a new random game, as if the
-// deck were shuffled and each player were dealt a random hand of cards.
-func NewRandomGame(deck []cards.Card, cardsPerPlayer int) *GameNode {
-	rand.Shuffle(len(deck), func(i, j int) {
-		deck[i], deck[j] = deck[j], deck[i]
-	})
-
-	p0Deal := cards.NewSetFromCards(deck[:cardsPerPlayer])
-	p0Deal.Add(cards.Defuse)
-	p1Deal := cards.NewSetFromCards(deck[cardsPerPlayer : 2*cardsPerPlayer])
-	p1Deal.Add(cards.Defuse)
-	drawPile := cards.NewStackFromCards(deck[2*cardsPerPlayer:])
-	randPos := rand.Intn(drawPile.Len() + 1)
-	drawPile.InsertCard(cards.ExplodingCat, randPos)
-	randPos = rand.Intn(drawPile.Len() + 1)
-	drawPile.InsertCard(cards.Defuse, randPos)
-	return NewGame(drawPile, p0Deal, p1Deal)
-}
-
-func (gn *GameNode) Liberate() {
-	gn.rng = rand.New(rand.NewSource(rand.Int63()))
-	gn.gnPool = &gameNodeSlicePool{}
-	gn.aPool = &actionSlicePool{}
+func (gn *GameNode) Clone() *GameNode {
+	result := *gn
+	result.children = make([]GameNode, len(gn.children))
+	copy(result.children, gn.children)
+	result.actions = make([]gamestate.Action, len(gn.actions))
+	copy(result.actions, gn.actions)
+	result.gnPool = &gameNodeSlicePool{}
+	result.aPool = &actionSlicePool{}
+	return &result
 }
 
 // Type implements cfr.GameTreeNode.
@@ -128,6 +112,10 @@ func (gn *GameNode) Player() int {
 	return int(gn.player)
 }
 
+func (gn *GameNode) GetState() gamestate.GameState {
+	return gn.state
+}
+
 func (gn *GameNode) GetHistory() gamestate.History {
 	return gn.state.GetHistory()
 }
@@ -138,12 +126,19 @@ func (gn *GameNode) LastAction() gamestate.Action {
 
 // InfoSet implements cfr.GameTreeNode.
 func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
-	if gn.children == nil {
+	if len(gn.children) == 0 {
 		gn.buildChildren()
 	}
 
-	is := gn.state.GetInfoSet(gamestate.Player(player))
-	return newAbstractedInfoSet(is, gn.actions)
+	return &InfoSetWithAvailableActions{
+		InfoSet:          gn.GetInfoSet(gamestate.Player(player)),
+		AvailableActions: gn.actions,
+	}
+	//return newAbstractedInfoSet(is, gn.actions)
+}
+
+func (gn *GameNode) GetInfoSet(player gamestate.Player) gamestate.InfoSet {
+	return gn.state.GetInfoSet(player)
 }
 
 // Utility implements cfr.GameTreeNode.
@@ -217,7 +212,7 @@ func (gn *GameNode) NumChildren() int {
 		return factorial[gn.nDrawPileCards]
 	}
 
-	if gn.children == nil {
+	if len(gn.children) == 0 {
 		gn.buildChildren()
 	}
 
@@ -231,7 +226,7 @@ func (gn *GameNode) NumChildren() int {
 
 // GetChild implements cfr.GameTreeNode.
 func (gn *GameNode) GetChild(i int) cfr.GameTreeNode {
-	if gn.children == nil {
+	if len(gn.children) == 0 {
 		gn.buildChildren()
 	}
 
@@ -274,7 +269,7 @@ func (gn *GameNode) GetChildProbability(i int) float64 {
 // SampleChild implements cfr.GameTreeNode.
 func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 	// All chance nodes are uniform random over their children.
-	selected := gn.rng.Intn(gn.NumChildren())
+	selected := rand.Intn(gn.NumChildren())
 	return gn.GetChild(selected), gn.GetChildProbability(selected)
 }
 

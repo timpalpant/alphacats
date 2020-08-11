@@ -34,7 +34,8 @@ func main() {
 	defer close(workCh)
 
 	deck := cards.CoreDeck.AsSlice()
-	game := alphacats.NewRandomGame(deck, 4)
+	deal := alphacats.NewRandomDeal(deck, 4)
+	game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 	result := countParallel(game, workCh)
 	glog.Info(result)
 }
@@ -64,8 +65,7 @@ func countParallel(node cfr.GameTreeNode, workCh chan countJob) int {
 	resultCh := make(chan int, node.NumChildren())
 	var wg sync.WaitGroup
 	for i := 0; i < node.NumChildren(); i++ {
-		child := node.GetChild(i)
-		child.(*alphacats.GameNode).Liberate()
+		child := node.GetChild(i).(*alphacats.GameNode).Clone()
 		select {
 		case workCh <- countJob{child, resultCh, &wg}:
 			wg.Add(1)

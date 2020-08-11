@@ -131,9 +131,20 @@ func (h *History) AppendPacked(packed EncodedAction) {
 	h.n++
 }
 
+func (h *History) Slice(n int) History {
+	if n > h.Len() {
+		panic(fmt.Errorf("attempting to slice %d actions of history with len=%d", n, h.Len()))
+	}
+
+	result := *h
+	result.n = n
+	return result
+}
+
 // Gets the current infoset for the given player.
 func (h *History) GetInfoSet(player Player, hand cards.Set) InfoSet {
 	return InfoSet{
+		Player:  player,
 		History: h.asViewedBy(player),
 		Hand:    hand,
 	}
@@ -163,6 +174,7 @@ func (h *History) asViewedBy(player Player) History {
 }
 
 type InfoSet struct {
+	Player  Player
 	History History
 	Hand    cards.Set
 }

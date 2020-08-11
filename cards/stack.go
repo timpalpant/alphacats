@@ -90,7 +90,7 @@ func (s *Stack) InsertCard(card Card, n int) {
 	toShift := (*s) &^ keepMask
 	// Shift remaining cards one to make room for the card we are inserting.
 	*s = unchanged + (toShift << bitsPerCard)
-	(*s).SetNthCard(n, card)
+	s.SetNthCard(n, card)
 }
 
 func (s Stack) Iter(cb func(card Card)) {

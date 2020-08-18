@@ -47,25 +47,9 @@ type SamplingParams struct {
 	D     float64
 }
 
-func getDeck(deckType string) (deck []cards.Card, cardsPerPlayer int) {
-	switch deckType {
-	case "test":
-		deck = cards.TestDeck.AsSlice()
-		cardsPerPlayer = (len(deck) / 2) - 1
-	case "core":
-		deck = cards.CoreDeck.AsSlice()
-		cardsPerPlayer = 4
-	default:
-		panic(fmt.Errorf("unknown deck type: %v", deckType))
-	}
-
-	return deck, cardsPerPlayer
-}
-
 func main() {
 	var params RunParams
-	flag.StringVar(&params.DeckType, "decktype", "test", "Type of deck to use (core, test)")
-	flag.IntVar(&params.NumMCTSIterations, "iter", 100, "Number of MCTS iterations to perform")
+	flag.IntVar(&params.NumMCTSIterations, "iter", 100000, "Number of MCTS iterations to perform")
 	flag.Float64Var(&params.Temperature, "temperature", 0.3,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
@@ -83,7 +67,8 @@ func main() {
 	rand.Seed(params.SamplingParams.Seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	deck, cardsPerPlayer := getDeck(params.DeckType)
+	deck := cards.CoreDeck.AsSlice()
+	cardsPerPlayer := 4
 	optimizer := mcts.NewSmoothUCT(float32(params.SamplingParams.C),
 		float32(params.SamplingParams.Gamma), float32(params.SamplingParams.Eta),
 		float32(params.SamplingParams.D))
@@ -250,13 +235,14 @@ func updateBeliefsOpponentAction(bs *beliefState, actualGame cfr.GameTreeNode, a
 
 func determinizeForAction(bs *beliefState, action gamestate.Action) *beliefState {
 	// Determinize just enough info so that all actions are fully specified.
-	if action.Type == gamestate.PlayCard {
+	switch action.Type {
+	case gamestate.PlayCard:
 		if action.Card == cards.SeeTheFuture {
 			return determinizeForSeeTheFuture(bs)
 		} else if action.Card == cards.DrawFromTheBottom {
 			return determinizeForDrawFromTheBottom(bs)
 		}
-	} else if action.Type == gamestate.DrawCard {
+	case gamestate.DrawCard:
 		return determinizeForDrawCard(bs)
 	}
 

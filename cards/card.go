@@ -14,6 +14,8 @@ const (
 	Shuffle
 	DrawFromTheBottom
 	Cat
+	// Placeholder used for cards that have not been determinized yet.
+	TBD
 )
 
 var cardStr = [...]string{
@@ -27,6 +29,7 @@ var cardStr = [...]string{
 	"Shuffle",
 	"DrawFromTheBottom",
 	"Cat",
+	"TBD",
 }
 
 // String implements Stringer.

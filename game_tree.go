@@ -84,12 +84,20 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 
 func (gn *GameNode) Clone() *GameNode {
 	result := *gn
-	result.children = make([]GameNode, len(gn.children))
-	copy(result.children, gn.children)
-	result.actions = make([]gamestate.Action, len(gn.actions))
-	copy(result.actions, gn.actions)
-	result.gnPool = &gameNodeSlicePool{}
-	result.aPool = &actionSlicePool{}
+	result.children = nil
+	result.actions = nil
+	result.gnPool = nil
+	result.aPool = nil
+	return &result
+}
+
+func (gn *GameNode) CloneWithState(state gamestate.GameState) *GameNode {
+	result := *gn
+	result.state = state
+	result.children = nil
+	result.actions = nil
+	result.gnPool = nil
+	result.aPool = nil
 	return &result
 }
 

@@ -43,10 +43,10 @@ func (gs *GameState) Apply(action Action) {
 		action = gs.drawCard(action)
 	case GiveCard:
 		gs.giveCard(action.Player, action.Card)
-	case InsertExplodingCat:
+	case InsertExplodingKitten:
 		// NOTE: Action.PositionInDrawPile is 1-based to distinguish from
 		// random placement.
-		gs.insertExplodingCat(action.Player, int(action.PositionInDrawPile)-1)
+		gs.insertExplodingKitten(action.Player, int(action.PositionInDrawPile)-1)
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
@@ -54,13 +54,13 @@ func (gs *GameState) Apply(action Action) {
 	gs.history.Append(action)
 }
 
-func (gs *GameState) insertExplodingCat(player Player, position int) {
+func (gs *GameState) insertExplodingKitten(player Player, position int) {
 	if player == Player0 {
-		gs.player0Hand.Remove(cards.ExplodingCat)
+		gs.player0Hand.Remove(cards.ExplodingKitten)
 	} else {
-		gs.player1Hand.Remove(cards.ExplodingCat)
+		gs.player1Hand.Remove(cards.ExplodingKitten)
 	}
-	gs.drawPile.InsertCard(cards.ExplodingCat, position)
+	gs.drawPile.InsertCard(cards.ExplodingKitten, position)
 }
 
 func (gs *GameState) String() string {

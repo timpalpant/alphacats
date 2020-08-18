@@ -88,14 +88,12 @@ func main() {
 		float32(params.SamplingParams.Gamma), float32(params.SamplingParams.Eta),
 		float32(params.SamplingParams.D))
 	for i := 0; ; i++ {
-		playGame(optimizer, params, deck, cardsPerPlayer)
+		deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
+		playGame(optimizer, params, deal)
 	}
 }
 
-func simulate(optimizer *mcts.SmoothUCT, game cfr.GameTreeNode, drawPileConstraint cards.Stack, p1Deal cards.Set, n int) {
-	infoSet := game.InfoSet(game.Player()).(*alphacats.InfoSetWithAvailableActions).InfoSet
-
-	gamesRemaining.Add(int64(n))
+func simulate(optimizer *mcts.SmoothUCT, beliefs *beliefState, n int) {
 	var wg sync.WaitGroup
 	nWorkers := runtime.NumCPU()
 	nPerWorker := n / nWorkers
@@ -104,14 +102,11 @@ func simulate(optimizer *mcts.SmoothUCT, game cfr.GameTreeNode, drawPileConstrai
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			rng := rand.New(rand.NewSource(rand.Int63()))
 			for k := 0; k < nPerWorker; k++ {
-				game := sampleGame(drawPileConstraint, p1Deal, infoSet)
-
-				gamesInProgress.Add(1)
+				selected := rng.Intn(len(beliefs.states))
+				game := beliefs.states[selected].Clone()
 				optimizer.Run(game)
-				gamesInProgress.Add(-1)
-				gamesRemaining.Add(-1)
-				numTraversals.Add(1)
 			}
 		}()
 	}
@@ -119,98 +114,37 @@ func simulate(optimizer *mcts.SmoothUCT, game cfr.GameTreeNode, drawPileConstrai
 	wg.Wait()
 }
 
-func validateDeal(deal alphacats.Deal, drawPile cards.Stack, p1Deal cards.Set) {
-	if deal.P1Deal != p1Deal {
-		panic(fmt.Errorf("Invalid random game: got p1 deal %v, expected %v", deal.P1Deal, p1Deal))
-	}
-
-	allCards := deal.DrawPile.ToSet()
-	allCards.AddAll(deal.P0Deal)
-	allCards.AddAll(deal.P1Deal)
-	expected := cards.CoreDeck
-	expected.Add(cards.Defuse)
-	expected.Add(cards.Defuse)
-	expected.Add(cards.Defuse)
-	expected.Add(cards.ExplodingCat)
-	if allCards != expected {
-		panic(fmt.Errorf("Invalid random game: got deck %v, expected %v", allCards, expected))
-	}
-
-	for i := 0; i < drawPile.Len(); i++ {
-		nthCard := drawPile.NthCard(i)
-		if nthCard == cards.Unknown {
-			continue
-		}
-
-		if deal.DrawPile.NthCard(i) != nthCard {
-			panic(fmt.Errorf("Invalid random game: got draw pile %v, expected %v", deal.DrawPile, drawPile))
-		}
-	}
-}
-
-func sampleGame(drawPileConstraint cards.Stack, p1Deal cards.Set, infoSet gamestate.InfoSet) *alphacats.GameNode {
-	for i := 1; ; i++ {
-		deal := alphacats.NewRandomDealWithConstraints(drawPileConstraint, p1Deal)
-		validateDeal(deal, drawPileConstraint, p1Deal)
-		game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
-		game = walkForwardUntil(game, infoSet)
-		if game != nil {
-			return game
-		}
-
-		if i%10000 == 0 {
-			glog.Warningf("Failed to find matching state for %d iterations", i)
-		}
-	}
-}
-
-func walkForwardUntil(game *alphacats.GameNode, target gamestate.InfoSet) *alphacats.GameNode {
-	infoSet := game.GetInfoSet(gamestate.Player(game.Player()))
-	if infoSet.History.Len() == target.History.Len() {
-		if infoSet.Hand == target.Hand {
-			return game.Clone()
-		} else {
-			return nil
-		}
-	}
-
-	defer game.Close()
-	for i := 0; i < game.NumChildren(); i++ {
-		child := game.GetChild(i).(*alphacats.GameNode)
-		infoSet := child.GetInfoSet(target.Player)
-		if infoSet.History.Len() > target.History.Len() {
-			continue
-		}
-
-		// Check whether child info set matches target.
-		isMatch := true
-		for j := 0; j < infoSet.History.Len(); j++ {
-			if infoSet.History.GetPacked(j) != target.History.GetPacked(j) {
-				isMatch = false
-				break
+func simulateRandomGames(optimizer *mcts.SmoothUCT, n int) {
+	var wg sync.WaitGroup
+	nWorkers := runtime.NumCPU()
+	nPerWorker := n / nWorkers
+	glog.Infof("Simulating %d games in %d workers", nWorkers*nPerWorker, nWorkers)
+	for worker := 0; worker < nWorkers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			deck := cards.CoreDeck.AsSlice()
+			for k := 0; k < nPerWorker; k++ {
+				deal := alphacats.NewRandomDeal(deck, 4)
+				game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+				optimizer.Run(game)
 			}
-		}
-
-		// If it did, recurse until we reach a game with equal history length.
-		if isMatch {
-			if game := walkForwardUntil(child, target); game != nil {
-				return game
-			}
-		}
+		}()
 	}
 
-	// No match is possible rooted at this game.
-	return nil
+	wg.Wait()
+
 }
 
-func playGame(policy *mcts.SmoothUCT, params RunParams, deck []cards.Card, cardsPerPlayer int) {
-	deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
+func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
-	drawPileConstraint := cards.NewStack()
-	drawPilePos := 0
-	hasShuffled := false
+	simulateRandomGames(policy, runtime.NumCPU()*params.NumMCTSIterations)
+
+	glog.Infof("Building initial info set")
+	beliefs := makeInitialBeliefState(deal)
+	glog.Infof("Initial info set has %d game states", len(beliefs.states))
+
 	for game.Type() != cfr.TerminalNodeType {
-		var lastAction gamestate.Action
 		if game.Type() == cfr.ChanceNodeType {
 			var p float64
 			game, p = game.SampleChild()
@@ -226,41 +160,21 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deck []cards.Card, cards
 
 			selected := prompt("Which action? ")
 			game = game.GetChild(selected)
-			lastAction = game.(*alphacats.GameNode).LastAction()
-			if lastAction.Type == gamestate.DrawCard {
-				if lastAction.CardsSeen[0] == cards.ExplodingCat && !hasShuffled {
-					drawPileConstraint.SetNthCard(drawPilePos, cards.ExplodingCat)
-				}
-
-				drawPilePos++
-			} else if lastAction.Type == gamestate.PlayCard && lastAction.Card == cards.Shuffle {
-				hasShuffled = true
-			}
+			lastAction := game.(*alphacats.GameNode).LastAction()
 			glog.Infof("[player] Chose to %v", lastAction)
+
+			glog.Info("Propogating beliefs")
+			beliefs = propogateBeliefs(policy, beliefs, hidePrivateInfo(is.AvailableActions[selected]), float32(params.Temperature))
+			glog.Infof("Infoset now has %d states", len(beliefs.states))
 		} else {
-			simulate(policy, game, drawPileConstraint, deal.P1Deal, params.NumMCTSIterations)
+			simulate(policy, beliefs, params.NumMCTSIterations)
 			p := policy.GetPolicy(game, float32(params.Temperature))
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
-			lastAction = game.(*alphacats.GameNode).LastAction()
+			lastAction := game.(*alphacats.GameNode).LastAction()
 			glog.Infof("[strategy] Chose to %v with probability %v: %v",
 				hidePrivateInfo(lastAction), p[selected], p)
 			glog.V(4).Infof("[strategy] Action result was: %v", lastAction)
-			if lastAction.Type == gamestate.DrawCard && !hasShuffled {
-				drawnCard := lastAction.CardsSeen[0]
-				drawPileConstraint.SetNthCard(drawPilePos, drawnCard)
-				drawPilePos++
-			} else if lastAction.Type == gamestate.PlayCard {
-				if lastAction.Card == cards.Shuffle {
-					hasShuffled = true
-				} else if lastAction.Card == cards.DrawFromTheBottom && !hasShuffled {
-					drawPileConstraint.SetNthCard(12, lastAction.CardsSeen[0])
-				} else if lastAction.Card == cards.SeeTheFuture && !hasShuffled {
-					for i, c := range lastAction.CardsSeen {
-						drawPileConstraint.SetNthCard(drawPilePos+i, c)
-					}
-				}
-			}
 		}
 	}
 
@@ -278,20 +192,111 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deck []cards.Card, cards
 	}
 }
 
+type partialState struct {
+	nDrawPileCards     int
+	fixedDrawPileCards cards.Stack
+
+	nPlayer0Cards     int
+	knownPlayer0Cards cards.Set
+
+	nPlayer1Cards     int
+	knownPlayer1Cards cards.Set
+
+	discardPile cards.Set
+}
+
+type beliefState struct {
+	states     []*alphacats.GameNode
+	reachProbs []float32
+}
+
+func propogateBeliefs(policy *mcts.SmoothUCT, bs *beliefState, action gamestate.Action, temperature float32) *beliefState {
+	var states []*alphacats.GameNode
+	var reachProbs []float32
+	for i, game := range bs.states {
+		p := policy.GetPolicy(game, temperature)
+		is := game.InfoSet(game.Player()).(*alphacats.InfoSetWithAvailableActions)
+		for j, a := range is.AvailableActions {
+			if hidePrivateInfo(a) == action {
+				states = append(states, game.GetChild(j).(*alphacats.GameNode))
+				reachProbs = append(reachProbs, p[j]*bs.reachProbs[i])
+			}
+		}
+	}
+
+	return &beliefState{states, reachProbs}
+}
+
+// Return all game states consistent with player 1 initial deal.
+func makeInitialBeliefState(deal alphacats.Deal) *beliefState {
+	p1Hand := deal.P1Deal
+	p1Hand.Remove(cards.Defuse)
+
+	remaining := cards.CoreDeck
+	remaining.RemoveAll(p1Hand)
+	emptyDrawPile := cards.NewStack()
+	var states []*alphacats.GameNode
+	seen := make(map[cards.Set]struct{})
+	enumerateDealsHelper(remaining, cards.NewSet(), p1Hand.Len(), func(p0Hand cards.Set) {
+		if _, ok := seen[p0Hand]; ok {
+			return
+		}
+
+		seen[p0Hand] = struct{}{}
+		p0Deal := p0Hand
+		p0Deal.Add(cards.Defuse)
+		p1Deal := p1Hand
+		p1Deal.Add(cards.Defuse)
+		game := alphacats.NewGame(emptyDrawPile, p0Deal, p1Deal)
+		states = append(states, game)
+	})
+
+	return &beliefState{
+		states:     states,
+		reachProbs: uniformDistribution(len(states)),
+	}
+}
+
+func uniformDistribution(n int) []float32 {
+	result := make([]float32, n)
+	for i := range result {
+		result[i] = 1.0 / float32(n)
+	}
+	return result
+}
+
+func enumerateDealsHelper(deck cards.Set, result cards.Set, n int, cb func(deal cards.Set)) {
+	if n == 0 {
+		cb(result)
+		return
+	}
+
+	deck.Iter(func(card cards.Card, count uint8) {
+		remaining := deck
+		remaining.Remove(card)
+		newResult := result
+		newResult.Add(card)
+		enumerateDealsHelper(remaining, newResult, n-1, cb)
+	})
+}
+
 func prompt(msg string) int {
-	fmt.Print(msg)
-	result, err := stdin.ReadString('\n')
-	if err != nil {
-		panic(err)
-	}
+	for {
+		fmt.Print(msg)
+		result, err := stdin.ReadString('\n')
+		if err != nil {
+			panic(err)
+		}
 
-	result = strings.TrimRight(result, "\n")
-	i, err := strconv.Atoi(result)
-	if err != nil {
-		panic(err)
-	}
+		result = strings.TrimRight(result, "\n")
+		i, err := strconv.Atoi(result)
+		if err != nil {
+			glog.Errorf("Invalid selection: %v", result)
+			continue
+		}
 
-	return i
+		return i
+	}
 }
 
 func hidePrivateInfo(a gamestate.Action) gamestate.Action {

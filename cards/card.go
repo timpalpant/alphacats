@@ -5,7 +5,7 @@ type Card uint8
 
 const (
 	Unknown Card = iota
-	ExplodingCat
+	ExplodingKitten
 	Defuse
 	Skip
 	Slap1x
@@ -18,7 +18,7 @@ const (
 
 var cardStr = [...]string{
 	"Unknown",
-	"ExplodingCat",
+	"ExplodingKitten",
 	"Defuse",
 	"Skip",
 	"Slap1x",

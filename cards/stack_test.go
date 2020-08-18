@@ -85,7 +85,7 @@ func BenchmarkSetNthCard(b *testing.B) {
 }
 
 func TestSetNthCard_NoOp(t *testing.T) {
-	testCards := []Card{Slap2x, Slap1x, ExplodingCat}
+	testCards := []Card{Slap2x, Slap1x, ExplodingKitten}
 	stack := NewStackFromCards(testCards)
 	for i, card := range testCards {
 		if stack.NthCard(i) != card {

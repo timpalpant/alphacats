@@ -51,8 +51,8 @@ func TestPackSequences(t *testing.T) {
 				cards.Slap1x, cards.Unknown, cards.Unknown,
 			}},
 			{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
-			{Player: Player1, Type: InsertExplodingCat, PositionInDrawPile: 13},
-			{Player: Player1, Type: InsertExplodingCat, PositionInDrawPile: 11},
+			{Player: Player1, Type: InsertExplodingKitten, PositionInDrawPile: 13},
+			{Player: Player1, Type: InsertExplodingKitten, PositionInDrawPile: 11},
 		},
 		{
 			{Player: Player0, Type: PlayCard, Card: cards.Skip},
@@ -80,7 +80,7 @@ func TestAppend(t *testing.T) {
 	}
 
 	h := NewHistoryFromActions(testSequence)
-	action := Action{Player: Player1, Type: InsertExplodingCat}
+	action := Action{Player: Player1, Type: InsertExplodingKitten}
 	h.Append(action)
 	result := h.AsSlice()
 	if len(result) != len(testSequence)+1 {
@@ -103,7 +103,7 @@ func TestMarshalInfoSet(t *testing.T) {
 				{Player: Player0, Type: DrawCard},
 				{Player: Player0, Type: DrawCard},
 				{Player: Player1, Type: PlayCard, Card: cards.Shuffle},
-				{Player: Player1, Type: InsertExplodingCat},
+				{Player: Player1, Type: InsertExplodingKitten},
 			},
 			hand: []cards.Card{cards.Cat, cards.Defuse, cards.Skip},
 		},
@@ -113,7 +113,7 @@ func TestMarshalInfoSet(t *testing.T) {
 				{Player: Player0, Type: PlayCard, Card: cards.SeeTheFuture},
 				{Player: Player0, Type: PlayCard, Card: cards.Cat},
 			},
-			hand: []cards.Card{cards.ExplodingCat, cards.Unknown},
+			hand: []cards.Card{cards.ExplodingKitten, cards.Unknown},
 		},
 	}
 

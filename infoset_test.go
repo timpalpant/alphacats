@@ -15,14 +15,14 @@ func TestMarshalInfoset(t *testing.T) {
 				{Player: gamestate.Player0, Type: gamestate.DrawCard},
 				{Player: gamestate.Player0, Type: gamestate.DrawCard},
 				{Player: gamestate.Player1, Type: gamestate.PlayCard, Card: cards.Shuffle},
-				{Player: gamestate.Player1, Type: gamestate.InsertExplodingCat},
+				{Player: gamestate.Player1, Type: gamestate.InsertExplodingKitten},
 			}),
 			Hand: cards.NewSetFromCards([]cards.Card{cards.Cat, cards.Defuse, cards.Skip}),
 		},
 		AvailableActions: []gamestate.Action{
 			{Player: gamestate.Player0, Type: gamestate.DrawCard},
 			{Player: gamestate.Player1, Type: gamestate.PlayCard, Card: cards.Shuffle},
-			{Player: gamestate.Player1, Type: gamestate.InsertExplodingCat},
+			{Player: gamestate.Player1, Type: gamestate.InsertExplodingKitten},
 		},
 	}
 

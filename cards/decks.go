@@ -1,7 +1,7 @@
 package cards
 
 // Cards in the 2-player core deck in the iOS app.
-// Does not include the ExplodingCat, or the Defuse
+// Does not include the ExplodingKitten, or the Defuse
 var CoreDeck = NewSetFromCards([]Card{
 	Skip, Skip, Skip, Skip, Skip,
 	Slap1x, Slap1x, Slap1x,

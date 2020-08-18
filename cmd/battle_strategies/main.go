@@ -51,7 +51,8 @@ func main() {
 	glog.Infof("Playing %d games", *numGames)
 	var p0Wins int64
 	for i := 0; i < *numGames; i++ {
-		game := alphacats.NewRandomGame(deck, cardsPerPlayer)
+		deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
+		game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 
 		playGame := func(i int) {
 			// Alternate which player goes first.

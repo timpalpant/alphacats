@@ -79,8 +79,6 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:       gamestate.Player0,
 		turnType:     PlayTurn,
 		pendingTurns: 1,
-		gnPool:       &gameNodeSlicePool{},
-		aPool:        &actionSlicePool{},
 	}
 }
 
@@ -166,6 +164,10 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 }
 
 func (gn *GameNode) allocChildren(n int) {
+	if gn.gnPool == nil {
+		gn.gnPool = &gameNodeSlicePool{}
+		gn.aPool = &actionSlicePool{}
+	}
 	gn.children = gn.gnPool.alloc(n)
 	gn.actions = gn.aPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
@@ -284,7 +286,7 @@ func (gn *GameNode) Close() {
 }
 
 func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int) {
-	if node.state.GetPlayerHand(player).Contains(cards.ExplodingCat) {
+	if node.state.GetPlayerHand(player).Contains(cards.ExplodingKitten) {
 		// Player drew an exploding kitten, must defuse it before continuing.
 		if node.state.GetPlayerHand(player).Contains(cards.Defuse) {
 			// Player has a defuse card, must play it.
@@ -436,7 +438,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		child := &gn.children[i]
 		action := gamestate.Action{
 			Player:             gn.player,
-			Type:               gamestate.InsertExplodingCat,
+			Type:               gamestate.InsertExplodingKitten,
 			PositionInDrawPile: uint8(i + 1),
 		}
 		child.state.Apply(action)
@@ -450,7 +452,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	child.turnType = InsertKittenRandom
 	gn.actions[nOptions] = gamestate.Action{
 		Player: gn.player,
-		Type:   gamestate.InsertExplodingCat,
+		Type:   gamestate.InsertExplodingKitten,
 	}
 
 	// Place exploding cat on the bottom of the draw pile.
@@ -458,7 +460,7 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		child := &gn.children[len(gn.children)-1]
 		action := gamestate.Action{
 			Player:             gn.player,
-			Type:               gamestate.InsertExplodingCat,
+			Type:               gamestate.InsertExplodingKitten,
 			PositionInDrawPile: uint8(nCardsInDrawPile + 1), // bottom
 		}
 		child.state.Apply(action)
@@ -477,7 +479,7 @@ func (gn *GameNode) buildInsertKittenRandomChildren() {
 		child := &gn.children[i]
 		action := gamestate.Action{
 			Player:             gn.player,
-			Type:               gamestate.InsertExplodingCat,
+			Type:               gamestate.InsertExplodingKitten,
 			PositionInDrawPile: uint8(i + 1),
 		}
 		child.state.Apply(action)

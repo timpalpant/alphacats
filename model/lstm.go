@@ -260,7 +260,7 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 		case gamestate.PlayCard, gamestate.GiveCard:
 			// Next 9 positions correspond to playing/giving each card type.
 			result[i] = advantages[action.Card]
-		case gamestate.InsertExplodingCat:
+		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
 			result[i] = advantages[cards.NumTypes+int(action.PositionInDrawPile)]
 		default:

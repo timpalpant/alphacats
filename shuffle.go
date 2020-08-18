@@ -23,7 +23,7 @@ func NewRandomDeal(deck []cards.Card, cardsPerPlayer int) Deal {
 	p1Deal.Add(cards.Defuse)
 	drawPile := cards.NewStackFromCards(deck[2*cardsPerPlayer:])
 	randPos := rand.Intn(drawPile.Len() + 1)
-	drawPile.InsertCard(cards.ExplodingCat, randPos)
+	drawPile.InsertCard(cards.ExplodingKitten, randPos)
 	randPos = rand.Intn(drawPile.Len() + 1)
 	drawPile.InsertCard(cards.Defuse, randPos)
 
@@ -35,7 +35,7 @@ func NewRandomDealWithConstraints(drawPile cards.Stack, p1Hand cards.Set) Deal {
 	remaining := cards.CoreDeck
 	remaining.RemoveAll(p1Hand)
 	remaining.Add(cards.Defuse)
-	remaining.Add(cards.ExplodingCat)
+	remaining.Add(cards.ExplodingKitten)
 	for i := 0; i < drawPile.Len(); i++ {
 		nthCard := drawPile.NthCard(i)
 		if remaining.Contains(nthCard) {
@@ -43,9 +43,9 @@ func NewRandomDealWithConstraints(drawPile cards.Stack, p1Hand cards.Set) Deal {
 		}
 	}
 
-	hasExplodingCat := remaining.Contains(cards.ExplodingCat)
-	if hasExplodingCat {
-		remaining.Remove(cards.ExplodingCat)
+	hasExplodingKitten := remaining.Contains(cards.ExplodingKitten)
+	if hasExplodingKitten {
+		remaining.Remove(cards.ExplodingKitten)
 	}
 	hasDefuse := remaining.Contains(cards.Defuse)
 	if hasDefuse {
@@ -59,13 +59,13 @@ func NewRandomDealWithConstraints(drawPile cards.Stack, p1Hand cards.Set) Deal {
 	p0Hand := cards.NewSetFromCards(r[:p1Hand.Len()])
 
 	r = r[p1Hand.Len():]
-	if hasExplodingCat {
-		r = append(r, cards.ExplodingCat)
+	if hasExplodingKitten {
+		r = append(r, cards.ExplodingKitten)
 	}
 	if hasDefuse {
 		r = append(r, cards.Defuse)
 	}
-	if hasExplodingCat || hasDefuse {
+	if hasExplodingKitten || hasDefuse {
 		rand.Shuffle(len(r), func(i, j int) {
 			r[i], r[j] = r[j], r[i]
 		})
@@ -99,7 +99,13 @@ func remove(r []cards.Card, toRemove cards.Card) []cards.Card {
 }
 
 func EnumerateInitialDeals(deck cards.Set, cardsPerPlayer int, cb func(d Deal)) {
+	seen := make(map[cards.Set]struct{})
 	enumerateDealsHelper(deck, cards.NewSet(), cardsPerPlayer, func(p0Deal cards.Set) {
+		if _, ok := seen[p0Deal]; ok {
+			return
+		}
+
+		seen[p0Deal] = struct{}{}
 		EnumerateDealsWithP0Hand(deck, p0Deal, cb)
 	})
 }
@@ -108,12 +114,24 @@ func EnumerateDealsWithP0Hand(deck, p0Deal cards.Set, cb func(d Deal)) {
 	remaining := deck
 	remaining.RemoveAll(p0Deal)
 
+	seen := make(map[cards.Set]struct{})
 	enumerateDealsHelper(remaining, cards.NewSet(), p0Deal.Len(), func(p1Deal cards.Set) {
+		if _, ok := seen[p1Deal]; ok {
+			return
+		}
+
+		seen[p1Deal] = struct{}{}
 		drawPile := remaining
 		drawPile.RemoveAll(p1Deal)
 		drawPile.Add(cards.Defuse)
-		drawPile.Add(cards.ExplodingCat)
+		drawPile.Add(cards.ExplodingKitten)
+		seenShuffles := make(map[cards.Stack]struct{})
 		EnumerateShuffles(drawPile, func(shuffle cards.Stack) {
+			if _, ok := seenShuffles[shuffle]; ok {
+				return
+			}
+
+			seenShuffles[shuffle] = struct{}{}
 			deal := Deal{
 				DrawPile: shuffle,
 				P0Deal:   p0Deal,

@@ -100,7 +100,7 @@ func encodeOutputs(availableActions []gamestate.Action, advantages, result []flo
 		case gamestate.PlayCard, gamestate.GiveCard:
 			// Next 9 positions correspond to playing/giving each card type.
 			result[action.Card] = advantages[i]
-		case gamestate.InsertExplodingCat:
+		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
 			idx := cards.NumTypes + int(action.PositionInDrawPile)
 			result[idx] = advantages[i]

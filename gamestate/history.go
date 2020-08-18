@@ -16,14 +16,14 @@ const (
 	DrawCard
 	PlayCard
 	GiveCard
-	InsertExplodingCat
+	InsertExplodingKitten
 )
 
 var allActions = []ActionType{
 	DrawCard,
 	PlayCard,
 	GiveCard,
-	InsertExplodingCat,
+	InsertExplodingKitten,
 }
 
 var actionTypeStr = [...]string{
@@ -31,7 +31,7 @@ var actionTypeStr = [...]string{
 	"DrawCard",
 	"PlayCard",
 	"GiveCard",
-	"InsertExplodingCat",
+	"InsertExplodingKitten",
 }
 
 func (t ActionType) String() string {
@@ -60,7 +60,7 @@ func (a Action) String() string {
 	if a.Card != cards.Unknown {
 		s += ":" + a.Card.String()
 	}
-	if a.Type == InsertExplodingCat {
+	if a.Type == InsertExplodingKitten {
 		if a.PositionInDrawPile == 0 {
 			s += fmt.Sprintf(":RANDOM")
 		} else {

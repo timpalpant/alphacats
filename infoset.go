@@ -4,14 +4,10 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"fmt"
-	"unsafe"
 
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
 )
-
-// The max number of actions that we can remember.
-const MaxMemory = 4
 
 type InfoSetWithAvailableActions struct {
 	gamestate.InfoSet
@@ -85,61 +81,80 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 }
 
 type AbstractedInfoSet struct {
-	RecentHistory gamestate.History
-	Hand          cards.Set
-	P0PlayedCards cards.Set
-	P1PlayedCards cards.Set
-	// TODO(palpant): Known info about other player's hand due to given cards.
+	PublicHistory    gamestate.History
+	Hand             cards.Set
+	P0PlayedCards    cards.Set
+	P1PlayedCards    cards.Set
+	DrawPile         cards.Stack
 	AvailableActions []gamestate.Action
 }
 
 func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Action) *AbstractedInfoSet {
-	var recentHistory gamestate.History
+	var publicHistory gamestate.History
 	p0PlayedCards := cards.NewSet()
 	p1PlayedCards := cards.NewSet()
+	drawPile := cards.NewStack()
 	for i := 0; i < is.History.Len(); i++ {
 		packed := is.History.GetPacked(i)
-		if i < MaxMemory {
-			recentHistory.AppendPacked(packed)
-		}
+		publicHistory.AppendPacked(hidePrivateInfo(packed))
 
 		action := packed.Decode()
-		if action.Type == gamestate.PlayCard {
+		switch action.Type {
+		case gamestate.PlayCard:
 			if action.Player == gamestate.Player0 {
 				p0PlayedCards.Add(action.Card)
 			} else {
 				p1PlayedCards.Add(action.Card)
 			}
+
+			if action.Card == cards.SeeTheFuture {
+				for i, card := range action.CardsSeen {
+					drawPile.SetNthCard(i, card)
+				}
+			}
+		case gamestate.InsertExplodingKitten:
+			if action.PositionInDrawPile != 0 {
+				drawPile.InsertCard(cards.ExplodingKitten, int(action.PositionInDrawPile-1))
+			}
+		case gamestate.DrawCard:
+			drawPile.RemoveCard(0)
 		}
 	}
 
 	return &AbstractedInfoSet{
-		RecentHistory:    recentHistory,
+		PublicHistory:    publicHistory,
 		Hand:             is.Hand,
 		P0PlayedCards:    p0PlayedCards,
 		P1PlayedCards:    p1PlayedCards,
+		DrawPile:         drawPile,
 		AvailableActions: availableActions,
 	}
+}
+
+func hidePrivateInfo(a gamestate.EncodedAction) gamestate.EncodedAction {
+	a[1] = 0
+	a[2] = 0
+	return a
 }
 
 // Key implements cfr.InfoSet.
 func (is *AbstractedInfoSet) Key() string {
 	buf, _ := is.MarshalBinary()
-	return *(*string)(unsafe.Pointer(&buf))
+	return string(buf)
 }
 
 func (is *AbstractedInfoSet) MarshalBinary() ([]byte, error) {
 	// Doing extra work to exactly size the buffer (and avoid any additional
 	// allocations ends up being faster than letting it auto-size)
-	historySize := is.RecentHistory.Len() + 1
-	for i := 0; i < is.RecentHistory.Len(); i++ {
-		packed := is.RecentHistory.GetPacked(i)
+	historySize := is.PublicHistory.Len() + 1
+	for i := 0; i < is.PublicHistory.Len(); i++ {
+		packed := is.PublicHistory.GetPacked(i)
 		if packed.HasPrivateInfo() {
 			historySize += 2
 		}
 	}
 
-	cardsSize := 3 * 8
+	cardsSize := 4 * 8
 	availableActionsSize := len(is.AvailableActions) + 1
 	for _, action := range is.AvailableActions {
 		if action.HasPrivateInfo() {
@@ -158,11 +173,14 @@ func (is *AbstractedInfoSet) MarshalBinary() ([]byte, error) {
 	buf = append(buf, hBuf[:]...)
 	binary.LittleEndian.PutUint64(hBuf[:], uint64(is.P1PlayedCards))
 	buf = append(buf, hBuf[:]...)
+	// Then draw pile.
+	binary.LittleEndian.PutUint64(hBuf[:], uint64(is.DrawPile))
+	buf = append(buf, hBuf[:]...)
 
 	// Then history, prefixed by length.
-	buf = append(buf, uint8(is.RecentHistory.Len()))
-	for i := 0; i < is.RecentHistory.Len(); i++ {
-		action := is.RecentHistory.GetPacked(i)
+	buf = append(buf, uint8(is.PublicHistory.Len()))
+	for i := 0; i < is.PublicHistory.Len(); i++ {
+		action := is.PublicHistory.GetPacked(i)
 		buf = append(buf, action[0])
 
 		// Actions are "varint" encoded: we only copy the private bits
@@ -191,13 +209,15 @@ func (is *AbstractedInfoSet) MarshalBinary() ([]byte, error) {
 }
 
 func (is *AbstractedInfoSet) UnmarshalBinary(buf []byte) error {
-	is.RecentHistory.Clear()
+	is.PublicHistory.Clear()
 
 	is.Hand = cards.Set(binary.LittleEndian.Uint64(buf))
 	buf = buf[8:]
 	is.P0PlayedCards = cards.Set(binary.LittleEndian.Uint64(buf))
 	buf = buf[8:]
 	is.P1PlayedCards = cards.Set(binary.LittleEndian.Uint64(buf))
+	buf = buf[8:]
+	is.DrawPile = cards.Stack(binary.LittleEndian.Uint64(buf))
 	buf = buf[8:]
 
 	nActions := uint8(buf[0])
@@ -213,7 +233,7 @@ func (is *AbstractedInfoSet) UnmarshalBinary(buf []byte) error {
 			buf = buf[2:]
 		}
 
-		is.RecentHistory.AppendPacked(packed)
+		is.PublicHistory.AppendPacked(packed)
 	}
 
 	if len(is.AvailableActions) > 0 { // Clear

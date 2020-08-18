@@ -84,6 +84,7 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 
 func (gn *GameNode) Clone() *GameNode {
 	result := *gn
+	result.parent = nil
 	result.children = nil
 	result.actions = nil
 	result.gnPool = nil
@@ -94,6 +95,7 @@ func (gn *GameNode) Clone() *GameNode {
 func (gn *GameNode) CloneWithState(state gamestate.GameState) *GameNode {
 	result := *gn
 	result.state = state
+	result.parent = nil
 	result.children = nil
 	result.actions = nil
 	result.gnPool = nil
@@ -136,11 +138,8 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 		gn.buildChildren()
 	}
 
-	return &InfoSetWithAvailableActions{
-		InfoSet:          gn.GetInfoSet(gamestate.Player(player)),
-		AvailableActions: gn.actions,
-	}
-	//return newAbstractedInfoSet(is, gn.actions)
+	is := gn.GetInfoSet(gamestate.Player(player))
+	return newAbstractedInfoSet(is, gn.actions)
 }
 
 func (gn *GameNode) GetInfoSet(player gamestate.Player) gamestate.InfoSet {

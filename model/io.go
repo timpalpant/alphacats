@@ -12,6 +12,7 @@ import (
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
+	"github.com/timpalpant/alphacats/gamestate"
 	"github.com/timpalpant/alphacats/model/internal/npyio"
 )
 
@@ -65,7 +66,7 @@ func saveTrainingData(samples []*deepcfr.RegretSample, directory string, batchSi
 func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 	nSamples := len(batch)
 
-	histories := make([]float32, 0, nSamples*alphacats.MaxMemory*numActionFeatures)
+	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
 	hands := make([]float32, 0, nSamples*3*cards.NumTypes)
 	y := make([]float32, 0, nSamples*outputDimension)
 	sampleWeights := make([]float32, 0, nSamples)
@@ -84,7 +85,7 @@ func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 				len(is.AvailableActions), len(sample.Advantages), is.AvailableActions))
 		}
 
-		EncodeHistory(is.RecentHistory, history)
+		EncodeHistory(is.PublicHistory, history)
 		for _, row := range history {
 			histories = append(histories, row...)
 		}

@@ -171,6 +171,9 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 			var p float64
 			game, p = game.SampleChild()
 			glog.Infof("[chance] Sampled child node with probability %v", p)
+			glog.Info("Propagating beliefs")
+			beliefs = propagateBeliefs(policy, beliefs, game, float32(params.Temperature), true)
+			glog.Infof("Infoset now has %d states", len(beliefs.states))
 		} else if game.Player() == 0 {
 			is := game.InfoSet(game.Player()).(*alphacats.InfoSetWithAvailableActions)
 			glog.Infof("[player] Your turn. %d cards remaining in draw pile.",
@@ -223,24 +226,24 @@ type beliefState struct {
 }
 
 func propagateBeliefs(policy *mcts.SmoothUCT, bs *beliefState, actualGame cfr.GameTreeNode, temperature float32, inferredProb bool) *beliefState {
-	actualIS := actualGame.InfoSet(1).(*alphacats.InfoSetWithAvailableActions).InfoSet
+	actualIS := actualGame.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
 	var states []*alphacats.GameNode
 	var reachProbs []float32
 	for i, game := range bs.states {
 		// Determinize the next three cards so that all possible actions are concrete.
 		for _, determinization := range enumerateDeterminizations(game) {
-			p := policy.GetPolicy(determinization, temperature)
 			for j := 0; j < determinization.NumChildren(); j++ {
-				child := determinization.GetChild(j)
-				is := child.InfoSet(1).(*alphacats.InfoSetWithAvailableActions).InfoSet
+				child := determinization.GetChild(j).(*alphacats.GameNode)
+				is := child.GetInfoSet(gamestate.Player1)
 				if is == actualIS {
 					counterfactualP := float32(1.0)
 					if inferredProb {
-						counterfactualP = p[j]
+						policyP := policy.GetPolicy(determinization, temperature)
+						counterfactualP = policyP[j]
 					}
 
 					// Determinized game is consistent with our observed history.
-					states = append(states, child.(*alphacats.GameNode))
+					states = append(states, child.Clone())
 					reachProbs = append(reachProbs, counterfactualP*bs.reachProbs[i])
 				}
 			}
@@ -253,11 +256,24 @@ func propagateBeliefs(policy *mcts.SmoothUCT, bs *beliefState, actualGame cfr.Ga
 }
 
 func enumerateDeterminizations(game *alphacats.GameNode) []*alphacats.GameNode {
-	shuffles := enumerateShuffleDeterminizations(game, 3)
-	result := make([]*alphacats.GameNode, 0, len(shuffles))
-	for _, determinizedState := range shuffles {
-		determinizedGame := game.CloneWithState(determinizedState)
-		result = append(result, determinizedGame)
+	var result []*alphacats.GameNode
+	// Determinize top 3 cards so that SeeTheFuture is fully specified.
+	for _, determinizedState := range enumerateShuffleDeterminizations(game, 3) {
+		// Determinize the bottom card so that DrawFromTheBottom is fully specified.
+		drawPile := determinizedState.GetDrawPile()
+		bottomCard := drawPile.NthCard(drawPile.Len() - 1)
+		if bottomCard == cards.TBD {
+			freeCards := getFreeCards(determinizedState)
+			freeCards.Iter(func(card cards.Card, _ uint8) {
+				drawPile.SetNthCard(drawPile.Len()-1, card)
+				state := gamestate.NewShuffled(determinizedState, drawPile)
+				determinizedGame := game.CloneWithState(state)
+				result = append(result, determinizedGame)
+			})
+		} else {
+			determinizedGame := game.CloneWithState(determinizedState)
+			result = append(result, determinizedGame)
+		}
 	}
 	return result
 }
@@ -302,6 +318,9 @@ func getFreeCards(state gamestate.GameState) cards.Set {
 	freeCards.Add(cards.Defuse)
 	freeCards.Add(cards.Defuse)
 	freeCards.Add(cards.ExplodingKitten)
+
+	// Remove all cards which are known to exist in either player's hand, a known position in the draw
+	// pile, or have already been played.
 	freeCards.RemoveAll(p0Hand)
 	freeCards.RemoveAll(p1Hand)
 	for i := 0; i < drawPile.Len(); i++ {

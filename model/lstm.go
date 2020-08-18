@@ -216,7 +216,7 @@ func (m *TrainedLSTM) Close() {
 }
 
 const (
-	tfHistorySize = 4 * alphacats.MaxMemory * numActionFeatures
+	tfHistorySize = 4 * gamestate.MaxNumActions * numActionFeatures
 	tfHandSize    = 4 * cards.NumTypes
 )
 
@@ -237,7 +237,7 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	}
 
 	tfHistory := make([]byte, tfHistorySize)
-	encodeHistoryTF(is.RecentHistory, tfHistory)
+	encodeHistoryTF(is.PublicHistory, tfHistory)
 	tfHands := make([]byte, 3*tfHandSize)
 	encodeHandTF(is.Hand, tfHands)
 	encodeHandTF(is.P0PlayedCards, tfHands[tfHandSize:])
@@ -354,7 +354,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 		// TODO: Shapes should be passed in to avoid coupling here.
 		historiesBuf, handsBuf := concat(batch)
 		historiesReader := bytes.NewReader(historiesBuf)
-		historiesShape := []int64{int64(len(batch)), alphacats.MaxMemory, numActionFeatures}
+		historiesShape := []int64{int64(len(batch)), gamestate.MaxNumActions, numActionFeatures}
 		historyTensor, err := tf.ReadTensor(tf.Float, historiesShape, historiesReader)
 		if err != nil {
 			glog.Fatal(err)

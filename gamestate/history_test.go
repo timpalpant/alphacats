@@ -117,10 +117,10 @@ func TestMarshalInfoSet(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		history := NewHistoryFromActions(tc.history)
 		hand := cards.NewSetFromCards(tc.hand)
-		is := InfoSet{history, hand}
+		is := InfoSet{Player(i % 2), history, hand}
 
 		buf, err := is.MarshalBinary()
 		if err != nil {

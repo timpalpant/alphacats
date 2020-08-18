@@ -14,9 +14,9 @@ func TestEnumerateShuffles(t *testing.T) {
 		cards.Cat,
 	})
 
-	n := countDistinctShuffles(stack.ToSet())
+	n := CountDistinctShuffles(stack.ToSet())
 	allShuffles := make([]cards.Stack, 0, n)
-	enumerateShuffles(stack.ToSet(), func(shuffle cards.Stack) {
+	EnumerateShuffles(stack.ToSet(), func(shuffle cards.Stack) {
 		allShuffles = append(allShuffles, shuffle)
 	})
 

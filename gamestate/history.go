@@ -187,7 +187,7 @@ func (is *InfoSet) Key() string {
 }
 
 func (is *InfoSet) MarshalBinarySize() int {
-	bufSize := 8 + is.History.Len()
+	bufSize := 1 + 8 + is.History.Len()
 	for i := 0; i < is.History.Len(); i++ {
 		if is.History.actions[i].HasPrivateInfo() {
 			bufSize += 2
@@ -204,6 +204,7 @@ func (is *InfoSet) MarshalBinary() ([]byte, error) {
 }
 
 func (is *InfoSet) MarshalTo(buf []byte) ([]byte, error) {
+	buf = append(buf, uint8(is.Player))
 	for i := 0; i < is.History.Len(); i++ {
 		action := is.History.actions[i]
 		buf = append(buf, action[0])
@@ -227,6 +228,8 @@ func (is *InfoSet) MarshalTo(buf []byte) ([]byte, error) {
 // MarshalBinary implements encoding.BinaryUnmarshaler.
 func (is *InfoSet) UnmarshalBinary(buf []byte) error {
 	is.History.Clear()
+	is.Player = Player(buf[0])
+	buf = buf[1:]
 	for len(buf) > 8 {
 		packed := EncodedAction{}
 		packed[0] = buf[0]

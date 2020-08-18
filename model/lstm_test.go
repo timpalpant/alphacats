@@ -27,7 +27,8 @@ var testParams = Params{
 // BenchmarkPredictParallel-4096	   10000	    168410 ns/op
 func BenchmarkPredict(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
-	game := alphacats.NewRandomGame(deck, 4)
+	deal := alphacats.NewRandomDeal(deck, 4)
+	game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
 	model, err := LoadTrainedLSTM(testModel, testParams)
 	if err != nil {
@@ -44,7 +45,8 @@ func BenchmarkPredict(b *testing.B) {
 
 func BenchmarkPredictParallel(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
-	game := alphacats.NewRandomGame(deck, 4)
+	deal := alphacats.NewRandomDeal(deck, 4)
+	game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
 	model, err := LoadTrainedLSTM(testModel, testParams)
 	if err != nil {
@@ -70,7 +72,8 @@ func BenchmarkPredictParallel(b *testing.B) {
 // BenchmarkPredict/batchSize=256-24       	     200	   8301496 ns/op
 func BenchmarkBatchSize(b *testing.B) {
 	deck := cards.CoreDeck.AsSlice()
-	game := alphacats.NewRandomGame(deck, 4)
+	deal := alphacats.NewRandomDeal(deck, 4)
+	game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 	is := game.InfoSet(0).(*alphacats.InfoSetWithAvailableActions)
 	history := newOneHotHistory()
 	EncodeHistory(is.History, history)

@@ -66,7 +66,7 @@ func main() {
 	var params RunParams
 	flag.StringVar(&params.DeckType, "decktype", "test", "Type of deck to use (core, test)")
 	flag.IntVar(&params.NumMCTSIterations, "iter", 100, "Number of MCTS iterations to perform")
-	flag.Float64Var(&params.Temperature, "temperature", 0.5,
+	flag.Float64Var(&params.Temperature, "temperature", 0.3,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.75,
@@ -172,13 +172,13 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 			game, p = game.SampleChild()
 			glog.Infof("[chance] Sampled child node with probability %v", p)
 			glog.Info("Propagating beliefs")
-			beliefs = propagateBeliefs(policy, beliefs, game, float32(params.Temperature), true)
+			beliefs = updateBeliefsChanceAction(beliefs, game)
 			glog.Infof("Infoset now has %d states", len(beliefs.states))
 		} else if game.Player() == 0 {
-			is := game.InfoSet(game.Player()).(*alphacats.InfoSetWithAvailableActions)
+			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			glog.Infof("[player] Your turn. %d cards remaining in draw pile.",
 				game.(*alphacats.GameNode).GetDrawPile().Len())
-			glog.Infof("[player] Hand: %v, Choices:", is.InfoSet.Hand)
+			glog.Infof("[player] Hand: %v, Choices:", is.Hand)
 			for i, action := range is.AvailableActions {
 				glog.Infof("%d: %v", i, action)
 			}
@@ -189,19 +189,21 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 			glog.Infof("[player] Chose to %v", lastAction)
 
 			glog.Info("Propagating beliefs")
-			beliefs = propagateBeliefs(policy, beliefs, game, float32(params.Temperature), true)
+			beliefs = updateBeliefsOpponentAction(beliefs, game, is.AvailableActions[selected],
+				policy, float32(params.Temperature))
 			glog.Infof("Infoset now has %d states", len(beliefs.states))
 		} else {
 			simulate(policy, beliefs, params.NumMCTSIterations)
 			p := policy.GetPolicy(game, float32(params.Temperature))
 			selected := sampling.SampleOne(p, rand.Float32())
+			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			game = game.GetChild(selected)
 			lastAction := game.(*alphacats.GameNode).LastAction()
 			glog.Infof("[strategy] Chose to %v with probability %v: %v",
 				hidePrivateInfo(lastAction), p[selected], p)
 			glog.V(4).Infof("[strategy] Action result was: %v", lastAction)
 			glog.Info("Propagating beliefs")
-			beliefs = propagateBeliefs(policy, beliefs, game, float32(params.Temperature), false)
+			beliefs = updateBeliefsSelfAction(beliefs, game, is.AvailableActions[selected])
 			glog.Infof("Infoset now has %d states", len(beliefs.states))
 		}
 	}
@@ -225,57 +227,162 @@ type beliefState struct {
 	reachProbs []float32
 }
 
-func propagateBeliefs(policy *mcts.SmoothUCT, bs *beliefState, actualGame cfr.GameTreeNode, temperature float32, inferredProb bool) *beliefState {
+func updateBeliefsOpponentAction(bs *beliefState, actualGame cfr.GameTreeNode, action gamestate.Action, policy *mcts.SmoothUCT, temperature float32) *beliefState {
+	bs = determinizeForAction(bs, action)
 	actualIS := actualGame.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
+	var newStates []*alphacats.GameNode
+	var newReachProbs []float32
+	for i, determinization := range bs.states {
+		policyP := policy.GetPolicy(determinization, temperature)
+		for j := 0; j < determinization.NumChildren(); j++ {
+			child := determinization.GetChild(j).(*alphacats.GameNode)
+			is := child.GetInfoSet(gamestate.Player1)
+			if is == actualIS {
+				// Determinized game is consistent with our observed history.
+				newStates = append(newStates, child.Clone())
+				newReachProbs = append(newReachProbs, policyP[j]*bs.reachProbs[i])
+			}
+		}
+	}
+
+	return &beliefState{newStates, newReachProbs}
+}
+
+func determinizeForAction(bs *beliefState, action gamestate.Action) *beliefState {
+	// Determinize just enough info so that all actions are fully specified.
+	if action.Type == gamestate.PlayCard {
+		if action.Card == cards.SeeTheFuture {
+			return determinizeForSeeTheFuture(bs)
+		} else if action.Card == cards.DrawFromTheBottom {
+			return determinizeForDrawFromTheBottom(bs)
+		}
+	} else if action.Type == gamestate.DrawCard {
+		return determinizeForDrawCard(bs)
+	}
+
+	glog.Info("No additional determinization necessary")
+	return bs
+}
+
+func determinizeForSeeTheFuture(bs *beliefState) *beliefState {
+	glog.Info("Determinizing next 3 cards for SeeTheFuture")
 	var states []*alphacats.GameNode
 	var reachProbs []float32
 	for i, game := range bs.states {
-		// Determinize the next three cards so that all possible actions are concrete.
-		for _, determinization := range enumerateDeterminizations(game) {
-			for j := 0; j < determinization.NumChildren(); j++ {
-				child := determinization.GetChild(j).(*alphacats.GameNode)
-				is := child.GetInfoSet(gamestate.Player1)
-				if is == actualIS {
-					counterfactualP := float32(1.0)
-					if inferredProb {
-						policyP := policy.GetPolicy(determinization, temperature)
-						counterfactualP = policyP[j]
-					}
-
-					// Determinized game is consistent with our observed history.
-					states = append(states, child.Clone())
-					reachProbs = append(reachProbs, counterfactualP*bs.reachProbs[i])
-				}
-			}
+		// Determinize top 3 cards so that SeeTheFuture is fully specified.
+		determinizedStates := enumerateShuffleDeterminizations(game, 3)
+		total := 0
+		for _, count := range determinizedStates {
+			total += count
 		}
 
-		// If none of the children match, then this belief state is pruned as incompatible.
+		for determinizedState, count := range determinizedStates {
+			determinizedGame := game.CloneWithState(determinizedState)
+			states = append(states, determinizedGame)
+			chanceP := float32(count) / float32(total)
+			reachProbs = append(reachProbs, chanceP*bs.reachProbs[i])
+		}
+	}
+
+	glog.Infof("Expanded %d determinized states", len(states))
+	return &beliefState{states, reachProbs}
+}
+
+func determinizeForDrawFromTheBottom(bs *beliefState) *beliefState {
+	glog.Info("Determinizing bottom card for DrawFromTheBottom")
+	var states []*alphacats.GameNode
+	var reachProbs []float32
+	for i, game := range bs.states {
+		// Determinize the bottom card so that DrawFromTheBottom is fully specified.
+		determinizedState := game.GetState()
+		drawPile := determinizedState.GetDrawPile()
+		bottomCard := drawPile.NthCard(drawPile.Len() - 1)
+		if bottomCard == cards.TBD {
+			freeCards := getFreeCards(determinizedState)
+			nFreeCards := freeCards.Len()
+			freeCards.Iter(func(card cards.Card, count uint8) {
+				drawPile.SetNthCard(drawPile.Len()-1, card)
+				state := gamestate.NewShuffled(determinizedState, drawPile)
+				determinizedGame := game.CloneWithState(state)
+				states = append(states, determinizedGame)
+				chanceP := float32(count) / float32(nFreeCards)
+				reachProbs = append(reachProbs, chanceP*bs.reachProbs[i])
+			})
+		} else {
+			states = append(states, game)
+			reachProbs = append(reachProbs, bs.reachProbs[i])
+		}
+	}
+
+	glog.Infof("Expanded %d determinized states", len(states))
+	return &beliefState{states, reachProbs}
+}
+
+func determinizeForDrawCard(bs *beliefState) *beliefState {
+	glog.Info("Determinizing top card for DrawCard")
+	var states []*alphacats.GameNode
+	var reachProbs []float32
+
+	for i, game := range bs.states {
+		determinizedStates := enumerateShuffleDeterminizations(game, 1)
+		total := 0
+		for _, count := range determinizedStates {
+			total += count
+		}
+
+		for determinizedState, count := range determinizedStates {
+			determinizedGame := game.CloneWithState(determinizedState)
+			states = append(states, determinizedGame)
+			chanceP := float32(count) / float32(total)
+			reachProbs = append(reachProbs, chanceP*bs.reachProbs[i])
+		}
+	}
+
+	glog.Infof("Expanded %d determinized states", len(states))
+	return &beliefState{states, reachProbs}
+}
+
+func updateBeliefsSelfAction(bs *beliefState, actualGame cfr.GameTreeNode, action gamestate.Action) *beliefState {
+	bs = determinizeForAction(bs, action)
+	actualIS := actualGame.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
+	var states []*alphacats.GameNode
+	var reachProbs []float32
+	for i, determinization := range bs.states {
+		for j := 0; j < determinization.NumChildren(); j++ {
+			child := determinization.GetChild(j).(*alphacats.GameNode)
+			is := child.GetInfoSet(gamestate.Player1)
+			if is == actualIS {
+				// Determinized game is consistent with our observed history.
+				states = append(states, child.Clone())
+				reachProbs = append(reachProbs, bs.reachProbs[i])
+			}
+		}
 	}
 
 	return &beliefState{states, reachProbs}
 }
 
-func enumerateDeterminizations(game *alphacats.GameNode) []*alphacats.GameNode {
-	var result []*alphacats.GameNode
-	// Determinize top 3 cards so that SeeTheFuture is fully specified.
-	for _, determinizedState := range enumerateShuffleDeterminizations(game, 3) {
-		// Determinize the bottom card so that DrawFromTheBottom is fully specified.
-		drawPile := determinizedState.GetDrawPile()
-		bottomCard := drawPile.NthCard(drawPile.Len() - 1)
-		if bottomCard == cards.TBD {
-			freeCards := getFreeCards(determinizedState)
-			freeCards.Iter(func(card cards.Card, _ uint8) {
-				drawPile.SetNthCard(drawPile.Len()-1, card)
-				state := gamestate.NewShuffled(determinizedState, drawPile)
-				determinizedGame := game.CloneWithState(state)
-				result = append(result, determinizedGame)
-			})
-		} else {
-			determinizedGame := game.CloneWithState(determinizedState)
-			result = append(result, determinizedGame)
-		}
+// Since, after the initial deal, the only chance action in the game is when the Shuffle card
+// is played, we can implement it by simply clearing all knowledge of the draw pile state.
+func updateBeliefsChanceAction(bs *beliefState, actualGame cfr.GameTreeNode) *beliefState {
+	var states []*alphacats.GameNode
+	for _, determinization := range bs.states {
+		child := determinization.GetChild(0).(*alphacats.GameNode)
+		shuffledState := shuffleDrawPile(child.GetState())
+		states = append(states, child.CloneWithState(shuffledState))
 	}
-	return result
+
+	return &beliefState{states, bs.reachProbs}
+}
+
+func shuffleDrawPile(state gamestate.GameState) gamestate.GameState {
+	drawPile := state.GetDrawPile()
+	shuffledDrawPile := cards.NewStack()
+	for i := 0; i < drawPile.Len(); i++ {
+		shuffledDrawPile.SetNthCard(i, cards.TBD)
+	}
+
+	return gamestate.NewShuffled(state, shuffledDrawPile)
 }
 
 func sampleDeterminization(game *alphacats.GameNode, rng *rand.Rand) gamestate.GameState {
@@ -339,20 +446,14 @@ func getFreeCards(state gamestate.GameState) cards.Set {
 	return freeCards
 }
 
-func enumerateShuffleDeterminizations(game *alphacats.GameNode, n int) []gamestate.GameState {
+func enumerateShuffleDeterminizations(game *alphacats.GameNode, n int) map[gamestate.GameState]int {
 	state := game.GetState()
 	drawPile := state.GetDrawPile()
 	freeCards := getFreeCards(state)
-	var result []gamestate.GameState
-	seen := make(map[cards.Stack]struct{})
+	result := make(map[gamestate.GameState]int)
 	enumerateShufflesHelper(freeCards, drawPile, n, func(determinizedDrawPile cards.Stack) {
-		if _, ok := seen[determinizedDrawPile]; ok {
-			return
-		}
-
-		seen[determinizedDrawPile] = struct{}{}
 		determinizedState := gamestate.NewShuffled(state, determinizedDrawPile)
-		result = append(result, determinizedState)
+		result[determinizedState]++
 	})
 
 	return result

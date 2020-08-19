@@ -54,11 +54,13 @@ class TrainingSequence(Sequence):
         X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
         X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE * NUM_CARD_TYPES))
         X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
-        y = batch["y"].reshape((n_samples, N_OUTPUTS))
-        return X, y, batch["sample_weight"]
+        Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))
+        Y_value = batch["Y_value"].reshape((n_samples, 1))
+        Y = {"policy": Y_policy, "value": Y_value}
+        return X, Y
 
 
-def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, output_shape: int):
+def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, policy_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)
     logging.info("Hands input shape: %s", hands_shape)
@@ -71,25 +73,26 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
 
     # The private hand arm of the model.
     hands_input = Input(name="hands", shape=hands_shape)
-    hands_hidden_1 = Dense(64, activation='relu')(hands_input)
 
     # The draw pile arm of the model.
     drawpile_input = Input(name="drawpile", shape=drawpile_shape)
-    drawpile_hidden_1 = Dense(64, activation='relu')(drawpile_input)
 
     # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hands_hidden_1, drawpile_hidden_1])
+    merged_inputs = concatenate([lstm, hands_input, drawpile_input])
     merged_hidden_1 = Dense(128, activation='relu')(merged_inputs)
     merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
     merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
     merged_hidden_4 = Dense(64, activation='relu')(merged_hidden_3)
-    merged_hidden_5 = Dense(64, activation='relu')(merged_hidden_4)
-    normalization = BatchNormalization()(merged_hidden_5)
-    advantages_output = Dense(N_OUTPUTS, activation='linear', name='output')(normalization)
+
+    policy_hidden_1 = Dense(64, activation='relu')(merged_hidden_4)
+    policy_output = Dense(policy_shape, activation='softmax', name='policy')(policy_hidden_1)
+
+    value_hidden_1 = Dense(64, activation='relu')(merged_hidden_4)
+    value_output = Dense(1, activation='linear', name='value')(value_hidden_1)
 
     model = Model(
         inputs=[history_input, hands_input, drawpile_input],
-        outputs=[advantages_output])
+        outputs=[policy_output, value_output])
     model.compile(
         loss='mean_squared_error',
         optimizer=Adam(clipnorm=1.0),
@@ -152,12 +155,12 @@ def main():
     data = TrainingSequence(batches[val_n:])
     val_data = TrainingSequence(batches[:val_n])
 
-    X, y, _ = data[0]
+    X, y = data[0]
     history_shape = X["history"][0].shape
     hands_shape = X["hands"][0].shape
     drawpile_shape = X["drawpile"][0].shape
-    output_shape = y[0].shape[0]
-    model = build_model(history_shape, hands_shape, drawpile_shape, output_shape)
+    policy_shape = y["policy"][0].shape[0]
+    model = build_model(history_shape, hands_shape, drawpile_shape, policy_shape)
     print(model.summary())
 
     if args.initial_weights:

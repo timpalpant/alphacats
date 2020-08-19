@@ -1,4 +1,4 @@
-// Package model implements an LSTM-based network model for use in DeepCFR or MCTS.
+// Package model implements an LSTM-based network model for use in MCTS.
 // As input, the model takes the public game history (one-hot encoded),
 // as well as the player's current hand (one-hot encoded) and predicts the
 // advantages for each possible action in this infoset.
@@ -18,8 +18,6 @@ import (
 
 	"github.com/golang/glog"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
-	"github.com/timpalpant/go-cfr"
-	"github.com/timpalpant/go-cfr/deepcfr"
 
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
@@ -27,8 +25,9 @@ import (
 )
 
 const (
-	graphTag    = "lstm"
-	outputLayer = "output/BiasAdd"
+	graphTag          = "lstm"
+	policyOutputLayer = "policy/BiasAdd"
+	valueOutputLayer  = "value/BiasAdd"
 )
 
 var (
@@ -50,8 +49,7 @@ type Params struct {
 	NumPredictionWorkers   int
 }
 
-// LSTM is a model for AlphaCats to be used with DeepCFR
-// and implements deepcfr.Model.
+// LSTM is a model for AlphaCats to be used in MCTS.
 type LSTM struct {
 	params Params
 	iter   int
@@ -64,15 +62,13 @@ func NewLSTM(p Params) *LSTM {
 	}
 }
 
-// Train implements deepcfr.Model.
-func (m *LSTM) Train(buffer deepcfr.Buffer) deepcfr.TrainedModel {
-	samples := buffer.GetSamples()
-	tuples := make([]*deepcfr.RegretSample, len(samples))
-	for i, s := range samples {
-		x := *s.(*deepcfr.RegretSample)
-		tuples[i] = &x
-	}
+type Sample struct {
+	InfoSet *alphacats.AbstractedInfoSet
+	Policy  []float32
+	Value   float32
+}
 
+func (m *LSTM) Train(samples []Sample) *TrainedLSTM {
 	glog.Infof("Training network with %d samples", len(samples))
 	// Save training data to disk in a tempdir.
 	tmpDir, err := ioutil.TempDir(m.params.OutputDir, "training-data-")
@@ -82,7 +78,7 @@ func (m *LSTM) Train(buffer deepcfr.Buffer) deepcfr.TrainedModel {
 	defer os.RemoveAll(tmpDir)
 
 	glog.Infof("Saving training data to: %v", tmpDir)
-	if err := saveTrainingData(tuples, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
+	if err := saveTrainingData(samples, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
 		glog.Fatal(err)
 	}
 
@@ -219,19 +215,12 @@ const (
 var predictionRequestPool = sync.Pool{
 	New: func() interface{} {
 		return &predictionRequest{
-			resultCh: make(chan []float32, 1),
+			resultCh: make(chan predictionResult, 1),
 		}
 	},
 }
 
-// Predict implements deepcfr.TrainedModel.
-func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
-	is := infoSet.(*alphacats.AbstractedInfoSet)
-	if len(is.AvailableActions) != nActions {
-		panic(fmt.Errorf("InfoSet has %d actions but expected %d: %v",
-			len(is.AvailableActions), nActions, is.AvailableActions))
-	}
-
+func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float32) {
 	tfHistory := make([]byte, tfHistorySize)
 	encodeHistoryTF(is.PublicHistory, tfHistory)
 	tfHands := make([]byte, 3*tfHandSize)
@@ -239,40 +228,64 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	encodeHandTF(is.P0PlayedCards, tfHands[tfHandSize:])
 	encodeHandTF(is.P1PlayedCards, tfHands[2*tfHandSize:])
 	tfDrawPile := make([]byte, tfDrawPileSize)
-	encodeDrawPileTF(is.DrawPile)
+	encodeDrawPileTF(is.DrawPile, tfDrawPile)
 	req := predictionRequestPool.Get().(*predictionRequest)
 	req.history = tfHistory
 	req.hands = tfHands
+	req.drawPile = tfDrawPile
 
 	m.reqsCh <- req
-	advantages := <-req.resultCh
+	prediction := <-req.resultCh
 	predictionRequestPool.Put(req)
 
-	result := make([]float32, nActions)
+	policy := make([]float32, len(is.AvailableActions))
 	for i, action := range is.AvailableActions {
 		switch action.Type {
 		case gamestate.DrawCard:
 			// First position is always the advantages of ending turn by drawing a card,
 			// since this corresponds to the "Unknown" card enum.
-			result[i] = advantages[0]
+			policy[i] = prediction.policy[0]
 		case gamestate.PlayCard, gamestate.GiveCard:
 			// Next 9 positions correspond to playing/giving each card type.
-			result[i] = advantages[action.Card]
+			policy[i] = prediction.policy[action.Card]
 		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
-			result[i] = advantages[cards.NumTypes+int(action.PositionInDrawPile)]
+			policy[i] = prediction.policy[cards.NumTypes+int(action.PositionInDrawPile)]
 		default:
 			panic(fmt.Errorf("unsupported action: %v", action))
 		}
 	}
 
-	return advantages
+	// Renormalize policy since some weight may have been given to invalid actions.
+	normalize(policy)
+	return policy, prediction.value
+}
+
+func normalize(p []float32) {
+	total := sum(p)
+	for i := range p {
+		p[i] /= total
+	}
+}
+
+func sum(vs []float32) float32 {
+	total := float32(0.0)
+	for _, v := range vs {
+		total += v
+	}
+	return total
 }
 
 type predictionRequest struct {
 	history  []byte
 	hands    []byte
-	resultCh chan []float32
+	drawPile []byte
+	resultCh chan predictionResult
+}
+
+type predictionResult struct {
+	policy []float32
+	value  float32
 }
 
 // Handles prediction requests, attempting to batch all pending requests.
@@ -336,7 +349,7 @@ func concat(batch []*predictionRequest) (histories, hands, drawPiles []byte) {
 	for _, req := range batch {
 		historyLen += len(req.history)
 		handsLen += len(req.hands)
-		drawPilesLen += len(req.drawPiles)
+		drawPilesLen += len(req.drawPile)
 	}
 
 	histories = make([]byte, 0, historyLen)
@@ -345,7 +358,7 @@ func concat(batch []*predictionRequest) (histories, hands, drawPiles []byte) {
 	for _, req := range batch {
 		histories = append(histories, req.history...)
 		hands = append(hands, req.hands...)
-		drawPiles = append(drawPiles, req.drawPiles...)
+		drawPiles = append(drawPiles, req.drawPile...)
 	}
 
 	return histories, hands, drawPiles
@@ -371,7 +384,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 
 		drawPilesReader := bytes.NewReader(drawPilesBuf)
 		drawPilesShape := []int64{int64(len(batch)), int64(maxCardsInDrawPile * cards.NumTypes)}
-		drawPilesTensor, err := tf.ReadTensor(tf.Float, drawPilesShape, drawPileReader)
+		drawPilesTensor, err := tf.ReadTensor(tf.Float, drawPilesShape, drawPilesReader)
 		if err != nil {
 			glog.Fatal(err)
 		}
@@ -395,17 +408,18 @@ type batchPredictionRequest struct {
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
 	defer model.Session.Close()
 	for req := range reqCh {
-		resultTensor := predictBatch(model, req.history, req.hands, req.drawPiles)
-		result := resultTensor.Value().([][]float32)
+		resultTensors := predictBatch(model, req.history, req.hands, req.drawPiles)
+		policy := resultTensors[0].Value().([][]float32)
+		value := resultTensors[1].Value().([]float32)
 		for i, req := range req.batch {
-			req.resultCh <- result[i]
+			req.resultCh <- predictionResult{policy[i], value[i]}
 		}
 		samplesPredicted.Add(int64(len(req.batch)))
 		batchesPredicted.Add(1)
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) *tf.Tensor {
+func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) []*tf.Tensor {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
 			model.Graph.Operation("history").Output(0):  history,
@@ -413,7 +427,8 @@ func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) *t
 			model.Graph.Operation("drawpile").Output(0): drawPiles,
 		},
 		[]tf.Output{
-			model.Graph.Operation(outputLayer).Output(0),
+			model.Graph.Operation(policyOutputLayer).Output(0),
+			model.Graph.Operation(valueOutputLayer).Output(0),
 		},
 		nil,
 	)
@@ -422,7 +437,7 @@ func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) *t
 		glog.Fatal(err)
 	}
 
-	return result[0]
+	return result
 }
 
 func init() {

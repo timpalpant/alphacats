@@ -63,7 +63,8 @@ func main() {
 
 	deck := cards.CoreDeck.AsSlice()
 	cardsPerPlayer := 4
-	optimizer := mcts.NewSmoothUCT(float32(params.SamplingParams.C),
+	optimizer := mcts.NewSmoothUCT(mcts.RandomRolloutEvaluator{},
+		float32(params.SamplingParams.C),
 		float32(params.SamplingParams.Gamma), float32(params.SamplingParams.Eta),
 		float32(params.SamplingParams.D))
 	for i := 0; ; i++ {

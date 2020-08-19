@@ -94,6 +94,7 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
         inputs=[history_input, hands_input, drawpile_input],
         outputs=[policy_output, value_output])
     model.compile(
+        loss=['categorical_crossentropy', 'mean_squared_error'],
         loss='mean_squared_error',
         optimizer=Adam(clipnorm=1.0),
         metrics=['mean_absolute_error'])

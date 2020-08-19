@@ -131,6 +131,7 @@ def main():
     print("Output layer names:", [node.op.name for node in model.outputs])
 
     if args.initial_weights:
+        logging.info("Loading initial weights from: %s", args.initial_weights)
         model.load_weights(args.initial_weights)
 
     history = model.fit(

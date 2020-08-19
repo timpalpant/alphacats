@@ -8,6 +8,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"sync"
 
 	"github.com/golang/glog"
@@ -87,23 +88,34 @@ func main() {
 		opponentPolicy := policies[1-player]
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, runtime.NumCPU())
 		for i := 0; i < params.NumGamesPerEpoch; i++ {
-			deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
-			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
-			search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
-			infoSet := game.GetInfoSet(gamestate.Player(player))
-			beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer func() {
+					wg.Done()
+					<-sem
+				}()
+				deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
+				game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+				search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
+				infoSet := game.GetInfoSet(gamestate.Player(player))
+				beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
 
-			glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
-			samples := playGame(game, opponentPolicy, policy, search, beliefs, player, params)
-			glog.Infof("Collected %d samples", len(samples))
-			for _, s := range samples {
-				policy.AddSample(s)
-			}
+				glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
+				samples := playGame(game, opponentPolicy, policy, search, beliefs, player, params)
+				glog.Infof("Collected %d samples", len(samples))
+				for _, s := range samples {
+					policy.AddSample(s)
+				}
 
-			policy.TrainNetwork()
+				policy.TrainNetwork()
+			}()
 		}
 
+		wg.Wait()
 		policy.AddCurrentExploiterToModel()
 	}
 }

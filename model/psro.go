@@ -3,6 +3,7 @@ package model
 import (
 	"sync"
 
+	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats"
@@ -15,6 +16,7 @@ type MCTSPSRO struct {
 	bestResponseNetworks []*TrainedLSTM
 	weights              []float32
 
+	mx        sync.Mutex
 	samples   []Sample
 	sampleIdx int
 
@@ -31,6 +33,8 @@ func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse int) *MCTSPSRO {
 }
 
 func (m *MCTSPSRO) AddSample(s Sample) {
+	m.mx.Lock()
+	defer m.mx.Unlock()
 	if len(m.samples) < cap(m.samples) {
 		m.samples = append(m.samples, s)
 	} else {
@@ -44,6 +48,8 @@ func (m *MCTSPSRO) AddSample(s Sample) {
 }
 
 func (m *MCTSPSRO) TrainNetwork() {
+	m.mx.Lock()
+	defer m.mx.Unlock()
 	if !m.needsRetrain {
 		return // Not enough data to retrain yet.
 	}
@@ -53,17 +59,24 @@ func (m *MCTSPSRO) TrainNetwork() {
 		initialWeightsFile = m.currentNetwork.KerasWeightsFile()
 	}
 
-	// TODO(palpant): Investigate initializing training with previous weights
-	// to speed convergence.
-	nn := m.model.Train(initialWeightsFile, m.samples)
+	// Unlock to allow other games to continue playing while retraining.
+	// TODO(palpant): Think harder about whether this is thread-safe.
+	trainingSamples := make([]Sample, len(m.samples))
+	copy(trainingSamples, m.samples)
+	m.needsRetrain = false
+	m.mx.Unlock()
+
+	nn := m.model.Train(initialWeightsFile, trainingSamples)
 	// TODO(palpant): Implement evaluation/selection by pitting this network
 	// against the previous best response network and only keeping it if it wins
 	// at least 55% of the time.
+	m.mx.Lock()
 	m.currentNetwork = nn
-	m.needsRetrain = false
 }
 
 func (m *MCTSPSRO) AddCurrentExploiterToModel() {
+	m.mx.Lock()
+	defer m.mx.Unlock()
 	// TODO(palpant): Implement real PSRO. For now we just average all networks
 	// with equal weight (aka Fictitious Play).
 	m.bestResponseNetworks = append(m.bestResponseNetworks, m.currentNetwork)
@@ -72,6 +85,7 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	m.samples = m.samples[:0]
 	m.sampleIdx = 0
 	m.needsRetrain = false
+	glog.Infof("Added network. PSRO now has %d oracles", len(m.bestResponseNetworks))
 }
 
 // GetPolicy implements mcts.Policy for one-sided IS-MCTS search when this policy is
@@ -106,14 +120,21 @@ func (m *MCTSPSRO) GetPolicy(node cfr.GameTreeNode) []float32 {
 // Evaluate implements mcts.Evaluator for one-sided IS-MCTS search rollouts
 // when this policy is being trained as the exploiter.
 func (m *MCTSPSRO) Evaluate(node cfr.GameTreeNode) ([]float32, float32) {
-	if m.currentNetwork == nil {
+	nn := m.getCurrentNetwork()
+	if nn == nil {
 		p := uniformDistribution(node.NumChildren())
 		v := float32(0.0)
 		return p, v
 	}
 
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	return m.currentNetwork.Predict(is)
+	return nn.Predict(is)
+}
+
+func (m *MCTSPSRO) getCurrentNetwork() *TrainedLSTM {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	return m.currentNetwork
 }
 
 func uniformDistribution(n int) []float32 {

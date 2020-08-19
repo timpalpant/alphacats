@@ -95,7 +95,7 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 
 	glog.Infof("Building initial info set")
-	opponentPolicy := func(gn *alphacats.GameNode) []float32 {
+	opponentPolicy := func(gn cfr.GameTreeNode) []float32 {
 		return policy.GetPolicy(gn, float32(params.Temperature))
 	}
 	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)

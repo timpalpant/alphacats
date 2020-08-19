@@ -16,7 +16,7 @@ var initialNumCardsInDrawPile = cards.CoreDeck.Len() - 2*4 + 2
 // BeliefState holds the distribution of probabilities over underlying
 // game states as perceived from the point of view of one player, or common knowledge.
 type BeliefState struct {
-	opponentPolicy func(*GameNode) []float32
+	opponentPolicy func(cfr.GameTreeNode) []float32
 	infoSet        gamestate.InfoSet
 	states         []*GameNode
 	reachProbs     []float32
@@ -24,7 +24,7 @@ type BeliefState struct {
 
 // Return all game states consistent with the given initial hand.
 // Note that the passed hand should include the Defuse card.
-func NewBeliefState(opponentPolicy func(*GameNode) []float32, infoSet gamestate.InfoSet) *BeliefState {
+func NewBeliefState(opponentPolicy func(cfr.GameTreeNode) []float32, infoSet gamestate.InfoSet) *BeliefState {
 	tbdDrawPile := cards.NewStack()
 	for i := 0; i < initialNumCardsInDrawPile; i++ {
 		tbdDrawPile.SetNthCard(i, cards.TBD)

@@ -4,30 +4,31 @@ import logging
 import os
 import shutil
 
-from keras import backend as K
-from keras.callbacks import (
+import tensorflow.compat.v1.keras.backend as K
+from tensorflow.keras.callbacks import (
     EarlyStopping,
     TerminateOnNaN,
     ModelCheckpoint,
 )
-from keras.layers import (
+from tensorflow.keras.layers import (
     BatchNormalization,
+    Bidirectional,
     concatenate,
     LSTM,
     Dense,
     Input,
 )
-from keras.layers.wrappers import Bidirectional
-from keras.models import Model
-from keras.optimizers import Adam
-from keras.utils import (
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.utils import (
     plot_model,
     Sequence,
 )
 import matplotlib.pyplot as plt
 import numpy as np
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
 
+tf.disable_v2_behavior()
 
 # These constants must be kept in sync with the Go code.
 TF_GRAPH_TAG = "lstm"
@@ -65,7 +66,7 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     logging.info("History input shape: %s", history_shape)
     logging.info("Hands input shape: %s", hands_shape)
     logging.info("Draw pile input shape: %s", drawpile_shape)
-    logging.info("Output shape: %s", output_shape)
+    logging.info("Policy output shape: %s", policy_shape)
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
@@ -95,29 +96,9 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
         outputs=[policy_output, value_output])
     model.compile(
         loss=['categorical_crossentropy', 'mean_squared_error'],
-        loss='mean_squared_error',
         optimizer=Adam(clipnorm=1.0),
         metrics=['mean_absolute_error'])
     return model
-
-
-def train(model, data, val_data):
-    history = model.fit_generator(
-        data,
-        epochs=50,
-        validation_data=val_data,
-        use_multiprocessing=False,
-        workers=4,
-        max_queue_size=8,
-        callbacks=[
-            EarlyStopping(
-                monitor='val_loss', min_delta=0.001, patience=3,
-                restore_best_weights=True),
-            TerminateOnNaN(),
-        ],
-    )
-
-    return model, history
 
 
 def plot_metrics(history, output):
@@ -133,9 +114,22 @@ def plot_metrics(history, output):
     plt.savefig(output)
 
 
+def load_data(filename: str):
+    batch = np.load(filename)
+    n_samples = len(batch["Y_value"])
+    X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
+    X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
+    X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE * NUM_CARD_TYPES))
+    X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
+    Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))
+    Y_value = batch["Y_value"].reshape((n_samples, 1))
+    Y = {"policy": Y_policy, "value": Y_value}
+    return X, Y
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run training on a batch of advantages samples")
-    parser.add_argument("input", help="Input directory with batches of training data (npz)")
+    parser.add_argument("input", help="Input with training data (npz)")
     parser.add_argument("output", help="Directory to save trained model to")
     parser.add_argument("--validation_split", type=float, default=0.1,
                         help="Fraction of data to hold out for validation / early-stopping")
@@ -149,14 +143,8 @@ def main():
     sess = tf.Session(config=config)
     K.set_session(sess)
 
-    batches = sorted(glob.glob(os.path.join(args.input, "batch_*.npz")))
-    logging.info("Found %d batches in %s", len(batches), args.input)
-    val_n = int(args.validation_split * len(batches))
-    logging.info("Using %d batches for validation", val_n)
-    data = TrainingSequence(batches[val_n:])
-    val_data = TrainingSequence(batches[:val_n])
+    X, y = load_data(args.input)
 
-    X, y = data[0]
     history_shape = X["history"][0].shape
     hands_shape = X["hands"][0].shape
     drawpile_shape = X["drawpile"][0].shape
@@ -167,7 +155,21 @@ def main():
     if args.initial_weights:
         model.load_weights(args.initial_weights)
 
-    model, history = train(model, data, val_data)
+    history = model.fit(
+        x=X,
+        y=y,
+        epochs=20,
+        validation_split=0.1,
+        use_multiprocessing=False,
+        workers=4,
+        max_queue_size=8,
+        callbacks=[
+            EarlyStopping(
+                monitor='val_loss', min_delta=0.001, patience=3,
+                restore_best_weights=True),
+            TerminateOnNaN(),
+        ],
+    )
 
     if os.path.exists(args.output):
         shutil.rmtree(args.output)

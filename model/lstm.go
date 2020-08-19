@@ -68,7 +68,7 @@ type Sample struct {
 	Value   float32
 }
 
-func (m *LSTM) Train(samples []Sample) *TrainedLSTM {
+func (m *LSTM) Train(initialWeightsFile string, samples []Sample) *TrainedLSTM {
 	glog.Infof("Training network with %d samples", len(samples))
 	// Save training data to disk in a tempdir.
 	tmpDir, err := ioutil.TempDir(m.params.OutputDir, "training-data-")
@@ -77,14 +77,19 @@ func (m *LSTM) Train(samples []Sample) *TrainedLSTM {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	glog.Infof("Saving training data to: %v", tmpDir)
-	if err := saveTrainingData(samples, tmpDir, m.params.BatchSize, m.params.MaxTrainingDataWorkers); err != nil {
+	inputDataFile := filepath.Join(tmpDir, "input.npz")
+	glog.Infof("Saving training data to: %v", inputDataFile)
+	if err := saveTrainingData(samples, inputDataFile); err != nil {
 		glog.Fatal(err)
 	}
 
 	// Shell out to Python to train the network.
 	outputDir := filepath.Join(m.params.OutputDir, fmt.Sprintf("model_%08d", m.iter))
-	args := []string{"model/train.py", tmpDir, outputDir}
+	args := []string{"model/train.py", inputDataFile, outputDir}
+	if initialWeightsFile != "" {
+		args = append(args, "--initial_weights", initialWeightsFile)
+	}
+
 	cmd := exec.Command("python", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -161,6 +166,11 @@ func LoadTrainedLSTM(dir string, params Params) (*TrainedLSTM, error) {
 	}
 	go m.bgPredictionHandler()
 	return m, nil
+}
+
+func (m *TrainedLSTM) KerasWeightsFile() string {
+	// NB: Must match location of weights saved in train.py
+	return filepath.Join(m.dir, "weights.h5")
 }
 
 // When serializing, we just serialize the path to the model already on disk.

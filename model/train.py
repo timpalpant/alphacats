@@ -144,7 +144,7 @@ def main():
         max_queue_size=8,
         callbacks=[
             EarlyStopping(
-                monitor='val_loss', min_delta=0.001, patience=3,
+                monitor='val_loss', min_delta=0.0001, patience=5,
                 restore_best_weights=True),
             TerminateOnNaN(),
         ],

@@ -65,7 +65,7 @@ func NewLSTM(p Params) *LSTM {
 }
 
 type Sample struct {
-	InfoSet *alphacats.AbstractedInfoSet
+	InfoSet alphacats.AbstractedInfoSet
 	Policy  []float32
 	Value   float32
 }

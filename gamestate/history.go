@@ -297,6 +297,10 @@ func (packed EncodedAction) HasPrivateInfo() bool {
 	return (packed[0] >> 7) == 1
 }
 
+func (packed EncodedAction) String() string {
+	return packed.Decode().String()
+}
+
 func EncodeActions(actions []Action) []EncodedAction {
 	result := make([]EncodedAction, len(actions))
 	for i, action := range actions {

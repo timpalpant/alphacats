@@ -51,6 +51,8 @@ func (m *MCTSPSRO) TrainNetwork() {
 	m.mx.Lock()
 	defer m.mx.Unlock()
 	if !m.needsRetrain {
+		need := m.retrainInterval - (m.sampleIdx % m.retrainInterval)
+		glog.Infof("Need %d more samples before retraining", need)
 		return // Not enough data to retrain yet.
 	}
 

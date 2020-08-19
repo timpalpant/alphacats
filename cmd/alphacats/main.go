@@ -45,9 +45,9 @@ type SamplingParams struct {
 
 func main() {
 	var params RunParams
-	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 25000, "Number of games to play each epoch")
-	flag.IntVar(&params.NumMCTSIterations, "search_iter", 2000, "Number of MCTS iterations to perform")
-	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 500000, "Maximum number of training samples to keep")
+	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000, "Number of games to play each epoch")
+	flag.IntVar(&params.NumMCTSIterations, "search_iter", 2000, "Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000, "Maximum number of training samples to keep")
 	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30, "Maximum number of times to reuse a sample.")
 	flag.Float64Var(&params.Temperature, "temperature", 1.0,
 		"Temperature used when selecting actions during play")
@@ -137,7 +137,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 			samples = append(samples, model.Sample{
-				InfoSet: is,
+				InfoSet: *is,
 				Policy:  p,
 			})
 		}
@@ -161,9 +161,8 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 
 func simulate(search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, n int) {
 	var wg sync.WaitGroup
-	nWorkers := 2048 // TODO(palpant): Make this a flag.
+	nWorkers := min(n, 2048) // TODO(palpant): Make this a flag.
 	nPerWorker := n / nWorkers
-	glog.Infof("Simulating %d games in %d workers", nWorkers*nPerWorker, nWorkers)
 	for worker := 0; worker < nWorkers; worker++ {
 		wg.Add(1)
 		go func() {
@@ -176,4 +175,11 @@ func simulate(search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, n int
 	}
 
 	wg.Wait()
+}
+
+func min(i, j int) int {
+	if i < j {
+		return i
+	}
+	return j
 }

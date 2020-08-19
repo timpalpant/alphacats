@@ -140,36 +140,6 @@ func hidePrivateInfo(a gamestate.EncodedAction) gamestate.EncodedAction {
 	return a
 }
 
-func (is *AbstractedInfoSet) Equal(other *AbstractedInfoSet) bool {
-	if is.Hand != other.Hand {
-		return false
-	}
-
-	if is.P0PlayedCards != other.P0PlayedCards || is.P1PlayedCards != other.P1PlayedCards {
-		return false
-	}
-
-	if is.DrawPile != other.DrawPile {
-		return false
-	}
-
-	if is.PublicHistory != other.PublicHistory {
-		return false
-	}
-
-	if len(is.AvailableActions) != len(other.AvailableActions) {
-		return false
-	}
-
-	for i, a := range is.AvailableActions {
-		if other.AvailableActions[i] != a {
-			return false
-		}
-	}
-
-	return true
-}
-
 // Key implements cfr.InfoSet.
 func (is *AbstractedInfoSet) Key() string {
 	buf, _ := is.MarshalBinary()

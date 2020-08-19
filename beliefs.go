@@ -83,6 +83,10 @@ func (bs *BeliefState) Swap(i, j int) {
 // expanding determinizations as necessary and filtering to those that match
 // the given new info set.
 func (bs *BeliefState) Update(infoSet gamestate.InfoSet) {
+	if len(bs.reachProbs) == 0 {
+		panic(fmt.Errorf("Belief state is empty! hand: %s, history: %s", bs.infoSet.Hand, bs.infoSet.History))
+	}
+
 	if bs.states[0].Type() == cfr.ChanceNodeType {
 		bs.updateChanceAction(infoSet)
 	} else if infoSet.Player == bs.infoSet.Player {
@@ -241,6 +245,10 @@ func clearDrawPileKnowledge(state gamestate.GameState) gamestate.GameState {
 
 func (bs *BeliefState) SampleDeterminization() *GameNode {
 	// First sample one of our belief states according to the reach probabilities.
+	if len(bs.reachProbs) == 0 {
+		panic(fmt.Errorf("Belief state is empty! hand: %s, history: %s", bs.infoSet.Hand, bs.infoSet.History))
+	}
+
 	selected := sampleOne(bs.reachProbs)
 	game := bs.states[selected]
 	// Now sample a full determinization of this state uniformly, since all

@@ -106,21 +106,21 @@ func encodeDrawPile(drawPile cards.Stack, result []float32) {
 	})
 }
 
-func encodeOutputs(availableActions []gamestate.Action, advantages, result []float32) {
+func encodeOutputs(availableActions []gamestate.Action, policy, result []float32) {
 	clear(result)
 	for i, action := range availableActions {
 		switch action.Type {
 		case gamestate.DrawCard:
 			// First position is always the advantages of ending turn by drawing a card,
 			// since this corresponds to the "Unknown" card enum.
-			result[0] = advantages[i]
+			result[0] = policy[i]
 		case gamestate.PlayCard, gamestate.GiveCard:
 			// Next 9 positions correspond to playing/giving each card type.
-			result[action.Card] = advantages[i]
+			result[action.Card] = policy[i]
 		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
 			idx := cards.NumTypes + int(action.PositionInDrawPile)
-			result[idx] = advantages[i]
+			result[idx] = policy[i]
 		default:
 			panic(fmt.Errorf("unsupported action: %v", action))
 		}

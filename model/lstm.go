@@ -25,9 +25,12 @@ import (
 )
 
 const (
-	graphTag          = "lstm"
-	policyOutputLayer = "policy/BiasAdd"
-	valueOutputLayer  = "value/BiasAdd"
+	graphTag           = "lstm"
+	historyInputLayer  = "history"
+	handsInputLayer    = "hands"
+	drawPileInputLayer = "drawpile"
+	policyOutputLayer  = "policy/Softmax"
+	valueOutputLayer   = "value/BiasAdd"
 )
 
 var (
@@ -41,12 +44,11 @@ var (
 var tfConfig = []byte{50, 2, 32, 1}
 
 type Params struct {
-	BatchSize              int
-	OutputDir              string
-	NumEncodingWorkers     int
-	MaxTrainingDataWorkers int
-	MaxInferenceBatchSize  int
-	NumPredictionWorkers   int
+	BatchSize             int
+	OutputDir             string
+	NumEncodingWorkers    int
+	MaxInferenceBatchSize int
+	NumPredictionWorkers  int
 }
 
 // LSTM is a model for AlphaCats to be used in MCTS.
@@ -386,7 +388,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 		}
 
 		handsReader := bytes.NewReader(handsBuf)
-		handsShape := []int64{int64(len(batch)), int64(cards.NumTypes)}
+		handsShape := []int64{int64(len(batch)), 3 * int64(cards.NumTypes)}
 		handTensor, err := tf.ReadTensor(tf.Float, handsShape, handsReader)
 		if err != nil {
 			glog.Fatal(err)
@@ -420,9 +422,9 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 	for req := range reqCh {
 		resultTensors := predictBatch(model, req.history, req.hands, req.drawPiles)
 		policy := resultTensors[0].Value().([][]float32)
-		value := resultTensors[1].Value().([]float32)
+		value := resultTensors[1].Value().([][]float32)
 		for i, req := range req.batch {
-			req.resultCh <- predictionResult{policy[i], value[i]}
+			req.resultCh <- predictionResult{policy[i], value[i][0]}
 		}
 		samplesPredicted.Add(int64(len(req.batch)))
 		batchesPredicted.Add(1)
@@ -432,9 +434,9 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) []*tf.Tensor {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0):  history,
-			model.Graph.Operation("hands").Output(0):    hands,
-			model.Graph.Operation("drawpile").Output(0): drawPiles,
+			model.Graph.Operation(historyInputLayer).Output(0):  history,
+			model.Graph.Operation(handsInputLayer).Output(0):    hands,
+			model.Graph.Operation(drawPileInputLayer).Output(0): drawPiles,
 		},
 		[]tf.Output{
 			model.Graph.Operation(policyOutputLayer).Output(0),

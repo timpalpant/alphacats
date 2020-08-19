@@ -113,6 +113,15 @@ func (bs *BeliefState) updateChanceAction(infoSet gamestate.InfoSet) {
 }
 
 func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
+	if infoSet.History.Len() == bs.infoSet.History.Len() {
+		// This happens when the exploding kitten was just picked up.
+		// The game state does not advance (because we just drew a card,
+		// but the game tree advances to an InsertExplodingKitten node.
+		return
+	} else if infoSet.History.Len() < bs.infoSet.History.Len() {
+		panic(fmt.Errorf("Got info set with less history than previous info set: %+v vs. %+v", infoSet, bs.infoSet))
+	}
+
 	action := infoSet.History.Get(bs.infoSet.History.Len())
 	bs.determinizeForAction(action)
 	var newStates []*GameNode

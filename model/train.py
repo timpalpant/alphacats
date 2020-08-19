@@ -20,10 +20,7 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.utils import (
-    plot_model,
-    Sequence,
-)
+from tensorflow.keras.utils import plot_model
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow.compat.v1 as tf
@@ -38,27 +35,6 @@ N_ACTION_FEATURES = 16
 NUM_CARD_TYPES = 11
 MAX_CARDS_IN_DRAW_PILE = 13
 N_OUTPUTS = NUM_CARD_TYPES + MAX_CARDS_IN_DRAW_PILE + 1
-
-
-class TrainingSequence(Sequence):
-    def __init__(self, batches):
-        self.batches = batches
-
-    def __len__(self):
-        return len(self.batches)
-
-    def __getitem__(self, idx):
-        logging.debug("Loading batch %d", idx)
-        batch = np.load(self.batches[idx])
-        n_samples = len(batch["sample_weight"])
-        X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
-        X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
-        X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE * NUM_CARD_TYPES))
-        X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
-        Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))
-        Y_value = batch["Y_value"].reshape((n_samples, 1))
-        Y = {"policy": Y_policy, "value": Y_value}
-        return X, Y
 
 
 def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, policy_shape: int):
@@ -151,6 +127,8 @@ def main():
     policy_shape = y["policy"][0].shape[0]
     model = build_model(history_shape, hands_shape, drawpile_shape, policy_shape)
     print(model.summary())
+    print("Input layer names:", [node.op.name for node in model.inputs])
+    print("Output layer names:", [node.op.name for node in model.outputs])
 
     if args.initial_weights:
         model.load_weights(args.initial_weights)

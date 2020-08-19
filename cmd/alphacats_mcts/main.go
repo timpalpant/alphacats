@@ -1,3 +1,4 @@
+// This version of alphacats uses Smooth UCT MCTS only.
 package main
 
 import (

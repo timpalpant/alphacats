@@ -11,7 +11,7 @@ import (
 const (
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
-	numActionFeatures = 59
+	numActionFeatures = 16
 	// Vector size of output predictions: one for each card type,
 	// one for each insertion position, and one for drawing a card.
 	maxCardsInDrawPile = 13
@@ -67,12 +67,15 @@ func encodeAction(action gamestate.Action, result []float32) {
 	result[int(action.Player)] = 1.0
 	result[2+int(action.Type)-1] = 1.0
 	result[6+int(action.Card)] = 1.0
-	result[16+action.PositionInDrawPile] = 1.0
-	for j, card := range action.CardsSeen {
-		if card != cards.Unknown {
-			result[29+10*j+int(card)] = 1.0
-		}
-	}
+	// NOTE: Private action info is not included in the encoding.
+	// This is okay because our abstracted info set factors out private information
+	// about the draw pile and our hand separately.
+	//result[16+action.PositionInDrawPile] = 1.0
+	//for j, card := range action.CardsSeen {
+	//	if card != cards.Unknown {
+	//		result[29+10*j+int(card)] = 1.0
+	//	}
+	//}
 }
 
 func encodeHandTF(hand cards.Set, result []byte) {
@@ -85,6 +88,21 @@ func encodeHand(hand cards.Set, result []float32) {
 	clear(result)
 	hand.Iter(func(card cards.Card, count uint8) {
 		result[int(card)] = float32(count)
+	})
+}
+
+func encodeDrawPileTF(drawPile cards.Stack, result []byte) {
+	var oneHot [maxCardsInDrawPile * cards.NumTypes]float32
+	encodeDrawPile(drawPile, oneHot[:])
+	tffloats.EncodeF32s(oneHot[:], result)
+}
+
+func encodeDrawPile(drawPile cards.Stack, result []float32) {
+	clear(result)
+	i := 0
+	drawPile.Iter(func(card cards.Card) {
+		result[i*cards.NumTypes+int(card)] = 1.0
+		i++
 	})
 }
 

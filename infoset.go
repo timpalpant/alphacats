@@ -80,6 +80,9 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 	return nil
 }
 
+// AbstractedInfoSet abstracts away private history.
+// The main difference in this abstraction is that the exact ordering in which
+// private cards were received in the history is neglected.
 type AbstractedInfoSet struct {
 	PublicHistory    gamestate.History
 	Hand             cards.Set

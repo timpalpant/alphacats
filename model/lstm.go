@@ -1,4 +1,4 @@
-// Package model implements an LSTM-based network model for use in DeepCFR.
+// Package model implements an LSTM-based network model for use in DeepCFR or MCTS.
 // As input, the model takes the public game history (one-hot encoded),
 // as well as the player's current hand (one-hot encoded) and predicts the
 // advantages for each possible action in this infoset.
@@ -121,11 +121,6 @@ func (m *LSTM) UnmarshalBinary(buf []byte) error {
 		return err
 	}
 
-	// TODO(palpant): Remove after migration.
-	if m.params.NumPredictionWorkers == 0 {
-		m.params.NumPredictionWorkers = 2
-	}
-
 	if err := dec.Decode(&m.iter); err != nil {
 		return err
 	}
@@ -216,8 +211,9 @@ func (m *TrainedLSTM) Close() {
 }
 
 const (
-	tfHistorySize = 4 * gamestate.MaxNumActions * numActionFeatures
-	tfHandSize    = 4 * cards.NumTypes
+	tfHistorySize  = 4 * gamestate.MaxNumActions * numActionFeatures
+	tfHandSize     = 4 * cards.NumTypes
+	tfDrawPileSize = 4 * maxCardsInDrawPile * cards.NumTypes
 )
 
 var predictionRequestPool = sync.Pool{
@@ -242,6 +238,8 @@ func (m *TrainedLSTM) Predict(infoSet cfr.InfoSet, nActions int) []float32 {
 	encodeHandTF(is.Hand, tfHands)
 	encodeHandTF(is.P0PlayedCards, tfHands[tfHandSize:])
 	encodeHandTF(is.P1PlayedCards, tfHands[2*tfHandSize:])
+	tfDrawPile := make([]byte, tfDrawPileSize)
+	encodeDrawPileTF(is.DrawPile)
 	req := predictionRequestPool.Get().(*predictionRequest)
 	req.history = tfHistory
 	req.hands = tfHands
@@ -331,28 +329,32 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	}
 }
 
-func concat(batch []*predictionRequest) (histories, hands []byte) {
+func concat(batch []*predictionRequest) (histories, hands, drawPiles []byte) {
 	historyLen := 0
 	handsLen := 0
+	drawPilesLen := 0
 	for _, req := range batch {
 		historyLen += len(req.history)
 		handsLen += len(req.hands)
+		drawPilesLen += len(req.drawPiles)
 	}
 
 	histories = make([]byte, 0, historyLen)
 	hands = make([]byte, 0, handsLen)
+	drawPiles = make([]byte, 0, drawPilesLen)
 	for _, req := range batch {
 		histories = append(histories, req.history...)
 		hands = append(hands, req.hands...)
+		drawPiles = append(drawPiles, req.drawPiles...)
 	}
 
-	return histories, hands
+	return histories, hands, drawPiles
 }
 
 func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, outputCh chan *batchPredictionRequest) {
 	for batch := range batchCh {
 		// TODO: Shapes should be passed in to avoid coupling here.
-		historiesBuf, handsBuf := concat(batch)
+		historiesBuf, handsBuf, drawPilesBuf := concat(batch)
 		historiesReader := bytes.NewReader(historiesBuf)
 		historiesShape := []int64{int64(len(batch)), gamestate.MaxNumActions, numActionFeatures}
 		historyTensor, err := tf.ReadTensor(tf.Float, historiesShape, historiesReader)
@@ -367,24 +369,33 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 			glog.Fatal(err)
 		}
 
+		drawPilesReader := bytes.NewReader(drawPilesBuf)
+		drawPilesShape := []int64{int64(len(batch)), int64(maxCardsInDrawPile * cards.NumTypes)}
+		drawPilesTensor, err := tf.ReadTensor(tf.Float, drawPilesShape, drawPileReader)
+		if err != nil {
+			glog.Fatal(err)
+		}
+
 		outputCh <- &batchPredictionRequest{
-			history: historyTensor,
-			hands:   handTensor,
-			batch:   batch,
+			history:   historyTensor,
+			hands:     handTensor,
+			drawPiles: drawPilesTensor,
+			batch:     batch,
 		}
 	}
 }
 
 type batchPredictionRequest struct {
-	history *tf.Tensor
-	hands   *tf.Tensor
-	batch   []*predictionRequest
+	history   *tf.Tensor
+	hands     *tf.Tensor
+	drawPiles *tf.Tensor
+	batch     []*predictionRequest
 }
 
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
 	defer model.Session.Close()
 	for req := range reqCh {
-		resultTensor := predictBatch(model, req.history, req.hands)
+		resultTensor := predictBatch(model, req.history, req.hands, req.drawPiles)
 		result := resultTensor.Value().([][]float32)
 		for i, req := range req.batch {
 			req.resultCh <- result[i]
@@ -394,11 +405,12 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hands *tf.Tensor) *tf.Tensor {
+func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) *tf.Tensor {
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
-			model.Graph.Operation("history").Output(0): history,
-			model.Graph.Operation("hands").Output(0):   hands,
+			model.Graph.Operation("history").Output(0):  history,
+			model.Graph.Operation("hands").Output(0):    hands,
+			model.Graph.Operation("drawpile").Output(0): drawPiles,
 		},
 		[]tf.Output{
 			model.Graph.Operation(outputLayer).Output(0),

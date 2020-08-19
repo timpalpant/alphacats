@@ -68,12 +68,14 @@ func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 
 	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
 	hands := make([]float32, 0, nSamples*3*cards.NumTypes)
+	drawPiles := make([]float32, 0, nSamples*maxCardsInDrawPile*cards.NumTypes)
 	y := make([]float32, 0, nSamples*outputDimension)
 	sampleWeights := make([]float32, 0, nSamples)
 
 	var is alphacats.AbstractedInfoSet
 	history := newOneHotHistory()
 	var hand [cards.NumTypes]float32
+	var drawPile [maxCardsInDrawPile * cards.NumTypes]float32
 	var outputs [outputDimension]float32
 	for _, sample := range batch {
 		if err := is.UnmarshalBinary(sample.InfoSet); err != nil {
@@ -95,6 +97,8 @@ func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 		hands = append(hands, hand[:]...)
 		encodeHand(is.P1PlayedCards, hand[:])
 		hands = append(hands, hand[:]...)
+		encodeDrawPile(is.DrawPile, drawPile[:])
+		drawPiles = append(drawPIles, drawPile[:]...)
 		sampleWeights = append(sampleWeights, sample.Weight)
 
 		encodeOutputs(is.AvailableActions, sample.Advantages, outputs[:])
@@ -104,6 +108,7 @@ func saveBatch(batch []*deepcfr.RegretSample, filename string) error {
 	return npyio.MakeNPZ(filename, map[string][]float32{
 		"X_history":     histories,
 		"X_hands":       hands,
+		"X_drawpile":    drawPiles,
 		"y":             y,
 		"sample_weight": sampleWeights,
 	})

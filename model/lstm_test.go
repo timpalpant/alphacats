@@ -64,7 +64,7 @@ func BenchmarkPredictParallel(b *testing.B) {
 }
 
 // BenchmarkPredict/batchSize=1-24         	     500	   2943487 ns/op
-// enchmarkPredict/batchSize=8-24         	     500	   3044852 ns/op
+// BenchmarkPredict/batchSize=8-24         	     500	   3044852 ns/op
 // BenchmarkPredict/batchSize=16-24        	     500	   3111497 ns/op
 // BenchmarkPredict/batchSize=32-24        	     500	   3596349 ns/op
 // BenchmarkPredict/batchSize=64-24        	     500	   3918713 ns/op

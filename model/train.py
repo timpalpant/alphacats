@@ -13,7 +13,7 @@ from keras.callbacks import (
 from keras.layers import (
     BatchNormalization,
     concatenate,
-    CuDNNLSTM,
+    LSTM,
     Dense,
     Input,
 )
@@ -32,9 +32,9 @@ import tensorflow as tf
 # These constants must be kept in sync with the Go code.
 TF_GRAPH_TAG = "lstm"
 
-MAX_HISTORY = 4
-N_ACTION_FEATURES = 59
-NUM_CARD_TYPES = 10
+MAX_HISTORY = 58
+N_ACTION_FEATURES = 16
+NUM_CARD_TYPES = 11
 MAX_CARDS_IN_DRAW_PILE = 13
 N_OUTPUTS = NUM_CARD_TYPES + MAX_CARDS_IN_DRAW_PILE + 1
 
@@ -52,26 +52,33 @@ class TrainingSequence(Sequence):
         n_samples = len(batch["sample_weight"])
         X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
         X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
-        X = {"history": X_history, "hands": X_hands}
+        X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE * NUM_CARD_TYPES))
+        X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
         y = batch["y"].reshape((n_samples, N_OUTPUTS))
         return X, y, batch["sample_weight"]
 
 
-def build_model(history_shape: tuple, hands_shape: tuple, output_shape: int):
+def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, output_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)
     logging.info("Hands input shape: %s", hands_shape)
+    logging.info("Draw pile input shape: %s", drawpile_shape)
     logging.info("Output shape: %s", output_shape)
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
-    lstm = Bidirectional(CuDNNLSTM(32, return_sequences=False))(history_input)
+    lstm = Bidirectional(LSTM(64, return_sequences=False))(history_input)
 
     # The private hand arm of the model.
     hands_input = Input(name="hands", shape=hands_shape)
+    hands_hidden_1 = Dense(64, activation='relu')(hands_input)
+
+    # The draw pile arm of the model.
+    drawpile_input = Input(name="drawpile", shape=drawpile_shape)
+    drawpile_hidden_1 = Dense(64, activation='relu')(drawpile_input)
 
     # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hands_input])
+    merged_inputs = concatenate([lstm, hands_hidden_1, drawpile_hidden_1])
     merged_hidden_1 = Dense(128, activation='relu')(merged_inputs)
     merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
     merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
@@ -81,7 +88,7 @@ def build_model(history_shape: tuple, hands_shape: tuple, output_shape: int):
     advantages_output = Dense(N_OUTPUTS, activation='linear', name='output')(normalization)
 
     model = Model(
-        inputs=[history_input, hands_input],
+        inputs=[history_input, hands_input, drawpile_input],
         outputs=[advantages_output])
     model.compile(
         loss='mean_squared_error',
@@ -148,8 +155,9 @@ def main():
     X, y, _ = data[0]
     history_shape = X["history"][0].shape
     hands_shape = X["hands"][0].shape
+    drawpile_shape = X["drawpile"][0].shape
     output_shape = y[0].shape[0]
-    model = build_model(history_shape, hands_shape, output_shape)
+    model = build_model(history_shape, hands_shape, drawpile_shape, output_shape)
     print(model.summary())
 
     if args.initial_weights:

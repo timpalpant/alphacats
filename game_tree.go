@@ -62,9 +62,6 @@ type GameNode struct {
 	// len(actions) must always equal len(children).
 	actions []gamestate.Action
 	parent  *GameNode
-
-	gnPool *gameNodeSlicePool
-	aPool  *actionSlicePool
 }
 
 // Verify that we implement the interface.
@@ -87,8 +84,6 @@ func (gn *GameNode) Clone() *GameNode {
 	result.parent = nil
 	result.children = nil
 	result.actions = nil
-	result.gnPool = nil
-	result.aPool = nil
 	return &result
 }
 
@@ -98,8 +93,6 @@ func (gn *GameNode) CloneWithState(state gamestate.GameState) *GameNode {
 	result.parent = nil
 	result.children = nil
 	result.actions = nil
-	result.gnPool = nil
-	result.aPool = nil
 	return &result
 }
 
@@ -171,12 +164,8 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 }
 
 func (gn *GameNode) allocChildren(n int) {
-	if gn.gnPool == nil {
-		gn.gnPool = &gameNodeSlicePool{}
-		gn.aPool = &actionSlicePool{}
-	}
-	gn.children = gn.gnPool.alloc(n)
-	gn.actions = gn.aPool.alloc(n)
+	gn.children = make([]GameNode, 0, n)
+	gn.actions = make([]gamestate.Action, 0, n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
@@ -285,11 +274,6 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
-
-	gn.gnPool.free(gn.children)
-	gn.children = nil
-	gn.aPool.free(gn.actions)
-	gn.actions = nil
 }
 
 func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int) {

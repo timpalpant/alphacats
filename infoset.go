@@ -83,6 +83,9 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 // AbstractedInfoSet abstracts away private history.
 // The main difference in this abstraction is that the exact ordering in which
 // private cards were received in the history is neglected.
+// A second difference is that cards known to be in the draw pile (but not known where)
+// are forgotten. This can happen if a SeeTheFuture card is played followed by
+// a shuffle.
 type AbstractedInfoSet struct {
 	PublicHistory    gamestate.History
 	Hand             cards.Set

@@ -94,7 +94,7 @@ func NewHistoryFromActions(actions []Action) History {
 	return h
 }
 
-func (h *History) String() string {
+func (h History) String() string {
 	return fmt.Sprintf("%v", h.actions[:h.n])
 }
 

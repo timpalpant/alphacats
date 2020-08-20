@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 
+	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
 
 	"github.com/timpalpant/alphacats/cards"
@@ -14,7 +15,7 @@ import (
 var initialNumCardsInDrawPile = cards.CoreDeck.Len() - 2*4 + 2
 
 // BeliefState holds the distribution of probabilities over underlying
-// game states as perceived from the point of view of one player, or common knowledge.
+// game states as perceived from the point of view of one player.
 type BeliefState struct {
 	opponentPolicy func(cfr.GameTreeNode) []float32
 	infoSet        gamestate.InfoSet
@@ -83,10 +84,6 @@ func (bs *BeliefState) Swap(i, j int) {
 // expanding determinizations as necessary and filtering to those that match
 // the given new info set.
 func (bs *BeliefState) Update(infoSet gamestate.InfoSet) {
-	if len(bs.reachProbs) == 0 {
-		panic(fmt.Errorf("Belief state is empty! hand: %s, history: %s", bs.infoSet.Hand, bs.infoSet.History))
-	}
-
 	if bs.states[0].Type() == cfr.ChanceNodeType {
 		bs.updateChanceAction(infoSet)
 	} else if infoSet.Player == bs.infoSet.Player {
@@ -95,25 +92,64 @@ func (bs *BeliefState) Update(infoSet gamestate.InfoSet) {
 		bs.updateOpponentAction(infoSet)
 	}
 
+	glog.V(2).Infof("Belief state now has %d states", len(bs.states))
 	bs.infoSet = infoSet
 }
 
+type weightedBelief struct {
+	node *GameNode
+	p    float32
+}
+
+type shuffledState struct {
+	drawPile      cards.Set
+	hand          cards.Set
+	publicHistory gamestate.History
+}
+
 func (bs *BeliefState) updateChanceAction(infoSet gamestate.InfoSet) {
-	newStates := bs.states[:0]
-	for _, state := range bs.states {
+	// Optimization: collapse all states that are now equivalent.
+	// Any previous knowledge about the specific ordering of cards in the draw pile
+	// is now irrelevant (although knowing the existence of particular cards in the
+	// pile is still relevant).
+	seen := make(map[shuffledState]weightedBelief)
+	for i, state := range bs.states {
 		if state.Type() != cfr.ChanceNodeType {
 			panic(fmt.Errorf("Updating beliefs as if at a chance node, but belief state is a %v", state.Type()))
+		}
+
+		is := state.GetInfoSet(1 - infoSet.Player)
+		var publicHistory gamestate.History
+		for j := 0; j < is.History.Len(); j++ {
+			action := is.History.Get(j)
+			action.PositionInDrawPile = 0
+			action.CardsSeen = [3]cards.Card{}
+			publicHistory.Append(action)
+		}
+		shuffleState := shuffledState{
+			drawPile:      state.GetDrawPile().ToSet(),
+			hand:          is.Hand,
+			publicHistory: publicHistory,
 		}
 
 		// NOTE: Since, after the initial deal, the only chance action in the
 		// game is when the Shuffle card is played, we can implement it by simply
 		// clearing all knowledge of the draw pile state.
+		b := seen[shuffleState]
 		child := state.GetChild(0).(*GameNode)
 		shuffledState := clearDrawPileKnowledge(child.GetState())
-		newStates = append(newStates, child.CloneWithState(shuffledState))
+		b.node = child.CloneWithState(shuffledState)
+		b.p += bs.reachProbs[i]
+		seen[shuffleState] = b
+		state.Close()
 	}
 
-	bs.states = newStates
+	bs.states = bs.states[:0]
+	bs.reachProbs = bs.reachProbs[:0]
+	for _, b := range seen {
+		bs.states = append(bs.states, b.node)
+		bs.reachProbs = append(bs.reachProbs, b.p)
+	}
 }
 
 func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
@@ -130,8 +166,10 @@ func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
 	bs.determinizeForAction(action)
 	var newStates []*GameNode
 	var newReachProbs []float32
+	nChildren := 0
 	for i, determinization := range bs.states {
 		for j := 0; j < determinization.NumChildren(); j++ {
+			nChildren++
 			child := determinization.GetChild(j).(*GameNode)
 			is := child.GetInfoSet(bs.infoSet.Player)
 			if is == infoSet {
@@ -140,6 +178,16 @@ func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
 				newReachProbs = append(newReachProbs, bs.reachProbs[i])
 			}
 		}
+
+		determinization.Close()
+	}
+
+	if len(newStates) == 0 {
+		glog.Errorf("Old info set: hand: %s, history: %s", bs.infoSet.Hand, bs.infoSet.History)
+		glog.Errorf("New info set: hand: %s, history: %s", infoSet.Hand, infoSet.History)
+		glog.Infof("Children considered: %d", nChildren)
+		glog.Infof("States considered: %s", len(bs.states))
+		panic(fmt.Errorf("Belief state is empty!"))
 	}
 
 	bs.states = newStates
@@ -162,6 +210,8 @@ func (bs *BeliefState) updateOpponentAction(infoSet gamestate.InfoSet) {
 				newReachProbs = append(newReachProbs, policyP[j]*bs.reachProbs[i])
 			}
 		}
+
+		determinization.Close()
 	}
 
 	bs.states = newStates
@@ -169,17 +219,149 @@ func (bs *BeliefState) updateOpponentAction(infoSet gamestate.InfoSet) {
 }
 
 func (bs *BeliefState) determinizeForAction(action gamestate.Action) {
+	glog.V(2).Infof("Determinizing for action: %v", action)
 	// Determinize just enough info so that all actions are fully specified.
 	switch action.Type {
 	case gamestate.PlayCard:
 		if action.Card == cards.SeeTheFuture {
-			bs.determinizeTopKCards(3)
+			if action.CardsSeen[0] != cards.Unknown {
+				// We know the specific cards that were seen, so we can avoid
+				// fully expanding the set of possibiliies.
+				bs.determinizeSeenCards(action.CardsSeen)
+			} else {
+				bs.determinizeTopKCards(3)
+			}
 		} else if action.Card == cards.DrawFromTheBottom {
-			bs.determinizeForDrawFromTheBottom()
+			drawnCard := action.CardsSeen[0]
+			if drawnCard != cards.Unknown {
+				// We know the specific card that was drawn, so we can avoid
+				// fully expanding the set of possibiliies.
+				bs.determinizeDrawnCardFromBottom(drawnCard)
+			} else {
+				bs.determinizeForDrawFromTheBottom()
+			}
 		}
 	case gamestate.DrawCard:
-		bs.determinizeTopKCards(1)
+		drawnCard := action.CardsSeen[0]
+		if drawnCard != cards.Unknown {
+			// We know the specific card that was drawn, so we can avoid
+			// fully expanding the set of possibiliies.
+			bs.determinizeDrawnCard(drawnCard)
+		} else {
+			bs.determinizeTopKCards(1)
+		}
 	}
+}
+
+func (bs *BeliefState) determinizeSeenCards(seenCards [3]cards.Card) {
+	var newStates []*GameNode
+	var newReachProbs []float32
+	for i, game := range bs.states {
+		state := game.GetState()
+		drawPile := state.GetDrawPile()
+		incompatibleState := false
+		for i, card := range seenCards {
+			drawPileCard := drawPile.NthCard(i)
+			if drawPileCard == cards.TBD {
+				freeCards := getFreeCards(state)
+				if !freeCards.Contains(card) {
+					// This state could not possibly be valid because we drew a card
+					// that was known not to be among the set of undetermined cards.
+					incompatibleState = true
+					break
+				}
+
+				drawPile.SetNthCard(i, card)
+				state = gamestate.NewShuffled(state, drawPile)
+			} else if drawPileCard != card {
+				incompatibleState = true
+				break
+			} // else: card was already determined to be the seen card.
+		}
+
+		if incompatibleState {
+			continue
+		}
+
+		determinizedGame := game.CloneWithState(state)
+		newStates = append(newStates, determinizedGame)
+		newReachProbs = append(newReachProbs, bs.reachProbs[i])
+	}
+
+	bs.states = newStates
+	bs.reachProbs = newReachProbs
+}
+
+func (bs *BeliefState) determinizeDrawnCard(drawnCard cards.Card) {
+	var newStates []*GameNode
+	var newReachProbs []float32
+	for i, game := range bs.states {
+		state := game.GetState()
+		drawPile := state.GetDrawPile()
+		topCard := drawPile.NthCard(0)
+		if topCard == cards.TBD {
+			freeCards := getFreeCards(state)
+			if !freeCards.Contains(drawnCard) {
+				// This state could not possibly be valid because we drew a card
+				// that was known not to be among the set of undetermined cards.
+				continue
+			}
+
+			drawPile.SetNthCard(0, drawnCard)
+			determinizedState := gamestate.NewShuffled(state, drawPile)
+			determinizedGame := game.CloneWithState(determinizedState)
+			newStates = append(newStates, determinizedGame)
+			newReachProbs = append(newReachProbs, bs.reachProbs[i])
+		} else if topCard == drawnCard {
+			newStates = append(newStates, game)
+			newReachProbs = append(newReachProbs, bs.reachProbs[i])
+		} // else: state is incompatible with drawn card
+	}
+
+	bs.states = newStates
+	bs.reachProbs = newReachProbs
+}
+
+func (bs *BeliefState) determinizeDrawnCardFromBottom(drawnCard cards.Card) {
+	var newStates []*GameNode
+	var newReachProbs []float32
+	for i, game := range bs.states {
+		state := game.GetState()
+		drawPile := state.GetDrawPile()
+		bottomCard := drawPile.NthCard(drawPile.Len() - 1)
+		if bottomCard == cards.TBD {
+			freeCards := getFreeCards(state)
+			if !freeCards.Contains(drawnCard) {
+				// This state could not possibly be valid because we drew a card
+				// that was known not to be among the set of undetermined cards.
+				continue
+			}
+
+			drawPile.SetNthCard(drawPile.Len()-1, drawnCard)
+			determinizedState := gamestate.NewShuffled(state, drawPile)
+			determinizedGame := game.CloneWithState(determinizedState)
+			newStates = append(newStates, determinizedGame)
+			newReachProbs = append(newReachProbs, bs.reachProbs[i])
+		} else if bottomCard == drawnCard {
+			newStates = append(newStates, game)
+			newReachProbs = append(newReachProbs, bs.reachProbs[i])
+		} // else: state is incompatible with drawn card
+	}
+
+	if len(newStates) == 0 {
+		for i, game := range bs.states {
+			glog.Errorf("Candidates state %d: %s", i, game)
+			state := game.GetState()
+			glog.Errorf("=> Draw pile: %s", state.GetDrawPile())
+			glog.Errorf("=> P0 hand: %s", state.GetPlayerHand(gamestate.Player0))
+			glog.Errorf("=> P1 hand: %s", state.GetPlayerHand(gamestate.Player1))
+		}
+		glog.Errorf("Looking to draw from the bottom a: %s", drawnCard)
+		panic(fmt.Errorf("Belief state is empty!"))
+	}
+
+	bs.states = newStates
+	bs.reachProbs = newReachProbs
 }
 
 func (bs *BeliefState) determinizeTopKCards(k int) {
@@ -245,10 +427,6 @@ func clearDrawPileKnowledge(state gamestate.GameState) gamestate.GameState {
 
 func (bs *BeliefState) SampleDeterminization() *GameNode {
 	// First sample one of our belief states according to the reach probabilities.
-	if len(bs.reachProbs) == 0 {
-		panic(fmt.Errorf("Belief state is empty! hand: %s, history: %s", bs.infoSet.Hand, bs.infoSet.History))
-	}
-
 	selected := sampleOne(bs.reachProbs)
 	game := bs.states[selected]
 	// Now sample a full determinization of this state uniformly, since all
@@ -319,16 +497,16 @@ func enumerateDrawPileDeterminizations(state gamestate.GameState, n int) map[car
 	drawPile := state.GetDrawPile()
 	freeCards := getFreeCards(state)
 	result := make(map[cards.Stack]int)
-	enumerateDrawPilesHelper(freeCards, drawPile, n, func(determinizedDrawPile cards.Stack) {
-		result[determinizedDrawPile]++
+	enumerateDrawPilesHelper(freeCards, drawPile, n, 1, func(determinizedDrawPile cards.Stack, freq int) {
+		result[determinizedDrawPile] += freq
 	})
 
 	return result
 }
 
-func enumerateDrawPilesHelper(deck cards.Set, result cards.Stack, n int, cb func(shuffle cards.Stack)) {
+func enumerateDrawPilesHelper(deck cards.Set, result cards.Stack, n int, freq int, cb func(shuffle cards.Stack, freq int)) {
 	if n == 0 { // All cards have been used, complete shuffle.
-		cb(result)
+		cb(result, freq)
 		return
 	}
 
@@ -342,10 +520,11 @@ func enumerateDrawPilesHelper(deck cards.Set, result cards.Stack, n int, cb func
 			newResult.SetNthCard(n-1, card)
 
 			// Recurse with remaining deck and new result.
-			enumerateDrawPilesHelper(remaining, newResult, n-1, cb)
+			enumerateDrawPilesHelper(remaining, newResult, n-1, int(count)*freq, cb)
 		})
 	} else {
-		enumerateDrawPilesHelper(deck, result, n-1, cb)
+		// Nth card in the draw pile is already determined.
+		enumerateDrawPilesHelper(deck, result, n-1, freq, cb)
 	}
 }
 

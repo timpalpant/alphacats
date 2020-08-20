@@ -274,6 +274,9 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
+	gn.parent = nil
+	gn.children = nil
+	gn.actions = nil
 }
 
 func makePlayTurnNode(node *GameNode, player gamestate.Player, pendingTurns int) {

@@ -25,12 +25,15 @@ import (
 var stdin = bufio.NewReader(os.Stdin)
 
 type RunParams struct {
-	NumGamesPerEpoch  int
-	NumMCTSIterations int
-	SamplingParams    SamplingParams
-	Temperature       float64
-	SampleBufferSize  int
-	MaxSampleReuse    int
+	NumGamesPerEpoch    int
+	MaxParallelGames    int
+	NumMCTSIterations   int
+	MaxParallelSearches int
+
+	SamplingParams   SamplingParams
+	Temperature      float64
+	SampleBufferSize int
+	MaxSampleReuse   int
 
 	ModelParams model.Params
 }
@@ -46,7 +49,9 @@ type SamplingParams struct {
 func main() {
 	var params RunParams
 	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000, "Number of games to play each epoch")
+	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(), "Number of games to run in parallel")
 	flag.IntVar(&params.NumMCTSIterations, "search_iter", 2000, "Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", 2048, "Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000, "Maximum number of training samples to keep")
 	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30, "Maximum number of times to reuse a sample.")
 	flag.Float64Var(&params.Temperature, "temperature", 1.0,
@@ -89,7 +94,7 @@ func main() {
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
 		var wg sync.WaitGroup
-		sem := make(chan struct{}, runtime.NumCPU())
+		sem := make(chan struct{}, params.MaxParallelGames)
 		for i := 0; i < params.NumGamesPerEpoch; i++ {
 			wg.Add(1)
 			sem <- struct{}{}
@@ -131,7 +136,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 		} else {
-			simulate(search, beliefs, params.NumMCTSIterations)
+			simulate(search, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
 			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			p := search.GetPolicy(game, float32(params.Temperature))
 			selected := sampling.SampleOne(p, rand.Float32())
@@ -159,9 +164,9 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 	return samples
 }
 
-func simulate(search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, n int) {
+func simulate(search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, n, nParallel int) {
 	var wg sync.WaitGroup
-	nWorkers := min(n, 2048) // TODO(palpant): Make this a flag.
+	nWorkers := min(n, nParallel) // TODO(palpant): Make this a flag.
 	nPerWorker := n / nWorkers
 	for worker := 0; worker < nWorkers; worker++ {
 		wg.Add(1)

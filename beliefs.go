@@ -96,60 +96,53 @@ func (bs *BeliefState) Update(infoSet gamestate.InfoSet) {
 	bs.infoSet = infoSet
 }
 
-type weightedBelief struct {
-	node *GameNode
-	p    float32
-}
-
-type shuffledState struct {
-	drawPile      cards.Set
-	hand          cards.Set
-	publicHistory gamestate.History
-}
-
 func (bs *BeliefState) updateChanceAction(infoSet gamestate.InfoSet) {
-	// Optimization: collapse all states that are now equivalent.
-	// Any previous knowledge about the specific ordering of cards in the draw pile
-	// is now irrelevant (although knowing the existence of particular cards in the
-	// pile is still relevant).
-	seen := make(map[shuffledState]weightedBelief)
-	for i, state := range bs.states {
+	action := infoSet.History.Get(infoSet.History.Len() - 1)
+	if action.Type == gamestate.InsertExplodingKitten && action.PositionInDrawPile == 0 {
+		bs.updateInsertKittenRandom()
+	} else if action.Type == gamestate.PlayCard && action.Card == cards.Shuffle {
+		bs.updateShuffleAction()
+	} else {
+		panic(fmt.Errorf("unexpected chance node action: %v", action))
+	}
+}
+
+func (bs *BeliefState) updateInsertKittenRandom() {
+	var newStates []*GameNode
+	var newProbs []float32
+	for _, state := range bs.states {
 		if state.Type() != cfr.ChanceNodeType {
 			panic(fmt.Errorf("Updating beliefs as if at a chance node, but belief state is a %v", state.Type()))
 		}
 
-		is := state.GetInfoSet(1 - infoSet.Player)
-		var publicHistory gamestate.History
-		for j := 0; j < is.History.Len(); j++ {
-			action := is.History.Get(j)
-			action.PositionInDrawPile = 0
-			action.CardsSeen = [3]cards.Card{}
-			publicHistory.Append(action)
-		}
-		shuffleState := shuffledState{
-			drawPile:      state.GetDrawPile().ToSet(),
-			hand:          is.Hand,
-			publicHistory: publicHistory,
+		for i := 0; i < state.NumChildren(); i++ {
+			child := state.GetChild(i).(*GameNode)
+			newStates = append(newStates, child.Clone())
+			newProbs = append(newProbs, bs.reachProbs[i]/float32(state.NumChildren()))
 		}
 
-		// NOTE: Since, after the initial deal, the only chance action in the
-		// game is when the Shuffle card is played, we can implement it by simply
-		// clearing all knowledge of the draw pile state.
-		b := seen[shuffleState]
-		child := state.GetChild(0).(*GameNode)
-		shuffledState := clearDrawPileKnowledge(child.GetState())
-		b.node = child.CloneWithState(shuffledState)
-		b.p += bs.reachProbs[i]
-		seen[shuffleState] = b
 		state.Close()
 	}
 
-	bs.states = bs.states[:0]
-	bs.reachProbs = bs.reachProbs[:0]
-	for _, b := range seen {
-		bs.states = append(bs.states, b.node)
-		bs.reachProbs = append(bs.reachProbs, b.p)
+	bs.states = newStates
+	bs.reachProbs = newProbs
+}
+
+func (bs *BeliefState) updateShuffleAction() {
+	newStates := bs.states[:0]
+	for _, state := range bs.states {
+		if state.Type() != cfr.ChanceNodeType {
+			panic(fmt.Errorf("Updating beliefs as if at a chance node, but belief state is a %v", state.Type()))
+		}
+
+		child := state.GetChild(0).(*GameNode)
+		shuffledState := clearDrawPileKnowledge(child.GetState())
+		shuffledGame := child.CloneWithState(shuffledState)
+		newStates = append(newStates, shuffledGame)
+		state.Close()
 	}
+
+	bs.states = newStates
 }
 
 func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
@@ -166,10 +159,8 @@ func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
 	bs.determinizeForAction(action)
 	var newStates []*GameNode
 	var newReachProbs []float32
-	nChildren := 0
 	for i, determinization := range bs.states {
 		for j := 0; j < determinization.NumChildren(); j++ {
-			nChildren++
 			child := determinization.GetChild(j).(*GameNode)
 			is := child.GetInfoSet(bs.infoSet.Player)
 			if is == infoSet {
@@ -183,6 +174,27 @@ func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
 	}
 
 	if len(newStates) == 0 {
+		nChildren := 0
+		for i, determinization := range bs.states {
+			for j := 0; j < determinization.NumChildren(); j++ {
+				nChildren++
+				child := determinization.GetChild(j).(*GameNode)
+				is := child.GetInfoSet(bs.infoSet.Player)
+				if is == infoSet {
+					// Determinized game is consistent with our observed history.
+					newStates = append(newStates, child.Clone())
+					newReachProbs = append(newReachProbs, bs.reachProbs[i])
+				} else {
+					glog.Errorf("Candidates state %d: %s", i, child)
+					state := child.GetState()
+					glog.Errorf("=> Draw pile: %s", state.GetDrawPile())
+					glog.Errorf("=> P0 hand: %s", state.GetPlayerHand(gamestate.Player0))
+					glog.Errorf("=> P1 hand: %s", state.GetPlayerHand(gamestate.Player1))
+				}
+			}
+
+			determinization.Close()
+		}
 		glog.Errorf("Old info set: hand: %s, history: %s", bs.infoSet.Hand, bs.infoSet.History)
 		glog.Errorf("New info set: hand: %s, history: %s", infoSet.Hand, infoSet.History)
 		glog.Infof("Children considered: %d", nChildren)
@@ -203,7 +215,7 @@ func (bs *BeliefState) updateOpponentAction(infoSet gamestate.InfoSet) {
 		policyP := bs.opponentPolicy(determinization)
 		for j := 0; j < determinization.NumChildren(); j++ {
 			child := determinization.GetChild(j).(*GameNode)
-			is := child.GetInfoSet(gamestate.Player1)
+			is := child.GetInfoSet(bs.infoSet.Player)
 			if is == infoSet {
 				// Determinized game is consistent with our observed history.
 				newStates = append(newStates, child.Clone())

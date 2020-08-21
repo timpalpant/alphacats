@@ -1,4 +1,4 @@
-// This version of alphacats uses Smooth UCT MCTS only.
+// This version of alphacats uses lazy one-sided IS-MCTS, in a PSRO framework.
 package main
 
 import (
@@ -22,39 +22,39 @@ import (
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/model"
 )
 
 var stdin = bufio.NewReader(os.Stdin)
 
 type RunParams struct {
-	DeckType          string
-	NumMCTSIterations int
-	SamplingParams    SamplingParams
-	Temperature       float64
+	OracleDepth         int
+	NumMCTSIterations   int
+	MaxParallelSearches int
+
+	SamplingParams SamplingParams
+	Temperature    float64
 }
 
 type SamplingParams struct {
-	Seed  int64
-	C     float64
-	Gamma float64
-	Eta   float64
-	D     float64
+	Seed int64
+	C    float64
 }
 
 func main() {
 	var params RunParams
-	flag.IntVar(&params.NumMCTSIterations, "iter", 100000, "Number of MCTS iterations to perform")
-	flag.Float64Var(&params.Temperature, "temperature", 0.1,
+	flag.IntVar(&params.OracleDepth, "oracle_depth", 5,
+		"Number of FP oracles to train")
+	flag.IntVar(&params.NumMCTSIterations, "search_iter", 50000,
+		"Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(),
+		"Number of searches per game to run in parallel")
+	flag.Float64Var(&params.Temperature, "temperature", 1.0,
 		"Temperature used when selecting actions during play")
-	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
+	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123,
+		"Random seed")
 	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.75,
 		"Exploration factor C used in MCTS search")
-	flag.Float64Var(&params.SamplingParams.Gamma, "sampling.gamma", 0.1,
-		"Mixing factor Gamma used in Smooth UCT search")
-	flag.Float64Var(&params.SamplingParams.Eta, "sampling.eta", 0.9,
-		"Mixing factor eta used in Smooth UCT search")
-	flag.Float64Var(&params.SamplingParams.D, "sampling.d", 0.001,
-		"Mixing factor d used in Smooth UCT search")
 
 	flag.Parse()
 
@@ -63,19 +63,34 @@ func main() {
 
 	deck := cards.CoreDeck.AsSlice()
 	cardsPerPlayer := 4
-	optimizer := mcts.NewSmoothUCT(
-		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
-		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D))
 	for i := 0; ; i++ {
 		deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
-		playGame(optimizer, params, deal)
+		playGame(params, deal)
 	}
 }
 
-func simulate(optimizer *mcts.SmoothUCT, beliefs *alphacats.BeliefState, n int) {
+type RecursiveSearchPolicy struct {
+	player  gamestate.Player
+	beliefs *alphacats.BeliefState
+	search  *mcts.OneSidedISMCTS
+
+	temperature float32
+	numSearches int
+}
+
+func (r *RecursiveSearchPolicy) UpdateBeliefs(node cfr.GameTreeNode) {
+	glog.Info("Propagating beliefs")
+	r.beliefs.Update(node.Type(), node.(*alphacats.GameNode).GetInfoSet(r.player))
+}
+
+func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
+	beliefs := r.beliefs.Clone()
+	glog.Info("Propagating beliefs")
+	beliefs.Update(node.Type(), node.(*alphacats.GameNode).GetInfoSet(r.player))
+
 	var wg sync.WaitGroup
 	nWorkers := runtime.NumCPU()
-	nPerWorker := n / nWorkers
+	nPerWorker := r.numSearches / nWorkers
 	glog.Infof("Simulating %d games in %d workers", nWorkers*nPerWorker, nWorkers)
 	for worker := 0; worker < nWorkers; worker++ {
 		wg.Add(1)
@@ -83,25 +98,33 @@ func simulate(optimizer *mcts.SmoothUCT, beliefs *alphacats.BeliefState, n int) 
 			defer wg.Done()
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				optimizer.Run(game)
+				r.search.Run(game)
 			}
 		}()
 	}
 
 	wg.Wait()
+	return r.search.GetPolicy(node, r.temperature)
 }
 
-func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
+func playGame(params RunParams, deal alphacats.Deal) {
 	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 
 	glog.Infof("Building initial info set")
-	opponentPolicy := func(gn cfr.GameTreeNode) []float32 {
-		return policy.GetPolicy(gn, float32(params.Temperature))
-	}
 	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
-	beliefs := alphacats.NewBeliefState(opponentPolicy, infoSet)
-	glog.Infof("Initial info set has %d game states", beliefs.Len())
-	simulate(policy, beliefs, params.NumMCTSIterations)
+	policies := []mcts.Policy{&model.UniformRandomPolicy{}, &model.UniformRandomPolicy{}}
+	for i := 0; i < 2*params.OracleDepth; i++ {
+		player := i % 2
+		opponentPolicy := policies[1-player]
+		policies[player] = &RecursiveSearchPolicy{
+			player:      gamestate.Player(player),
+			beliefs:     alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet),
+			search:      mcts.NewOneSidedISMCTS(player, opponentPolicy, mcts.NewRandomRollout(1), float32(params.SamplingParams.C)),
+			temperature: float32(params.Temperature),
+			numSearches: params.NumMCTSIterations,
+		}
+	}
+	policy := policies[1].(*RecursiveSearchPolicy)
 
 	for game.Type() != cfr.TerminalNodeType {
 		nodeType := game.Type()
@@ -123,8 +146,7 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 			lastAction := game.(*alphacats.GameNode).LastAction()
 			glog.Infof("[player] Chose to %v", lastAction)
 		} else {
-			simulate(policy, beliefs, params.NumMCTSIterations)
-			p := policy.GetPolicy(game, float32(params.Temperature))
+			p := policy.GetPolicy(game)
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 			lastAction := game.(*alphacats.GameNode).LastAction()
@@ -132,9 +154,6 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 				hidePrivateInfo(lastAction), p[selected], p)
 			glog.V(4).Infof("[strategy] Action result was: %v", lastAction)
 		}
-
-		glog.Info("Propagating beliefs")
-		beliefs.Update(nodeType, game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1))
 	}
 
 	glog.Info("GAME OVER")

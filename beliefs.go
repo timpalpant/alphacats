@@ -67,6 +67,17 @@ func NewBeliefState(opponentPolicy func(cfr.GameTreeNode) []float32, infoSet gam
 	}
 }
 
+func (bs *BeliefState) Clone() *BeliefState {
+	result := *bs
+	result.states = make([]*GameNode, len(bs.states))
+	for i, node := range bs.states {
+		result.states[i] = node.Clone()
+	}
+	result.reachProbs = make([]float32, len(bs.reachProbs))
+	copy(result.reachProbs, bs.reachProbs)
+	return &result
+}
+
 func (bs *BeliefState) Len() int {
 	return len(bs.states)
 }
@@ -84,19 +95,23 @@ func (bs *BeliefState) Swap(i, j int) {
 // expanding determinizations as necessary and filtering to those that match
 // the given new info set.
 func (bs *BeliefState) Update(nodeType cfr.NodeType, infoSet gamestate.InfoSet) {
-	if nodeType == cfr.ChanceNodeType {
-		bs.updateChanceAction(infoSet)
-	} else if infoSet.Player == bs.infoSet.Player {
-		bs.updateSelfAction(infoSet)
-	} else {
-		bs.updateOpponentAction(infoSet)
-	}
+	nUpdates := infoSet.History.Len() - bs.infoSet.History.Len()
+	glog.V(2).Infof("Performing %d belief updates", nUpdates)
+	for i := 0; i < nUpdates; i++ {
+		if nodeType == cfr.ChanceNodeType {
+			bs.updateChanceAction(infoSet)
+		} else if infoSet.Player == bs.infoSet.Player {
+			bs.updateSelfAction(infoSet)
+		} else {
+			bs.updateOpponentAction(infoSet)
+		}
 
-	glog.V(2).Infof("Belief state now has %d states", len(bs.states))
-	nBefore := len(bs.states)
-	bs.dedupStates()
-	glog.V(2).Infof("Belief state now has %d states after deduping (deduped %d)", len(bs.states), nBefore-len(bs.states))
-	bs.infoSet = infoSet
+		glog.V(2).Infof("Belief state now has %d states", len(bs.states))
+		nBefore := len(bs.states)
+		bs.dedupStates()
+		glog.V(2).Infof("Belief state now has %d states after deduping (deduped %d)", len(bs.states), nBefore-len(bs.states))
+		bs.infoSet = infoSet
+	}
 }
 
 type weightedBelief struct {

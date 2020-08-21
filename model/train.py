@@ -103,7 +103,7 @@ def load_data(filename: str):
     batch = np.load(filename)
     n_samples = len(batch["Y_value"])
     X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
-    X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
+    X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES + 2))
     X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE * NUM_CARD_TYPES))
     X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
     Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))

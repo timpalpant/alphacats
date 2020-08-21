@@ -12,12 +12,13 @@ func saveTrainingData(batch []Sample, filename string) error {
 	nSamples := len(batch)
 
 	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
-	hands := make([]float32, 0, nSamples*3*cards.NumTypes)
+	hands := make([]float32, 0, nSamples*(3*cards.NumTypes+2))
 	drawPiles := make([]float32, 0, nSamples*maxCardsInDrawPile*cards.NumTypes)
 	yPolicy := make([]float32, 0, nSamples*outputDimension)
 	yValue := make([]float32, 0, nSamples)
 
 	history := newOneHotHistory()
+	var player [2]float32
 	var hand [cards.NumTypes]float32
 	var drawPile [maxCardsInDrawPile * cards.NumTypes]float32
 	var policy [outputDimension]float32
@@ -32,6 +33,8 @@ func saveTrainingData(batch []Sample, filename string) error {
 		for _, row := range history {
 			histories = append(histories, row...)
 		}
+		encodePlayer(is.Player, player[:])
+		hands = append(hands, player[:]...)
 		encodeHand(is.Hand, hand[:])
 		hands = append(hands, hand[:]...)
 		played1, played2 := is.P0PlayedCards, is.P1PlayedCards

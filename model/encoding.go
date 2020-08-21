@@ -91,6 +91,17 @@ func encodeHand(hand cards.Set, result []float32) {
 	})
 }
 
+func encodePlayerTF(player gamestate.Player, result []byte) {
+	var oneHot [2]float32
+	encodePlayer(player, oneHot[:])
+	tffloats.EncodeF32s(oneHot[:], result)
+}
+
+func encodePlayer(player gamestate.Player, result []float32) {
+	clear(result)
+	result[player] = 1.0
+}
+
 func encodeDrawPileTF(drawPile cards.Stack, result []byte) {
 	var oneHot [maxCardsInDrawPile * cards.NumTypes]float32
 	encodeDrawPile(drawPile, oneHot[:])

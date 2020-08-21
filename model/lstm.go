@@ -220,6 +220,7 @@ func (m *TrainedLSTM) Close() {
 const (
 	tfHistorySize  = 4 * gamestate.MaxNumActions * numActionFeatures
 	tfHandSize     = 4 * cards.NumTypes
+	tfPlayerSize   = 4 * 2
 	tfDrawPileSize = 4 * maxCardsInDrawPile * cards.NumTypes
 )
 
@@ -234,8 +235,9 @@ var predictionRequestPool = sync.Pool{
 func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float32) {
 	tfHistory := make([]byte, tfHistorySize)
 	encodeHistoryTF(is.PublicHistory, tfHistory)
-	tfHands := make([]byte, 3*tfHandSize)
-	encodeHandTF(is.Hand, tfHands)
+	tfHands := make([]byte, 3*tfHandSize+tfPlayerSize)
+	encodePlayerTF(is.Player, tfHands)
+	encodeHandTF(is.Hand, tfHands[tfPlayerSize:])
 	played1, played2 := is.P0PlayedCards, is.P1PlayedCards
 	if is.Player == gamestate.Player1 {
 		played1, played2 = played2, played1

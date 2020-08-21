@@ -34,9 +34,13 @@ func saveTrainingData(batch []Sample, filename string) error {
 		}
 		encodeHand(is.Hand, hand[:])
 		hands = append(hands, hand[:]...)
-		encodeHand(is.P0PlayedCards, hand[:])
+		played1, played2 := is.P0PlayedCards, is.P1PlayedCards
+		if is.Player == gamestate.Player1 {
+			played1, played2 = played2, played1
+		}
+		encodeHand(played1, hand[:])
 		hands = append(hands, hand[:]...)
-		encodeHand(is.P1PlayedCards, hand[:])
+		encodeHand(played2, hand[:])
 		hands = append(hands, hand[:]...)
 		encodeDrawPile(is.DrawPile, drawPile[:])
 		drawPiles = append(drawPiles, drawPile[:]...)

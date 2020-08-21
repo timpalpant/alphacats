@@ -14,12 +14,14 @@ from tensorflow.keras.layers import (
     BatchNormalization,
     Bidirectional,
     concatenate,
-    LSTM,
     Dense,
+    Dropout,
     Input,
+    LSTM,
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l2
 from tensorflow.keras.utils import plot_model
 import matplotlib.pyplot as plt
 import numpy as np
@@ -54,18 +56,25 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # The draw pile arm of the model.
     drawpile_input = Input(name="drawpile", shape=drawpile_shape)
 
-    # Concatenate and predict advantages.
-    merged_inputs = concatenate([lstm, hands_input, drawpile_input])
-    merged_hidden_1 = Dense(128, activation='relu')(merged_inputs)
-    merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
-    merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
-    merged_hidden_4 = Dense(64, activation='relu')(merged_hidden_3)
+    # Concatenate with LSTM, hand, and draw pile.
+    # Then send through some dense layers.
+    merged_inputs_1 = concatenate([lstm, hands_input, drawpile_input])
+    dropout_1 = Dropout(0.2)(merged_inputs_1)
+    merged_hidden_1 = Dense(128, activation='relu')(dropout_1)
+    norm_1 = BatchNormalization()(merged_hidden_1)
+    dropout_2 = Dropout(0.2)(norm_1)
+    merged_hidden_2 = Dense(128, activation='relu')(dropout_2)
+    norm_2 = BatchNormalization()(merged_hidden_2)
+    dropout_3 = Dropout(0.2)(norm_2)
+    merged_hidden_3 = Dense(128, activation='relu')(dropout_3)
+    norm_3 = BatchNormalization()(merged_hidden_3)
+    dropout_4 = Dropout(0.2)(norm_3)
 
-    policy_hidden_1 = Dense(64, activation='relu')(merged_hidden_4)
-    policy_output = Dense(policy_shape, activation='softmax', name='policy')(policy_hidden_1)
-
-    value_hidden_1 = Dense(64, activation='relu')(merged_hidden_4)
-    value_output = Dense(1, activation='linear', name='value')(value_hidden_1)
+    # Policy output head.
+    policy_output = Dense(policy_shape, activation='softmax', name='policy')(dropout_4)
+    # Value output head.
+    value_hidden_1 = Dense(1, activation='linear')(dropout_4)
+    value_output = Dense(1, activation='tanh', name='value')(value_hidden_1)
 
     model = Model(
         inputs=[history_input, hands_input, drawpile_input],

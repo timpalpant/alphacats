@@ -87,6 +87,7 @@ func (is *InfoSetWithAvailableActions) UnmarshalBinary(buf []byte) error {
 // are forgotten. This can happen if a SeeTheFuture card is played followed by
 // a shuffle.
 type AbstractedInfoSet struct {
+	Player           gamestate.Player
 	PublicHistory    gamestate.History
 	Hand             cards.Set
 	P0PlayedCards    cards.Set
@@ -143,6 +144,7 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 	}
 
 	return &AbstractedInfoSet{
+		Player:           is.Player,
 		PublicHistory:    publicHistory,
 		Hand:             is.Hand,
 		P0PlayedCards:    p0PlayedCards,

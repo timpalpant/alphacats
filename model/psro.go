@@ -61,19 +61,13 @@ func (m *MCTSPSRO) TrainNetwork() {
 		initialWeightsFile = m.currentNetwork.KerasWeightsFile()
 	}
 
-	// Unlock to allow other games to continue playing while retraining.
-	// TODO(palpant): Think harder about whether this is thread-safe.
-	trainingSamples := make([]Sample, len(m.samples))
-	copy(trainingSamples, m.samples)
-	m.needsRetrain = false
-	m.mx.Unlock()
-
-	nn := m.model.Train(initialWeightsFile, trainingSamples)
+	// TODO(palpant): Unlock to allow other games to continue playing while retraining.
+	nn := m.model.Train(initialWeightsFile, m.samples)
 	// TODO(palpant): Implement evaluation/selection by pitting this network
 	// against the previous best response network and only keeping it if it wins
 	// at least 55% of the time.
-	m.mx.Lock()
 	m.currentNetwork = nn
+	m.needsRetrain = false
 }
 
 func (m *MCTSPSRO) AddCurrentExploiterToModel() {

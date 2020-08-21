@@ -44,7 +44,6 @@ var (
 var tfConfig = []byte{50, 2, 32, 1}
 
 type Params struct {
-	BatchSize             int
 	OutputDir             string
 	NumEncodingWorkers    int
 	MaxInferenceBatchSize int
@@ -77,7 +76,7 @@ func (m *LSTM) Train(initialWeightsFile string, samples []Sample) *TrainedLSTM {
 	if err != nil {
 		glog.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	//defer os.RemoveAll(tmpDir)
 
 	inputDataFile := filepath.Join(tmpDir, "input.npz")
 	glog.Infof("Saving training data to: %v", inputDataFile)
@@ -237,8 +236,12 @@ func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float
 	encodeHistoryTF(is.PublicHistory, tfHistory)
 	tfHands := make([]byte, 3*tfHandSize)
 	encodeHandTF(is.Hand, tfHands)
-	encodeHandTF(is.P0PlayedCards, tfHands[tfHandSize:])
-	encodeHandTF(is.P1PlayedCards, tfHands[2*tfHandSize:])
+	played1, played2 := is.P0PlayedCards, is.P1PlayedCards
+	if is.Player == gamestate.Player1 {
+		played1, played2 = played2, played1
+	}
+	encodeHandTF(played1, tfHands[tfHandSize:])
+	encodeHandTF(played2, tfHands[2*tfHandSize:])
 	tfDrawPile := make([]byte, tfDrawPileSize)
 	encodeDrawPileTF(is.DrawPile, tfDrawPile)
 	req := predictionRequestPool.Get().(*predictionRequest)

@@ -51,7 +51,7 @@ func main() {
 	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000, "Number of games to play each epoch")
 	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(), "Number of games to run in parallel")
 	flag.IntVar(&params.NumMCTSIterations, "search_iter", 2000, "Number of MCTS iterations to perform per move")
-	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", 2048, "Number of searches per game to run in parallel")
+	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(), "Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000, "Maximum number of training samples to keep")
 	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30, "Maximum number of times to reuse a sample.")
 	flag.Float64Var(&params.Temperature, "temperature", 1.0,
@@ -59,14 +59,6 @@ func main() {
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.75,
 		"Exploration factor C used in MCTS search")
-	flag.Float64Var(&params.SamplingParams.Gamma, "sampling.gamma", 0.1,
-		"Mixing factor Gamma used in Smooth UCT search")
-	flag.Float64Var(&params.SamplingParams.Eta, "sampling.eta", 0.9,
-		"Mixing factor eta used in Smooth UCT search")
-	flag.Float64Var(&params.SamplingParams.D, "sampling.d", 0.001,
-		"Mixing factor d used in Smooth UCT search")
-	flag.IntVar(&params.ModelParams.BatchSize, "model.batch_size", 2048,
-		"Minibatch size for model training")
 	flag.StringVar(&params.ModelParams.OutputDir, "model.output_dir", "models",
 		"Output directory for trained models")
 	flag.IntVar(&params.ModelParams.NumEncodingWorkers, "model.encoding_workers", 4,
@@ -150,15 +142,12 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 		beliefs.Update(nodeType, game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player)))
 	}
 
-	var finalGameValue float32
-	if game.Player() == player {
-		finalGameValue = 1.0
-	} else {
-		finalGameValue = -1.0
-	}
-
-	for i := range samples {
-		samples[i].Value = finalGameValue
+	for i, s := range samples {
+		if s.InfoSet.Player == gamestate.Player(game.Player()) {
+			samples[i].Value = 1.0
+		} else {
+			samples[i].Value = -1.0
+		}
 	}
 
 	return samples

@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
+	"github.com/timpalpant/go-cfr/mcts"
 
 	"github.com/timpalpant/alphacats"
 )
@@ -13,8 +14,8 @@ type MCTSPSRO struct {
 	model           *LSTM
 	retrainInterval int
 
-	bestResponseNetworks []*TrainedLSTM
-	weights              []float32
+	policies []mcts.Policy
+	weights  []float32
 
 	mx        sync.Mutex
 	samples   []Sample
@@ -28,6 +29,8 @@ func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse int) *MCTSPSRO {
 	return &MCTSPSRO{
 		model:           model,
 		retrainInterval: maxSamples / maxSampleReuse,
+		policies:        []mcts.Policy{&UniformRandomPolicy{}},
+		weights:         []float32{1.0},
 		samples:         make([]Sample, 0, maxSamples),
 	}
 }
@@ -75,37 +78,32 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	defer m.mx.Unlock()
 	// TODO(palpant): Implement real PSRO. For now we just average all networks
 	// with equal weight (aka Fictitious Play).
-	m.bestResponseNetworks = append(m.bestResponseNetworks, m.currentNetwork)
-	m.weights = uniformDistribution(len(m.bestResponseNetworks))
+	m.policies = append(m.policies, &PredictorPolicy{m.currentNetwork})
+	m.weights = uniformDistribution(len(m.policies))
 	m.currentNetwork = nil
 	m.samples = m.samples[:0]
 	m.sampleIdx = 0
 	m.needsRetrain = false
-	glog.Infof("Added network. PSRO now has %d oracles", len(m.bestResponseNetworks))
+	glog.Infof("Added network. PSRO now has %d oracles", len(m.policies))
 }
 
 // GetPolicy implements mcts.Policy for one-sided IS-MCTS search when this policy is
 // the (fixed) opponent.
 func (m *MCTSPSRO) GetPolicy(node cfr.GameTreeNode) []float32 {
-	if len(m.bestResponseNetworks) == 0 {
-		return uniformDistribution(node.NumChildren())
-	}
-
-	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	result := make([]float32, len(is.AvailableActions))
+	result := make([]float32, node.NumChildren())
 	var wg sync.WaitGroup
 	var mx sync.Mutex
-	for i, nn := range m.bestResponseNetworks {
+	for i, policy := range m.policies {
 		wg.Add(1)
-		go func(i int, nn *TrainedLSTM) {
+		go func(i int, policy mcts.Policy) {
 			defer wg.Done()
-			p, _ := nn.Predict(is)
+			p := policy.GetPolicy(node)
 			mx.Lock()
 			defer mx.Unlock()
 			for j, pj := range p {
 				result[j] += m.weights[i] * pj
 			}
-		}(i, nn)
+		}(i, policy)
 	}
 
 	wg.Wait()
@@ -131,6 +129,24 @@ func (m *MCTSPSRO) getCurrentNetwork() *TrainedLSTM {
 	m.mx.Lock()
 	defer m.mx.Unlock()
 	return m.currentNetwork
+}
+
+// Policy that always plays randomly. Used to bootstrap fictitious play.
+type UniformRandomPolicy struct{}
+
+func (u *UniformRandomPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
+	return uniformDistribution(node.NumChildren())
+}
+
+// Adaptor to use TrainedLSTM as a mcts.Policy.
+type PredictorPolicy struct {
+	model *TrainedLSTM
+}
+
+func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
+	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
+	p, _ := pp.model.Predict(is)
+	return p
 }
 
 func uniformDistribution(n int) []float32 {

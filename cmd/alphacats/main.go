@@ -1,4 +1,5 @@
-// This version of alphacats uses Smooth UCT MCTS only.
+// This version of alphacats uses one-sided IS-MCTS with a NN
+// to guide search, in a PSRO framework.
 package main
 
 import (
@@ -83,6 +84,7 @@ func main() {
 		player := epoch % 2
 		policy := policies[player]
 		opponentPolicy := policies[1-player]
+		search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
 		var wg sync.WaitGroup
@@ -97,7 +99,6 @@ func main() {
 				}()
 				deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
 				game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
-				search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
 				infoSet := game.GetInfoSet(gamestate.Player(player))
 				beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
 

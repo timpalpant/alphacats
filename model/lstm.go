@@ -30,7 +30,7 @@ const (
 	handsInputLayer    = "hands"
 	drawPileInputLayer = "drawpile"
 	policyOutputLayer  = "policy/Softmax"
-	valueOutputLayer   = "value/BiasAdd"
+	valueOutputLayer   = "value/Tanh"
 )
 
 var (
@@ -242,8 +242,8 @@ func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float
 	if is.Player == gamestate.Player1 {
 		played1, played2 = played2, played1
 	}
-	encodeHandTF(played1, tfHands[tfHandSize:])
-	encodeHandTF(played2, tfHands[2*tfHandSize:])
+	encodeHandTF(played1, tfHands[tfPlayerSize+tfHandSize:])
+	encodeHandTF(played2, tfHands[tfPlayerSize+2*tfHandSize:])
 	tfDrawPile := make([]byte, tfDrawPileSize)
 	encodeDrawPileTF(is.DrawPile, tfDrawPile)
 	req := predictionRequestPool.Get().(*predictionRequest)
@@ -393,7 +393,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 		}
 
 		handsReader := bytes.NewReader(handsBuf)
-		handsShape := []int64{int64(len(batch)), 3 * int64(cards.NumTypes)}
+		handsShape := []int64{int64(len(batch)), 3*int64(cards.NumTypes) + 2}
 		handTensor, err := tf.ReadTensor(tf.Float, handsShape, handsReader)
 		if err != nil {
 			glog.Fatal(err)

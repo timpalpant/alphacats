@@ -73,7 +73,10 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # Policy output head.
     policy_output = Dense(policy_shape, activation='softmax', name='policy')(dropout_4)
     # Value output head.
-    value_hidden_1 = Dense(1, activation='linear')(dropout_4)
+    value_hidden_1 = Dense(64, activation='linear')(dropout_4)
+    value_norm_1 = BatchNormalization()(value_hidden_1)
+    value_dropout_1 = Dropout(0.2)(value_norm_1)
+    value_hidden_2 = Dense(1, activation='linear')(value_dropout_1)
     value_output = Dense(1, activation='tanh', name='value')(value_hidden_1)
 
     model = Model(
@@ -146,7 +149,7 @@ def main():
     history = model.fit(
         x=X,
         y=y,
-        epochs=20,
+        epochs=50,
         validation_split=0.1,
         use_multiprocessing=False,
         workers=4,

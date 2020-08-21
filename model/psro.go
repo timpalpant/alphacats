@@ -92,7 +92,7 @@ func (m *MCTSPSRO) GetPolicy(node cfr.GameTreeNode) []float32 {
 	}
 
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	result := make([]float32, node.NumChildren())
+	result := make([]float32, len(is.AvailableActions))
 	var wg sync.WaitGroup
 	var mx sync.Mutex
 	for i, nn := range m.bestResponseNetworks {
@@ -102,8 +102,8 @@ func (m *MCTSPSRO) GetPolicy(node cfr.GameTreeNode) []float32 {
 			p, _ := nn.Predict(is)
 			mx.Lock()
 			defer mx.Unlock()
-			for i, pi := range p {
-				result[i] += m.weights[i] * pi
+			for j, pj := range p {
+				result[j] += m.weights[i] * pj
 			}
 		}(i, nn)
 	}

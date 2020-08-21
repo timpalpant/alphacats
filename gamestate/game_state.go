@@ -35,7 +35,7 @@ func NewShuffled(prevState GameState, newDrawPile cards.Stack) GameState {
 }
 
 // Apply returns the new GameState created by applying the given Action.
-func (gs *GameState) Apply(action Action) {
+func (gs *GameState) Apply(action Action, visible bool) {
 	switch action.Type {
 	case PlayCard:
 		action = gs.playCard(action)
@@ -45,13 +45,22 @@ func (gs *GameState) Apply(action Action) {
 		gs.giveCard(action.Player, action.Card)
 	case InsertExplodingKitten:
 		// NOTE: Action.PositionInDrawPile is 1-based to distinguish from
-		// random placement.
-		gs.insertExplodingKitten(action.Player, int(action.PositionInDrawPile)-1)
+		// random placement. If the PositionInDrawPile is 0, it means that
+		// the player chose to insert the card randomly, and does not know
+		// where it ended up.
+		if action.Card != cards.Unknown {
+			gs.playCard(action)
+		}
+		if action.PositionInDrawPile != 0 {
+			gs.insertExplodingKitten(action.Player, int(action.PositionInDrawPile)-1)
+		}
 	default:
 		panic(fmt.Errorf("invalid action: %+v", action))
 	}
 
-	gs.history.Append(action)
+	if visible {
+		gs.history.Append(action)
+	}
 }
 
 func (gs *GameState) insertExplodingKitten(player Player, position int) {
@@ -149,6 +158,10 @@ func (gs *GameState) drawCard(action Action) Action {
 		gs.player0Hand.Add(drawn)
 	} else {
 		gs.player1Hand.Add(drawn)
+	}
+	// Drawing the exploding kitten is public knowledge.
+	if drawn == cards.ExplodingKitten {
+		action.Card = drawn
 	}
 	action.CardsSeen[0] = drawn
 	return action

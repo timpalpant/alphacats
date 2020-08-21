@@ -100,6 +100,8 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 	p0PlayedCards := cards.NewSet()
 	p1PlayedCards := cards.NewSet()
 	drawPile := cards.NewStack()
+	// TODO(palpant): This duplicates most of gamestate logic, but from the POV of a single player.
+	nDrawPileCards := 13
 	for i := 0; i < is.History.Len(); i++ {
 		packed := is.History.GetPacked(i)
 		publicHistory.AppendPacked(hidePrivateInfo(packed))
@@ -117,13 +119,26 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 				for i, card := range action.CardsSeen {
 					drawPile.SetNthCard(i, card)
 				}
+			} else if action.Card == cards.DrawFromTheBottom {
+				drawPile.RemoveCard(nDrawPileCards - 1)
+				nDrawPileCards--
 			}
 		case gamestate.InsertExplodingKitten:
+			nDrawPileCards++
 			if action.PositionInDrawPile != 0 {
 				drawPile.InsertCard(cards.ExplodingKitten, int(action.PositionInDrawPile-1))
+			} else {
+				// TODO(palpant): Inserting the kitten randomly need not totally obliterate
+				// our knowledge of the draw pile, since once we observe the Kitten we know
+				// which of the N random states we're now in.
+				drawPile.InsertCard(cards.ExplodingKitten, 0)
+				for j := 0; j < drawPile.Len(); j++ {
+					drawPile.SetNthCard(j, cards.Unknown)
+				}
 			}
 		case gamestate.DrawCard:
 			drawPile.RemoveCard(0)
+			nDrawPileCards--
 		}
 	}
 

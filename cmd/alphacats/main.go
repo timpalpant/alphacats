@@ -127,9 +127,9 @@ func main() {
 
 func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {
 	var samples []model.Sample
-
 	for game.Type() != cfr.TerminalNodeType {
-		if game.Type() == cfr.ChanceNodeType {
+		nodeType := game.Type()
+		if nodeType == cfr.ChanceNodeType {
 			game, _ = game.SampleChild()
 		} else if game.Player() != player { // Opponent.
 			p := opponentPolicy.GetPolicy(game)
@@ -147,7 +147,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 			})
 		}
 
-		beliefs.Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player)))
+		beliefs.Update(nodeType, game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player)))
 	}
 
 	var finalGameValue float32

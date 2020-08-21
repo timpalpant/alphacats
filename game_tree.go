@@ -313,11 +313,6 @@ func makeMustDefuseNode(node *GameNode, player gamestate.Player, pendingTurns in
 	node.player = player
 	node.turnType = MustDefuse
 	node.pendingTurns = pendingTurns
-	node.state.Apply(gamestate.Action{
-		Player: player,
-		Type:   gamestate.PlayCard,
-		Card:   cards.Defuse,
-	})
 }
 
 func makeTerminalGameNode(node *GameNode, winner gamestate.Player) {
@@ -338,7 +333,7 @@ func (gn *GameNode) buildPlayTurnChildren() {
 			Card:   card,
 		}
 		gn.actions[i] = action
-		child.state.Apply(action)
+		child.state.Apply(action, true)
 
 		switch card {
 		case cards.Defuse, cards.SeeTheFuture:
@@ -387,7 +382,7 @@ func (gn *GameNode) buildPlayTurnChildren() {
 		Player: gn.player,
 		Type:   gamestate.DrawCard,
 	}
-	lastChild.state.Apply(action)
+	lastChild.state.Apply(action, true)
 	gn.actions[i] = action
 	makePlayTurnNode(lastChild, gn.player, gn.pendingTurns-1)
 }
@@ -407,7 +402,7 @@ func (gn *GameNode) buildGiveCardChildren() {
 			Type:   gamestate.GiveCard,
 			Card:   card,
 		}
-		child.state.Apply(action)
+		child.state.Apply(action, true)
 		gn.actions[i] = action
 
 		// Game play returns to other player (with the given card in their hand).
@@ -433,9 +428,10 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingKitten,
+			Card:               cards.Defuse,
 			PositionInDrawPile: uint8(i + 1),
 		}
-		child.state.Apply(action)
+		child.state.Apply(action, true)
 		gn.actions[i] = action
 
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
@@ -444,10 +440,13 @@ func (gn *GameNode) buildMustDefuseChildren() {
 	// Place randomly.
 	child := &gn.children[nOptions]
 	child.turnType = InsertKittenRandom
-	gn.actions[nOptions] = gamestate.Action{
+	action := gamestate.Action{
 		Player: gn.player,
 		Type:   gamestate.InsertExplodingKitten,
+		Card:   cards.Defuse,
 	}
+	child.state.Apply(action, true)
+	gn.actions[nOptions] = action
 
 	// Place exploding cat on the bottom of the draw pile.
 	if nCardsInDrawPile > 5 {
@@ -455,9 +454,10 @@ func (gn *GameNode) buildMustDefuseChildren() {
 		action := gamestate.Action{
 			Player:             gn.player,
 			Type:               gamestate.InsertExplodingKitten,
+			Card:               cards.Defuse,
 			PositionInDrawPile: uint8(nCardsInDrawPile + 1), // bottom
 		}
-		child.state.Apply(action)
+		child.state.Apply(action, true)
 		gn.actions[len(gn.children)-1] = action
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)
 	} else {
@@ -476,7 +476,7 @@ func (gn *GameNode) buildInsertKittenRandomChildren() {
 			Type:               gamestate.InsertExplodingKitten,
 			PositionInDrawPile: uint8(i + 1),
 		}
-		child.state.Apply(action)
+		child.state.Apply(action, false)
 		gn.actions[i] = action
 
 		makePlayTurnNode(child, gn.player, gn.pendingTurns)

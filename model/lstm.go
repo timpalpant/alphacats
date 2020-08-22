@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	graphTag           = "lstm"
+	graphTag           = "serve"
 	historyInputLayer  = "history"
 	handsInputLayer    = "hands"
 	drawPileInputLayer = "drawpile"

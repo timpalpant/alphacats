@@ -28,7 +28,10 @@ import (
 
 var stdin = bufio.NewReader(os.Stdin)
 
-var cacheHits = expvar.NewInt("cache_hits")
+var (
+	searchesByLevel  = expvar.NewMap("searches_by_level")
+	cacheHitsByLevel = expvar.NewMap("cache_hits_by_level")
+)
 
 type RunParams struct {
 	OracleDepth         int
@@ -77,6 +80,7 @@ type RecursiveSearchPolicy struct {
 	beliefs *alphacats.BeliefState
 	search  *mcts.OneSidedISMCTS
 
+	level       string
 	temperature float32
 	numSearches int
 	numWorkers  int
@@ -91,11 +95,12 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	r.mx.Lock()
 	if _, ok := r.cache[is]; ok {
 		r.mx.Unlock()
-		cacheHits.Add(1)
+		cacheHitsByLevel.Add(r.level, 1)
 		return r.search.GetPolicy(node, r.temperature)
 	}
 	r.mx.Unlock()
 
+	searchesByLevel.Add(r.level, 1)
 	beliefs := r.beliefs.Clone()
 	glog.V(1).Info("Propagating beliefs")
 	beliefs.Update(node.Type(), node.(*alphacats.GameNode).GetInfoSet(r.player))
@@ -134,6 +139,7 @@ func playGame(params RunParams, deal alphacats.Deal) {
 			player:      gamestate.Player(player),
 			beliefs:     alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet),
 			search:      mcts.NewOneSidedISMCTS(player, opponentPolicy, mcts.NewRandomRollout(1), float32(params.SamplingParams.C)),
+			level:       fmt.Sprintf("p%d_o%d", player, i/2),
 			temperature: float32(params.Temperature),
 			numSearches: params.NumMCTSIterations,
 			numWorkers:  params.MaxParallelSearches,

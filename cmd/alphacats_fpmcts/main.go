@@ -103,7 +103,7 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	searchesByLevel.Add(r.level, 1)
 	beliefs := r.beliefs.Clone()
 	glog.V(1).Info("Propagating beliefs")
-	beliefs.Update(node.Type(), node.(*alphacats.GameNode).GetInfoSet(r.player))
+	beliefs.Update(node.(*alphacats.GameNode).GetInfoSet(r.player))
 
 	var wg sync.WaitGroup
 	nPerWorker := r.numSearches / r.numWorkers
@@ -144,6 +144,7 @@ func playGame(params RunParams, deal alphacats.Deal) {
 			temperature: float32(params.Temperature),
 			numSearches: params.NumMCTSIterations,
 			numWorkers:  params.MaxParallelSearches,
+			cache:       make(map[string]struct{}),
 		}
 		searchesByLevel.Set(level, expvar.NewInt(level+"_searches"))
 		cacheHitsByLevel.Set(level, expvar.NewInt(level+"_cache_hits"))

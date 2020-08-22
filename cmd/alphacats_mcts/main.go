@@ -104,8 +104,7 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 	simulate(policy, beliefs, params.NumMCTSIterations)
 
 	for game.Type() != cfr.TerminalNodeType {
-		nodeType := game.Type()
-		if nodeType == cfr.ChanceNodeType {
+		if game.Type() == cfr.ChanceNodeType {
 			var p float64
 			game, p = game.SampleChild()
 			glog.Infof("[chance] Sampled child node with probability %v", p)
@@ -134,7 +133,7 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 		}
 
 		glog.Info("Propagating beliefs")
-		beliefs.Update(nodeType, game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1))
+		beliefs.Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1))
 	}
 
 	glog.Info("GAME OVER")

@@ -94,29 +94,26 @@ func (bs *BeliefState) Swap(i, j int) {
 // Update belief state by propagating all current states forward,
 // expanding determinizations as necessary and filtering to those that match
 // the given new info set.
-func (bs *BeliefState) Update(nodeType cfr.NodeType, infoSet gamestate.InfoSet) {
+func (bs *BeliefState) Update(infoSet gamestate.InfoSet) {
 	nUpdates := infoSet.History.Len() - bs.infoSet.History.Len()
 	glog.V(2).Infof("Performing %d belief updates", nUpdates)
-	for {
-		nUpdates := infoSet.History.Len() - bs.infoSet.History.Len()
-		if nUpdates == 0 {
-			break
-		}
-
-		if nodeType == cfr.ChanceNodeType {
-			bs.updateChanceAction(infoSet)
-		} else if infoSet.Player == bs.infoSet.Player {
+	for nUpdates > 0 {
+		if infoSet.Player == bs.infoSet.Player {
 			bs.updateSelfAction(infoSet)
 		} else {
 			bs.updateOpponentAction(infoSet)
 		}
 
+		bs.updateChanceAction(infoSet)
 		glog.V(2).Infof("Belief state now has %d states", len(bs.states))
 		nBefore := len(bs.states)
 		bs.dedupStates()
 		glog.V(2).Infof("Belief state now has %d states after deduping (deduped %d)", len(bs.states), nBefore-len(bs.states))
 		bs.infoSet = infoSet
+		nUpdates = infoSet.History.Len() - bs.infoSet.History.Len()
 	}
+
+	bs.infoSet = infoSet
 }
 
 type weightedBelief struct {
@@ -200,7 +197,8 @@ func (bs *BeliefState) updateShuffleAction() {
 	newStates := bs.states[:0]
 	for _, state := range bs.states {
 		if state.Type() != cfr.ChanceNodeType {
-			panic(fmt.Errorf("Updating beliefs as if at a chance node, but belief state is a %v", state.Type()))
+			newStates = append(newStates, state)
+			continue
 		}
 
 		child := state.GetChild(0).(*GameNode)

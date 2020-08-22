@@ -162,8 +162,7 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {
 	var samples []model.Sample
 	for game.Type() != cfr.TerminalNodeType {
-		nodeType := game.Type()
-		if nodeType == cfr.ChanceNodeType {
+		if game.Type() == cfr.ChanceNodeType {
 			game, _ = game.SampleChild()
 		} else if game.Player() != player { // Opponent.
 			p := opponentPolicy.GetPolicy(game)
@@ -181,7 +180,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, sea
 			})
 		}
 
-		beliefs.Update(nodeType, game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player)))
+		beliefs.Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player)))
 	}
 
 	for i, s := range samples {

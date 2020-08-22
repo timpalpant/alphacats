@@ -3,11 +3,13 @@ package model
 import (
 	"encoding/gob"
 	"io"
+	"math/rand"
 	"sync"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/mcts"
+	"github.com/timpalpant/go-cfr/sampling"
 
 	"github.com/timpalpant/alphacats"
 )
@@ -156,28 +158,9 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	glog.Infof("Added network. PSRO now has %d oracles", len(m.policies))
 }
 
-// GetPolicy implements mcts.Policy for one-sided IS-MCTS search when this policy is
-// the (fixed) opponent.
-func (m *MCTSPSRO) GetPolicy(node cfr.GameTreeNode) []float32 {
-	result := make([]float32, node.NumChildren())
-	var wg sync.WaitGroup
-	var mx sync.Mutex
-	for i, policy := range m.policies {
-		wg.Add(1)
-		go func(i int, policy mcts.Policy) {
-			defer wg.Done()
-			p := policy.GetPolicy(node)
-			mx.Lock()
-			defer mx.Unlock()
-			for j, pj := range p {
-				result[j] += m.weights[i] * pj
-			}
-		}(i, policy)
-	}
-
-	wg.Wait()
-	normalize(result)
-	return result
+func (m *MCTSPSRO) SamplePolicy() mcts.Policy {
+	selected := sampling.SampleOne(m.weights, rand.Float32())
+	return m.policies[selected]
 }
 
 // Evaluate implements mcts.Evaluator for one-sided IS-MCTS search rollouts

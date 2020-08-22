@@ -82,8 +82,6 @@ func main() {
 	for epoch := 0; ; epoch++ {
 		player := epoch % 2
 		policy := policies[player]
-		opponentPolicy := policies[1-player]
-		search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
 		var wg sync.WaitGroup
@@ -99,12 +97,15 @@ func main() {
 				deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
 				game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 				infoSet := game.GetInfoSet(gamestate.Player(player))
+				opponentPolicy := policies[1-player].SamplePolicy()
+				search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
 				beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
 
 				glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
-				samples := playGame(game, opponentPolicy, policy, search, beliefs, player, params)
+				samples := playGame(game, opponentPolicy, search, beliefs, player, params)
 				glog.Infof("Collected %d samples", len(samples))
-				for _, s := range samples {
+				for i, s := range samples {
+					glog.V(1).Infof("Sample %d: %v", i, s)
 					policy.AddSample(s)
 				}
 
@@ -160,7 +161,7 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 	return policy.SaveTo(w)
 }
 
-func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {
+func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {
 	var samples []model.Sample
 	for game.Type() != cfr.TerminalNodeType {
 		if game.Type() == cfr.ChanceNodeType {

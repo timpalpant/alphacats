@@ -181,9 +181,19 @@ func (bs *BeliefState) dedupStates() {
 }
 
 func (bs *BeliefState) advanceAction(action gamestate.Action) {
+	isOpponentAction := (action.Player != bs.infoSet.Player)
 	var newStates []*GameNode
 	var newReachProbs []float32
 	for i, determinization := range bs.states {
+		var p []float32
+		if isOpponentAction { // Avoid allocation for self nodes.
+			p = bs.opponentPolicy(determinization)
+			if len(p) != determinization.NumChildren() {
+				panic(fmt.Errorf("Policy returned the wrong number of actions: expected %d, got %d",
+					determinization.NumChildren(), len(p)))
+			}
+		}
+
 		for j := 0; j < determinization.NumChildren(); j++ {
 			child := determinization.GetChild(j).(*GameNode)
 			is := child.GetInfoSet(bs.infoSet.Player)
@@ -206,11 +216,15 @@ func (bs *BeliefState) advanceAction(action gamestate.Action) {
 					shuffledState := clearDrawPileKnowledge(state)
 					shuffledGame := rndGame.CloneWithState(shuffledState)
 					newStates = append(newStates, shuffledGame)
-					newReachProbs = append(newReachProbs, bs.reachProbs[i])
 				} else {
 					newStates = append(newStates, child.Clone())
-					newReachProbs = append(newReachProbs, bs.reachProbs[i])
 				}
+
+				newP := bs.reachProbs[i]
+				if len(p) > 0 { // Opponent action
+					newP *= p[j]
+				}
+				newReachProbs = append(newReachProbs, newP)
 			}
 		}
 	}

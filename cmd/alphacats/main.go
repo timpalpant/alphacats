@@ -5,10 +5,12 @@ package main
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -76,10 +78,7 @@ func main() {
 
 	deck := cards.CoreDeck.AsSlice()
 	cardsPerPlayer := 4
-	lstm := model.NewLSTM(params.ModelParams)
-	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse)
-	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse)
-	policies := []*model.MCTSPSRO{p0, p1}
+	policies := loadPolicy(params)
 	for epoch := 0; ; epoch++ {
 		player := epoch % 2
 		policy := policies[player]
@@ -115,7 +114,49 @@ func main() {
 
 		wg.Wait()
 		policy.AddCurrentExploiterToModel()
+		if err := savePolicy(params, player, policy); err != nil {
+			glog.Fatal(err)
+		}
 	}
+}
+
+func loadPolicy(params RunParams) []*model.MCTSPSRO {
+	lstm := model.NewLSTM(params.ModelParams)
+	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse)
+	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse)
+	policies := []*model.MCTSPSRO{p0, p1}
+	for player := range policies {
+		filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))
+		f, err := os.Open(filename)
+		if err != nil {
+			glog.Warningf("Unable to load player %d policy: %v", player, err)
+			continue
+		}
+		defer f.Close()
+		r := bufio.NewReader(f)
+
+		policy, err := model.LoadMCTSPSRO(r)
+		if err != nil {
+			glog.Warningf("Unable to load player %d policy: %v", player, err)
+			continue
+		}
+
+		policies[player] = policy
+	}
+
+	return policies
+}
+
+func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
+	filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	defer w.Flush()
+	return policy.SaveTo(w)
 }
 
 func playGame(game cfr.GameTreeNode, opponentPolicy, policy *model.MCTSPSRO, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {

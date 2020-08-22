@@ -1,6 +1,8 @@
 package model
 
 import (
+	"encoding/gob"
+	"io"
 	"sync"
 
 	"github.com/golang/glog"
@@ -33,6 +35,67 @@ func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse int) *MCTSPSRO {
 		weights:         []float32{1.0},
 		samples:         make([]Sample, 0, maxSamples),
 	}
+}
+
+func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
+	m := &MCTSPSRO{}
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&m.model); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.retrainInterval); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.policies); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.weights); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.samples); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.sampleIdx); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.currentNetwork); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.needsRetrain); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (m *MCTSPSRO) SaveTo(w io.Writer) error {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(m.model); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.retrainInterval); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.policies); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.weights); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.samples); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.sampleIdx); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.currentNetwork); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.needsRetrain); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *MCTSPSRO) AddSample(s Sample) {

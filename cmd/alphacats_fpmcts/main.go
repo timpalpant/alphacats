@@ -135,15 +135,18 @@ func playGame(params RunParams, deal alphacats.Deal) {
 		player := i % 2
 		infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player))
 		opponentPolicy := policies[1-player]
+		level := fmt.Sprintf("p%d_o%d", player, i/2)
 		policies[player] = &RecursiveSearchPolicy{
 			player:      gamestate.Player(player),
 			beliefs:     alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet),
 			search:      mcts.NewOneSidedISMCTS(player, opponentPolicy, mcts.NewRandomRollout(1), float32(params.SamplingParams.C)),
-			level:       fmt.Sprintf("p%d_o%d", player, i/2),
+			level:       level,
 			temperature: float32(params.Temperature),
 			numSearches: params.NumMCTSIterations,
 			numWorkers:  params.MaxParallelSearches,
 		}
+		searchesByLevel.Set(level, expvar.NewInt(level+"_searches"))
+		cacheHitsByLevel.Set(level, expvar.NewInt(level+"_cache_hits"))
 	}
 	policy := policies[1].(*RecursiveSearchPolicy)
 

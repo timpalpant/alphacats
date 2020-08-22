@@ -96,6 +96,11 @@ type AbstractedInfoSet struct {
 	AvailableActions []gamestate.Action
 }
 
+func (a AbstractedInfoSet) String() string {
+	return fmt.Sprintf("%s. Hand: %s, Known draw pile: %s. Public history: %s. P0 played: %s, P1 played: %s. Available actions: %v",
+		a.Player, a.Hand, a.DrawPile, a.PublicHistory, a.P0PlayedCards, a.P1PlayedCards, a.AvailableActions)
+}
+
 func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Action) *AbstractedInfoSet {
 	var publicHistory gamestate.History
 	p0PlayedCards := cards.NewSet()

@@ -69,6 +69,10 @@ type Sample struct {
 	Value   float32
 }
 
+func (s Sample) String() string {
+	return fmt.Sprintf("InfoSet: %s, Policy: %v, Value: %v", s.InfoSet, s.Policy, s.Value)
+}
+
 func (m *LSTM) Train(initialWeightsFile string, samples []Sample) *TrainedLSTM {
 	glog.Infof("Training network with %d samples", len(samples))
 	// Save training data to disk in a tempdir.
@@ -220,7 +224,6 @@ func (m *TrainedLSTM) Close() {
 const (
 	tfHistorySize  = 4 * gamestate.MaxNumActions * numActionFeatures
 	tfHandSize     = 4 * cards.NumTypes
-	tfPlayerSize   = 4 * 2
 	tfDrawPileSize = 4 * maxCardsInDrawPile * cards.NumTypes
 )
 
@@ -235,15 +238,10 @@ var predictionRequestPool = sync.Pool{
 func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float32) {
 	tfHistory := make([]byte, tfHistorySize)
 	encodeHistoryTF(is.PublicHistory, tfHistory)
-	tfHands := make([]byte, 3*tfHandSize+tfPlayerSize)
-	encodePlayerTF(is.Player, tfHands)
-	encodeHandTF(is.Hand, tfHands[tfPlayerSize:])
-	played1, played2 := is.P0PlayedCards, is.P1PlayedCards
-	if is.Player == gamestate.Player1 {
-		played1, played2 = played2, played1
-	}
-	encodeHandTF(played1, tfHands[tfPlayerSize+tfHandSize:])
-	encodeHandTF(played2, tfHands[tfPlayerSize+2*tfHandSize:])
+	tfHands := make([]byte, 3*tfHandSize)
+	encodeHandTF(is.Hand, tfHands)
+	encodeHandTF(is.P0PlayedCards, tfHands[tfHandSize:])
+	encodeHandTF(is.P1PlayedCards, tfHands[2*tfHandSize:])
 	tfDrawPile := make([]byte, tfDrawPileSize)
 	encodeDrawPileTF(is.DrawPile, tfDrawPile)
 	req := predictionRequestPool.Get().(*predictionRequest)
@@ -393,7 +391,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 		}
 
 		handsReader := bytes.NewReader(handsBuf)
-		handsShape := []int64{int64(len(batch)), 3*int64(cards.NumTypes) + 2}
+		handsShape := []int64{int64(len(batch)), 3 * int64(cards.NumTypes)}
 		handTensor, err := tf.ReadTensor(tf.Float, handsShape, handsReader)
 		if err != nil {
 			glog.Fatal(err)

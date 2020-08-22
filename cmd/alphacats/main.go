@@ -53,7 +53,7 @@ func main() {
 	var params RunParams
 	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000, "Number of games to play each epoch")
 	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(), "Number of games to run in parallel")
-	flag.IntVar(&params.NumMCTSIterations, "search_iter", 2000, "Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.NumMCTSIterations, "search_iter", 20000, "Number of MCTS iterations to perform per move")
 	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(), "Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000, "Maximum number of training samples to keep")
 	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30, "Maximum number of times to reuse a sample.")
@@ -163,7 +163,7 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 
 func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {
 	var samples []model.Sample
-	for game.Type() != cfr.TerminalNodeType {
+	for depth := 1; game.Type() != cfr.TerminalNodeType; depth++ {
 		if game.Type() == cfr.ChanceNodeType {
 			game, _ = game.SampleChild()
 		} else if game.Player() != player { // Opponent.
@@ -173,7 +173,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.On
 		} else {
 			simulate(search, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
 			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
-			p := search.GetPolicy(game, float32(params.Temperature))
+			p := search.GetPolicy(game, float32(params.Temperature/float64(depth)))
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 			samples = append(samples, model.Sample{

@@ -29,8 +29,8 @@ const (
 	historyInputLayer  = "history"
 	handsInputLayer    = "hands"
 	drawPileInputLayer = "drawpile"
-	policyOutputLayer  = "policy/Softmax"
-	valueOutputLayer   = "value/Tanh"
+	policyOutputLayer  = "policy"
+	valueOutputLayer   = "value"
 )
 
 var (

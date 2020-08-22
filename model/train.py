@@ -28,7 +28,7 @@ import numpy as np
 import tensorflow.compat.v1 as tf
 
 # These constants must be kept in sync with the Go code.
-TF_GRAPH_TAG = "lstm"
+TF_GRAPH_TAG = "serve"
 
 MAX_HISTORY = 58
 N_ACTION_FEATURES = 16
@@ -161,10 +161,7 @@ def main():
         shutil.rmtree(args.output)
 
     logging.info("Saving model to %s", args.output)
-    builder = tf.saved_model.Builder(args.output)
-    # Tag the model, required for Go
-    builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING])
-    builder.save()
+    model.save(args.output)
     # Save keras model weights for re-initialization on next iteration.
     model.save_weights(os.path.join(args.output, "weights.h5"))
     plot_model(model, to_file=os.path.join(args.output, 'model.pdf'),

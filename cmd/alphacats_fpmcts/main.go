@@ -3,6 +3,7 @@ package main
 
 import (
 	"bufio"
+	"expvar"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -26,6 +27,8 @@ import (
 )
 
 var stdin = bufio.NewReader(os.Stdin)
+
+var cacheHits = expvar.NewInt("cache_hits")
 
 type RunParams struct {
 	OracleDepth         int
@@ -59,7 +62,7 @@ func main() {
 	flag.Parse()
 
 	rand.Seed(params.SamplingParams.Seed)
-	go http.ListenAndServe("localhost:4123", nil)
+	go http.ListenAndServe("localhost:4124", nil)
 
 	deck := cards.CoreDeck.AsSlice()
 	cardsPerPlayer := 4
@@ -76,23 +79,31 @@ type RecursiveSearchPolicy struct {
 
 	temperature float32
 	numSearches int
-}
+	numWorkers  int
 
-func (r *RecursiveSearchPolicy) UpdateBeliefs(node cfr.GameTreeNode) {
-	glog.Info("Propagating beliefs")
-	r.beliefs.Update(node.Type(), node.(*alphacats.GameNode).GetInfoSet(r.player))
+	// Indicates infoset has already been searched.
+	mx    sync.Mutex
+	cache map[string]struct{}
 }
 
 func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
+	is := node.InfoSet(int(r.player)).Key()
+	r.mx.Lock()
+	if _, ok := r.cache[is]; ok {
+		r.mx.Unlock()
+		cacheHits.Add(1)
+		return r.search.GetPolicy(node, r.temperature)
+	}
+	r.mx.Unlock()
+
 	beliefs := r.beliefs.Clone()
-	glog.Info("Propagating beliefs")
+	glog.V(1).Info("Propagating beliefs")
 	beliefs.Update(node.Type(), node.(*alphacats.GameNode).GetInfoSet(r.player))
 
 	var wg sync.WaitGroup
-	nWorkers := runtime.NumCPU()
-	nPerWorker := r.numSearches / nWorkers
-	glog.Infof("Simulating %d games in %d workers", nWorkers*nPerWorker, nWorkers)
-	for worker := 0; worker < nWorkers; worker++ {
+	nPerWorker := r.numSearches / r.numWorkers
+	glog.V(1).Infof("Simulating %d games in %d workers", r.numWorkers*nPerWorker, r.numWorkers)
+	for worker := 0; worker < r.numWorkers; worker++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -104,6 +115,9 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	}
 
 	wg.Wait()
+	r.mx.Lock()
+	defer r.mx.Unlock()
+	r.cache[is] = struct{}{}
 	return r.search.GetPolicy(node, r.temperature)
 }
 
@@ -111,10 +125,10 @@ func playGame(params RunParams, deal alphacats.Deal) {
 	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 
 	glog.Infof("Building initial info set")
-	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
 	policies := []mcts.Policy{&model.UniformRandomPolicy{}, &model.UniformRandomPolicy{}}
 	for i := 0; i < 2*params.OracleDepth; i++ {
 		player := i % 2
+		infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player))
 		opponentPolicy := policies[1-player]
 		policies[player] = &RecursiveSearchPolicy{
 			player:      gamestate.Player(player),
@@ -122,6 +136,7 @@ func playGame(params RunParams, deal alphacats.Deal) {
 			search:      mcts.NewOneSidedISMCTS(player, opponentPolicy, mcts.NewRandomRollout(1), float32(params.SamplingParams.C)),
 			temperature: float32(params.Temperature),
 			numSearches: params.NumMCTSIterations,
+			numWorkers:  params.MaxParallelSearches,
 		}
 	}
 	policy := policies[1].(*RecursiveSearchPolicy)

@@ -97,7 +97,12 @@ func (bs *BeliefState) Swap(i, j int) {
 func (bs *BeliefState) Update(nodeType cfr.NodeType, infoSet gamestate.InfoSet) {
 	nUpdates := infoSet.History.Len() - bs.infoSet.History.Len()
 	glog.V(2).Infof("Performing %d belief updates", nUpdates)
-	for i := 0; i < nUpdates; i++ {
+	for {
+		nUpdates := infoSet.History.Len() - bs.infoSet.History.Len()
+		if nUpdates == 0 {
+			break
+		}
+
 		if nodeType == cfr.ChanceNodeType {
 			bs.updateChanceAction(infoSet)
 		} else if infoSet.Player == bs.infoSet.Player {
@@ -184,7 +189,7 @@ func (bs *BeliefState) dedupStates() {
 }
 
 func (bs *BeliefState) updateChanceAction(infoSet gamestate.InfoSet) {
-	action := infoSet.History.Get(infoSet.History.Len() - 1)
+	action := infoSet.History.Get(bs.infoSet.History.Len())
 	glog.V(2).Infof("Updating chance action: %v", action)
 	if action.Type == gamestate.PlayCard && action.Card == cards.Shuffle {
 		bs.updateShuffleAction()
@@ -217,9 +222,10 @@ func (bs *BeliefState) updateSelfAction(infoSet gamestate.InfoSet) {
 		for j := 0; j < determinization.NumChildren(); j++ {
 			child := determinization.GetChild(j).(*GameNode)
 			is := child.GetInfoSet(bs.infoSet.Player)
-			if is == infoSet {
+			h := is.History
+			lastAction := h.Get(h.Len() - 1)
+			if lastAction == action {
 				// Determinized game is consistent with our observed history.
-				lastAction := child.LastAction()
 				// Further expand out the random children of an InsertExplodingKitten randomly node.
 				// This is necessary since the choice (and subsequent chance node) is not visible
 				// to the opponent player.
@@ -255,9 +261,10 @@ func (bs *BeliefState) updateOpponentAction(infoSet gamestate.InfoSet) {
 		for j := 0; j < determinization.NumChildren(); j++ {
 			child := determinization.GetChild(j).(*GameNode)
 			is := child.GetInfoSet(bs.infoSet.Player)
-			if is == infoSet {
+			h := is.History
+			lastAction := h.Get(h.Len() - 1)
+			if lastAction == action {
 				// Determinized game is consistent with our observed history.
-				lastAction := child.LastAction()
 				// Further expand out the random children of an InsertExplodingKitten randomly node.
 				// This is necessary since the choice (and subsequent chance node) is not visible
 				// to the opponent player.

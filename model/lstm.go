@@ -26,11 +26,10 @@ import (
 
 const (
 	graphTag           = "serve"
-	historyInputLayer  = "history"
-	handsInputLayer    = "hands"
-	drawPileInputLayer = "drawpile"
-	policyOutputLayer  = "policy"
-	valueOutputLayer   = "value"
+	historyInputLayer  = "serving_default_history"
+	handsInputLayer    = "serving_default_hands"
+	drawPileInputLayer = "serving_default_drawpile"
+	outputLayer        = "StatefulPartitionedCall"
 )
 
 var (
@@ -442,8 +441,8 @@ func predictBatch(model *tf.SavedModel, history, hands, drawPiles *tf.Tensor) []
 			model.Graph.Operation(drawPileInputLayer).Output(0): drawPiles,
 		},
 		[]tf.Output{
-			model.Graph.Operation(policyOutputLayer).Output(0),
-			model.Graph.Operation(valueOutputLayer).Output(0),
+			model.Graph.Operation(outputLayer).Output(0),
+			model.Graph.Operation(outputLayer).Output(1),
 		},
 		nil,
 	)

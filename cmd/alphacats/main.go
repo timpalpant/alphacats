@@ -149,6 +149,7 @@ func loadPolicy(params RunParams) []*model.MCTSPSRO {
 
 func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 	filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))
+	glog.Infof("Saving player %d policy to: %v", player, filename)
 	f, err := os.Create(filename)
 	if err != nil {
 		return err

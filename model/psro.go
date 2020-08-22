@@ -19,9 +19,10 @@ type MCTSPSRO struct {
 	policies []mcts.Policy
 	weights  []float32
 
-	mx        sync.Mutex
-	samples   []Sample
-	sampleIdx int
+	mx         sync.Mutex
+	samples    []Sample
+	maxSamples int
+	sampleIdx  int
 
 	currentNetwork *TrainedLSTM
 	needsRetrain   bool
@@ -34,6 +35,7 @@ func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse int) *MCTSPSRO {
 		policies:        []mcts.Policy{&UniformRandomPolicy{}},
 		weights:         []float32{1.0},
 		samples:         make([]Sample, 0, maxSamples),
+		maxSamples:      maxSamples,
 	}
 }
 
@@ -55,10 +57,10 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 	if err := dec.Decode(&m.samples); err != nil {
 		return nil, err
 	}
-	if err := dec.Decode(&m.sampleIdx); err != nil {
+	if err := dec.Decode(&m.maxSamples); err != nil {
 		return nil, err
 	}
-	if err := dec.Decode(&m.currentNetwork); err != nil {
+	if err := dec.Decode(&m.sampleIdx); err != nil {
 		return nil, err
 	}
 	if err := dec.Decode(&m.needsRetrain); err != nil {
@@ -86,10 +88,10 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 	if err := enc.Encode(m.samples); err != nil {
 		return err
 	}
-	if err := enc.Encode(m.sampleIdx); err != nil {
+	if err := enc.Encode(m.maxSamples); err != nil {
 		return err
 	}
-	if err := enc.Encode(m.currentNetwork); err != nil {
+	if err := enc.Encode(m.sampleIdx); err != nil {
 		return err
 	}
 	if err := enc.Encode(m.needsRetrain); err != nil {
@@ -101,10 +103,10 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 func (m *MCTSPSRO) AddSample(s Sample) {
 	m.mx.Lock()
 	defer m.mx.Unlock()
-	if len(m.samples) < cap(m.samples) {
+	if len(m.samples) < m.maxSamples {
 		m.samples = append(m.samples, s)
 	} else {
-		m.samples[m.sampleIdx%len(m.samples)] = s
+		m.samples[m.sampleIdx%m.maxSamples] = s
 	}
 
 	m.sampleIdx++
@@ -139,6 +141,10 @@ func (m *MCTSPSRO) TrainNetwork() {
 func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	m.mx.Lock()
 	defer m.mx.Unlock()
+	if m.currentNetwork == nil {
+		return
+	}
+
 	// TODO(palpant): Implement real PSRO. For now we just average all networks
 	// with equal weight (aka Fictitious Play).
 	m.policies = append(m.policies, &PredictorPolicy{m.currentNetwork})
@@ -203,12 +209,12 @@ func (u *UniformRandomPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 
 // Adaptor to use TrainedLSTM as a mcts.Policy.
 type PredictorPolicy struct {
-	model *TrainedLSTM
+	Model *TrainedLSTM
 }
 
 func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	p, _ := pp.model.Predict(is)
+	p, _ := pp.Model.Predict(is)
 	return p
 }
 
@@ -218,4 +224,9 @@ func uniformDistribution(n int) []float32 {
 		result[i] = 1.0 / float32(n)
 	}
 	return result
+}
+
+func init() {
+	gob.Register(&UniformRandomPolicy{})
+	gob.Register(&PredictorPolicy{})
 }

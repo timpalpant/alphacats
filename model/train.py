@@ -106,6 +106,7 @@ def load_data(filename: str):
     X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
     Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))
     Y_value = batch["Y_value"].reshape((n_samples, 1))
+    logging.info("Mean value of all samples: %.4f", Y_value.mean())
     Y = {"policy": Y_policy, "value": Y_value}
     return X, Y
 

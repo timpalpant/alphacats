@@ -11,11 +11,13 @@ import (
 const (
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
-	numActionFeatures = 16
+	numActionFeatures  = 16
+	maxCardsInDrawPile = 13
 	// Vector size of output predictions: one for each card type,
 	// one for each insertion position, and one for drawing a card.
-	maxCardsInDrawPile = 13
-	outputDimension    = cards.NumTypes + maxCardsInDrawPile + 1
+	// One for each type of card to play or give.
+	maxInsertPositions = 8
+	outputDimension    = 2*cards.NumTypes + maxInsertPositions + 1
 )
 
 func encodeHistoryTF(h gamestate.History, result []byte) {
@@ -106,7 +108,7 @@ func encodeDrawPile(drawPile cards.Stack, result []float32) {
 	})
 }
 
-func encodeOutputs(availableActions []gamestate.Action, policy, result []float32) {
+func encodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, policy, result []float32) {
 	clear(result)
 	for i, action := range availableActions {
 		switch action.Type {
@@ -114,17 +116,72 @@ func encodeOutputs(availableActions []gamestate.Action, policy, result []float32
 			// First position is always the advantages of ending turn by drawing a card,
 			// since this corresponds to the "Unknown" card enum.
 			result[0] = policy[i]
-		case gamestate.PlayCard, gamestate.GiveCard:
-			// Next 9 positions correspond to playing/giving each card type.
+		case gamestate.PlayCard:
+			// Next 10 positions correspond to playing each card type.
 			result[action.Card] = policy[i]
+		case gamestate.GiveCard:
+			// Next 10 positions correspond to giving each card type.
+			result[cards.NumTypes+int(action.Card)] = policy[i]
 		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
-			idx := cards.NumTypes + int(action.PositionInDrawPile)
+			// Position 0 -> insert randomly.
+			// Position 1 -> insert on the bottom.
+			// Position 2...N -> insert in the nth position.
+			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
+			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
+				idx = 2*cards.NumTypes + 1
+			}
+
 			result[idx] = policy[i]
 		default:
 			panic(fmt.Errorf("unsupported action: %v", action))
 		}
 	}
+}
+
+func decodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, predictions []float32) []float32 {
+	policy := make([]float32, len(availableActions))
+	for i, action := range availableActions {
+		switch action.Type {
+		case gamestate.DrawCard:
+			// First position is always the advantages of ending turn by drawing a card,
+			// since this corresponds to the "Unknown" card enum.
+			policy[i] = predictions[0]
+		case gamestate.PlayCard:
+			// Next 9 positions correspond to playing/giving each card type.
+			policy[i] = predictions[action.Card]
+		case gamestate.GiveCard:
+			policy[i] = predictions[cards.NumTypes+int(action.Card)]
+		case gamestate.InsertExplodingKitten:
+			// Remaining correspond to inserting cat at each position.
+			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
+			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
+				idx = 2*cards.NumTypes + 1
+			}
+			policy[i] = predictions[idx]
+		default:
+			panic(fmt.Errorf("unsupported action: %v", action))
+		}
+	}
+
+	// Renormalize policy since some weight may have been given to invalid actions.
+	normalize(policy)
+	return policy
+}
+
+func normalize(p []float32) {
+	total := sum(p)
+	for i := range p {
+		p[i] /= total
+	}
+}
+
+func sum(vs []float32) float32 {
+	total := float32(0.0)
+	for _, v := range vs {
+		total += v
+	}
+	return total
 }
 
 func clear(result []float32) {

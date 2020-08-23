@@ -34,7 +34,8 @@ MAX_HISTORY = 58
 N_ACTION_FEATURES = 16
 NUM_CARD_TYPES = 11
 MAX_CARDS_IN_DRAW_PILE = 13
-N_OUTPUTS = NUM_CARD_TYPES + MAX_CARDS_IN_DRAW_PILE + 1
+MAX_INSERT_POSITIONS = 8
+N_OUTPUTS = 2*NUM_CARD_TYPES + MAX_INSERT_POSITIONS + 1
 
 
 def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, policy_shape: int):
@@ -46,7 +47,7 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
-    lstm = Bidirectional(LSTM(64, return_sequences=False))(history_input)
+    lstm = Bidirectional(LSTM(32, return_sequences=False))(history_input)
 
     # The private hand arm of the model.
     hands_input = Input(name="hands", shape=hands_shape)
@@ -57,21 +58,18 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # Concatenate with LSTM, hand, and draw pile.
     # Then send through some dense layers.
     merged_inputs_1 = concatenate([lstm, hands_input, drawpile_input])
-    dropout_1 = Dropout(0.2)(merged_inputs_1)
-    merged_hidden_1 = Dense(128, activation='relu')(dropout_1)
-    norm_1 = BatchNormalization()(merged_hidden_1)
-    dropout_2 = Dropout(0.2)(norm_1)
-    merged_hidden_2 = Dense(128, activation='relu')(dropout_2)
-    norm_2 = BatchNormalization()(merged_hidden_2)
-    dropout_3 = Dropout(0.2)(norm_2)
-    merged_hidden_3 = Dense(128, activation='relu')(dropout_3)
-    norm_3 = BatchNormalization()(merged_hidden_3)
-    dropout_4 = Dropout(0.2)(norm_3)
+    merged_hidden_1 = Dense(128, activation='relu')(merged_inputs_1)
+    merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
+    merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
+    norm = BatchNormalization()(merged_hidden_3)
+    dropout = Dropout(0.2)(norm)
 
     # Policy output head.
-    policy_output = Dense(policy_shape, activation='softmax', name='policy')(dropout_4)
+    policy_hidden_1 = Dense(32, activation='relu')(dropout)
+    policy_output = Dense(policy_shape, activation='softmax', kernel_regularizer=l2(0.001), name='policy')(policy_hidden_1)
     # Value output head.
-    value_hidden_1 = Dense(1, activation='linear')(dropout_4)
+    value_hidden_1 = Dense(16, activation='relu')(dropout)
+    value_hidden_2 = Dense(1, activation='linear', kernel_regularizer=l2(0.001))(value_hidden_1)
     value_output = Dense(1, activation='tanh', name='value')(value_hidden_1)
 
     model = Model(

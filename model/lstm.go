@@ -251,43 +251,8 @@ func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float
 	m.reqsCh <- req
 	prediction := <-req.resultCh
 	predictionRequestPool.Put(req)
-
-	policy := make([]float32, len(is.AvailableActions))
-	for i, action := range is.AvailableActions {
-		switch action.Type {
-		case gamestate.DrawCard:
-			// First position is always the advantages of ending turn by drawing a card,
-			// since this corresponds to the "Unknown" card enum.
-			policy[i] = prediction.policy[0]
-		case gamestate.PlayCard, gamestate.GiveCard:
-			// Next 9 positions correspond to playing/giving each card type.
-			policy[i] = prediction.policy[action.Card]
-		case gamestate.InsertExplodingKitten:
-			// Remaining correspond to inserting cat at each position.
-			policy[i] = prediction.policy[cards.NumTypes+int(action.PositionInDrawPile)]
-		default:
-			panic(fmt.Errorf("unsupported action: %v", action))
-		}
-	}
-
-	// Renormalize policy since some weight may have been given to invalid actions.
-	normalize(policy)
+	policy := decodeOutputs(is.NumDrawPileCards, is.AvailableActions, prediction.policy)
 	return policy, prediction.value
-}
-
-func normalize(p []float32) {
-	total := sum(p)
-	for i := range p {
-		p[i] /= total
-	}
-}
-
-func sum(vs []float32) float32 {
-	total := float32(0.0)
-	for _, v := range vs {
-		total += v
-	}
-	return total
 }
 
 type predictionRequest struct {

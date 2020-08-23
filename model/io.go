@@ -41,7 +41,7 @@ func saveTrainingData(batch []Sample, filename string) error {
 		encodeDrawPile(is.DrawPile, drawPile[:])
 		drawPiles = append(drawPiles, drawPile[:]...)
 
-		encodeOutputs(is.AvailableActions, sample.Policy, policy[:])
+		encodeOutputs(is.NumDrawPileCards, is.AvailableActions, sample.Policy, policy[:])
 		yPolicy = append(yPolicy, policy[:]...)
 		yValue = append(yValue, sample.Value)
 	}

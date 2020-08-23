@@ -93,6 +93,7 @@ type AbstractedInfoSet struct {
 	P0PlayedCards    cards.Set
 	P1PlayedCards    cards.Set
 	DrawPile         cards.Stack
+	NumDrawPileCards int
 	AvailableActions []gamestate.Action
 }
 
@@ -155,6 +156,7 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 		P0PlayedCards:    p0PlayedCards,
 		P1PlayedCards:    p1PlayedCards,
 		DrawPile:         drawPile,
+		NumDrawPileCards: nDrawPileCards,
 		AvailableActions: availableActions,
 	}
 }

@@ -82,6 +82,7 @@ func main() {
 	for epoch := 0; ; epoch++ {
 		player := epoch % 2
 		policy := policies[player]
+		search := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C))
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
 		var wg sync.WaitGroup
@@ -98,7 +99,6 @@ func main() {
 				game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 				infoSet := game.GetInfoSet(gamestate.Player(player))
 				opponentPolicy := policies[1-player].SamplePolicy()
-				search := mcts.NewOneSidedISMCTS(player, opponentPolicy, policy, float32(params.SamplingParams.C))
 				beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
 
 				glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
@@ -171,7 +171,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.On
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 		} else {
-			simulate(search, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
+			simulate(search, opponentPolicy, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
 			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			p := search.GetPolicy(game, float32(params.Temperature/float64(depth)))
 			selected := sampling.SampleOne(p, rand.Float32())
@@ -196,9 +196,10 @@ func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.On
 	return samples
 }
 
-func simulate(search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, n, nParallel int) {
+func simulate(search *mcts.OneSidedISMCTS, opponent mcts.Policy,
+	beliefs *alphacats.BeliefState, n, nParallel int) {
 	var wg sync.WaitGroup
-	nWorkers := min(n, nParallel) // TODO(palpant): Make this a flag.
+	nWorkers := min(n, nParallel)
 	nPerWorker := n / nWorkers
 	for worker := 0; worker < nWorkers; worker++ {
 		wg.Add(1)
@@ -206,7 +207,7 @@ func simulate(search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, n, nP
 			defer wg.Done()
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				search.Run(game)
+				search.Run(game, opponent)
 			}
 		}()
 	}

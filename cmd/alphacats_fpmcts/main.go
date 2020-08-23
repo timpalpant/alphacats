@@ -93,12 +93,11 @@ type RecursiveSearchPolicy struct {
 func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	is := node.InfoSet(int(r.player)).Key()
 	r.mx.Lock()
+	defer r.mx.Unlock()
 	if _, ok := r.cache[is]; ok {
-		r.mx.Unlock()
 		cacheHitsByLevel.Add(r.level, 1)
 		return r.search.GetPolicy(node, r.temperature)
 	}
-	r.mx.Unlock()
 
 	searchesByLevel.Add(r.level, 1)
 	beliefs := r.beliefs.Clone()
@@ -120,8 +119,6 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	}
 
 	wg.Wait()
-	r.mx.Lock()
-	defer r.mx.Unlock()
 	r.cache[is] = struct{}{}
 	return r.search.GetPolicy(node, r.temperature)
 }

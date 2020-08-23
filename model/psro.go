@@ -27,6 +27,7 @@ type MCTSPSRO struct {
 	sampleIdx  int
 
 	currentNetwork *TrainedLSTM
+	rollout        mcts.Evaluator
 	needsRetrain   bool
 }
 
@@ -38,11 +39,14 @@ func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse int) *MCTSPSRO {
 		weights:         []float32{1.0},
 		samples:         make([]Sample, 0, maxSamples),
 		maxSamples:      maxSamples,
+		rollout:         mcts.NewRandomRollout(1),
 	}
 }
 
 func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
-	m := &MCTSPSRO{}
+	m := &MCTSPSRO{
+		rollout: mcts.NewRandomRollout(1),
+	}
 	dec := gob.NewDecoder(r)
 	if err := dec.Decode(&m.model); err != nil {
 		return nil, err
@@ -165,12 +169,10 @@ func (m *MCTSPSRO) SamplePolicy() mcts.Policy {
 
 // Evaluate implements mcts.Evaluator for one-sided IS-MCTS search rollouts
 // when this policy is being trained as the exploiter.
-func (m *MCTSPSRO) Evaluate(node cfr.GameTreeNode) ([]float32, float32) {
+func (m *MCTSPSRO) Evaluate(node cfr.GameTreeNode, opponent mcts.Policy) ([]float32, float32) {
 	nn := m.getCurrentNetwork()
 	if nn == nil {
-		p := uniformDistribution(node.NumChildren())
-		v := float32(0.0)
-		return p, v
+		return m.rollout.Evaluate(node, opponent)
 	}
 
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)

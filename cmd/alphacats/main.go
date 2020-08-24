@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"expvar"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -26,6 +27,11 @@ import (
 )
 
 var stdin = bufio.NewReader(os.Stdin)
+
+var (
+	gamesRemaining    = expvar.NewInt("games_remaining")
+	searchesPerformed = expvar.NewInt("searches_performed")
+)
 
 type RunParams struct {
 	NumGamesPerEpoch    int
@@ -88,6 +94,7 @@ func main() {
 		search := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C))
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
+		gamesRemaining.Add(int64(params.NumGamesPerEpoch))
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, params.MaxParallelGames)
 		for i := 0; i < params.NumGamesPerEpoch; i++ {
@@ -95,6 +102,7 @@ func main() {
 			sem <- struct{}{}
 			go func() {
 				defer func() {
+					gamesRemaining.Add(-1)
 					wg.Done()
 					<-sem
 				}()
@@ -211,6 +219,7 @@ func simulate(search *mcts.OneSidedISMCTS, opponent mcts.Policy,
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
 				search.Run(game, opponent)
+				searchesPerformed.Add(1)
 			}
 		}()
 	}

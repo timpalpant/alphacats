@@ -3,6 +3,7 @@ package alphacats
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
@@ -180,20 +181,31 @@ func (bs *BeliefState) dedupStates() {
 	}
 }
 
+func (bs *BeliefState) getOpponentProbs() [][]float32 {
+	opponentProbs := make([][]float32, len(bs.states))
+	var wg sync.WaitGroup
+	wg.Add(len(bs.states))
+	for i, determinization := range bs.states {
+		go func(i int, determinization *GameNode) {
+			opponentProbs[i] = bs.opponentPolicy(determinization)
+			wg.Done()
+		}(i, determinization)
+	}
+
+	wg.Wait()
+	return opponentProbs
+}
+
 func (bs *BeliefState) advanceAction(action gamestate.Action) {
+	var opponentProbs [][]float32
 	isOpponentAction := (action.Player != bs.infoSet.Player)
+	if isOpponentAction {
+		opponentProbs = bs.getOpponentProbs()
+	}
+
 	var newStates []*GameNode
 	var newReachProbs []float32
 	for i, determinization := range bs.states {
-		var p []float32
-		if isOpponentAction { // Avoid allocation for self nodes.
-			p = bs.opponentPolicy(determinization)
-			if len(p) != determinization.NumChildren() {
-				panic(fmt.Errorf("Policy returned the wrong number of actions: expected %d, got %d",
-					determinization.NumChildren(), len(p)))
-			}
-		}
-
 		for j := 0; j < determinization.NumChildren(); j++ {
 			child := determinization.GetChild(j).(*GameNode)
 			is := child.GetInfoSet(bs.infoSet.Player)
@@ -221,8 +233,8 @@ func (bs *BeliefState) advanceAction(action gamestate.Action) {
 				}
 
 				newP := bs.reachProbs[i]
-				if len(p) > 0 { // Opponent action
-					newP *= p[j]
+				if isOpponentAction { // Opponent action
+					newP *= opponentProbs[i][j]
 				}
 				newReachProbs = append(newReachProbs, newP)
 			}

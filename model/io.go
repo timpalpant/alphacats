@@ -40,7 +40,7 @@ func saveTrainingData(batch []Sample, filename string) error {
 		hands = append(hands, hand[:]...)
 		encodeHand(is.P1PlayedCards, hand[:])
 		hands = append(hands, hand[:]...)
-		encodeDrawPile(is.DrawPile, drawPile)
+		encodeDrawPile(is.DrawPile, is.Hand, is.P0PlayedCards, is.P1PlayedCards, drawPile)
 		for _, row := range drawPile {
 			drawPiles = append(drawPiles, row...)
 		}

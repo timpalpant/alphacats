@@ -244,7 +244,7 @@ func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float
 	encodeHandTF(is.P0PlayedCards, tfHands[tfHandSize:])
 	encodeHandTF(is.P1PlayedCards, tfHands[2*tfHandSize:])
 	tfDrawPile := make([]byte, tfDrawPileSize)
-	encodeDrawPileTF(is.DrawPile, tfDrawPile)
+	encodeDrawPileTF(is.DrawPile, is.Hand, is.P0PlayedCards, is.P1PlayedCards, tfDrawPile)
 	tfOutputMask := make([]byte, tfOutputMaskSize)
 	encodeOutputMaskTF(is.DrawPile.Len(), is.AvailableActions, tfOutputMask)
 	req := predictionRequestPool.Get().(*predictionRequest)

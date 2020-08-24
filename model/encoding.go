@@ -101,12 +101,15 @@ func newOneHotDrawPile() [][]float32 {
 	return result
 }
 
-func encodeDrawPileTF(drawPile cards.Stack, result []byte) {
+func encodeDrawPileTF(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, result []byte) {
+	freeCards := getRemainingUnknownCards(drawPile, hand, p0Played, p1Played)
+	unkWeights := getCardProbabilities(freeCards)
+
 	// We encode actions directly, rather than reuse EncodeDrwawPile,
 	// to avoid needing to allocate large intermediate one-hot [][]float32.
 	i := 0
 	drawPile.Iter(func(card cards.Card) {
-		encodeCardTF(drawPile.NthCard(i), result[4*cards.NumTypes*i:])
+		encodeCardTF(drawPile.NthCard(i), unkWeights, result[4*cards.NumTypes*i:])
 		i++
 	})
 
@@ -115,10 +118,12 @@ func encodeDrawPileTF(drawPile cards.Stack, result []byte) {
 	}
 }
 
-func encodeDrawPile(drawPile cards.Stack, result [][]float32) {
+func encodeDrawPile(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, result [][]float32) {
+	freeCards := getRemainingUnknownCards(drawPile, hand, p0Played, p1Played)
+	unkWeights := getCardProbabilities(freeCards)
 	i := 0
 	drawPile.Iter(func(card cards.Card) {
-		encodeCard(card, result[i])
+		encodeCard(card, unkWeights, result[i])
 		i++
 	})
 
@@ -127,16 +132,45 @@ func encodeDrawPile(drawPile cards.Stack, result [][]float32) {
 	}
 }
 
-func encodeCardTF(card cards.Card, result []byte) {
+func getCardProbabilities(freeCards cards.Set) []float32 {
+	total := freeCards.Len()
+	result := make([]float32, cards.NumTypes)
+	freeCards.Iter(func(card cards.Card, count uint8) {
+		result[card] = float32(count) / float32(total)
+	})
+
+	return result
+}
+
+func getRemainingUnknownCards(drawPile cards.Stack, hand, p0Played, p1Played cards.Set) cards.Set {
+	freeCards := cards.CoreDeck
+	freeCards.Add(cards.Defuse)
+	freeCards.Add(cards.Defuse)
+	freeCards.Add(cards.Defuse)
+	freeCards.Add(cards.ExplodingKitten)
+	freeCards.RemoveAll(hand)
+	freeCards.RemoveAll(p0Played)
+	freeCards.RemoveAll(p1Played)
+	for i := 0; i < drawPile.Len(); i++ {
+		nthCard := drawPile.NthCard(i)
+		if nthCard != cards.Unknown && nthCard != cards.TBD {
+			freeCards.Remove(nthCard)
+		}
+	}
+	return freeCards
+}
+
+func encodeCardTF(card cards.Card, unkWeights []float32, result []byte) {
 	var oneHot [cards.NumTypes]float32
-	encodeCard(card, oneHot[:])
+	encodeCard(card, unkWeights, oneHot[:])
 	tffloats.EncodeF32s(oneHot[:], result)
 }
 
-func encodeCard(card cards.Card, result []float32) {
-	clear(result)
-	// TBD is left as zero value for masking.
-	if card != cards.TBD {
+func encodeCard(card cards.Card, unkWeights []float32, result []float32) {
+	if card == cards.TBD {
+		copy(result, unkWeights)
+	} else {
+		clear(result)
 		result[card] = 1.0
 	}
 }

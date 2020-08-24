@@ -141,6 +141,43 @@ func encodeCard(card cards.Card, result []float32) {
 	}
 }
 
+func encodeOutputMaskTF(numDrawPileCards int, availableActions []gamestate.Action, result []byte) {
+	var mask [outputDimension]float32
+	encodeOutputMask(numDrawPileCards, availableActions, mask[:])
+	tffloats.EncodeF32s(mask[:], result)
+}
+
+func encodeOutputMask(numDrawPileCards int, availableActions []gamestate.Action, result []float32) {
+	clear(result)
+	for _, action := range availableActions {
+		switch action.Type {
+		case gamestate.DrawCard:
+			// First position is always the advantages of ending turn by drawing a card,
+			// since this corresponds to the "Unknown" card enum.
+			result[0] = 1.0
+		case gamestate.PlayCard:
+			// Next 10 positions correspond to playing each card type.
+			result[action.Card] = 1.0
+		case gamestate.GiveCard:
+			// Next 10 positions correspond to giving each card type.
+			result[cards.NumTypes+int(action.Card)] = 1.0
+		case gamestate.InsertExplodingKitten:
+			// Remaining correspond to inserting cat at each position.
+			// Position 0 -> insert randomly.
+			// Position 1 -> insert on the bottom.
+			// Position 2...N -> insert in the nth position.
+			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
+			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
+				idx = 2*cards.NumTypes + 1
+			}
+
+			result[idx] = 1.0
+		default:
+			panic(fmt.Errorf("unsupported action: %v", action))
+		}
+	}
+}
+
 func encodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, policy, result []float32) {
 	clear(result)
 	for i, action := range availableActions {

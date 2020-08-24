@@ -18,6 +18,7 @@ from tensorflow.keras.layers import (
     Input,
     LSTM,
     Masking,
+    Multiply,
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
@@ -67,8 +68,10 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     dropout = Dropout(0.2)(merged_hidden_3)
 
     # Policy output head.
-    policy_hidden_1 = Dense(32, activation='relu')(dropout)
-    policy_output = Dense(policy_shape, activation='softmax', kernel_regularizer=l2(0.001), name='policy')(policy_hidden_1)
+    policy_hidden_1 = Dense(policy_shape, activation='relu')(dropout)
+    output_mask = Input(name="output_mask", shape=policy_shape)
+    policy_masked = Multiply()(policy_hidden_1, output_mask)
+    policy_output = Dense(policy_shape, activation='softmax', kernel_regularizer=l2(0.001), name='policy')(policy_masked)
     # Value output head.
     value_hidden_1 = Dense(16, activation='relu')(dropout)
     value_hidden_2 = Dense(1, activation='linear', kernel_regularizer=l2(0.001))(value_hidden_1)
@@ -103,7 +106,8 @@ def load_data(filename: str):
     X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
     X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
     X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE, NUM_CARD_TYPES))
-    X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
+    X_output_mask = batch["X_output_mask"].reshape((n_samples, N_OUTPUTS))
+    X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile, "output_mask": X_output_mask}
     Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))
     Y_value = batch["Y_value"].reshape((n_samples, 1))
     logging.info("Mean value of all samples: %.4f", Y_value.mean())

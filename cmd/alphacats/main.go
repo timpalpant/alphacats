@@ -38,7 +38,8 @@ type RunParams struct {
 	SampleBufferSize int
 	MaxSampleReuse   int
 
-	ModelParams model.Params
+	ModelParams         model.Params
+	PredictionCacheSize int
 }
 
 type SamplingParams struct {
@@ -70,6 +71,8 @@ func main() {
 		"Number of background prediction workers")
 	flag.IntVar(&params.ModelParams.MaxInferenceBatchSize, "model.predict_batch_size", 2048,
 		"Maximum batch size for prediction")
+	flag.IntVar(&params.PredictionCacheSize, "prediction_cache_size", 100000,
+		"Size of LRU prediction cache per model")
 
 	flag.Parse()
 
@@ -123,8 +126,8 @@ func main() {
 
 func loadPolicy(params RunParams) []*model.MCTSPSRO {
 	lstm := model.NewLSTM(params.ModelParams)
-	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse)
-	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse)
+	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
+	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
 	policies := []*model.MCTSPSRO{p0, p1}
 	for player := range policies {
 		filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))

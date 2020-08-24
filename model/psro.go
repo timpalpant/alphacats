@@ -1,12 +1,15 @@
 package model
 
 import (
+	"bytes"
 	"encoding/gob"
+	"expvar"
 	"io"
 	"math/rand"
 	"sync"
 
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru"
 	"github.com/timpalpant/go-cfr"
 	"github.com/timpalpant/go-cfr/mcts"
 	"github.com/timpalpant/go-cfr/sampling"
@@ -14,9 +17,15 @@ import (
 	"github.com/timpalpant/alphacats"
 )
 
+var (
+	cacheHits   = expvar.NewInt("predictions/cache_hits")
+	cacheMisses = expvar.NewInt("predictions/cache_misses")
+)
+
 type MCTSPSRO struct {
-	model           *LSTM
-	retrainInterval int
+	model               *LSTM
+	retrainInterval     int
+	predictionCacheSize int
 
 	policies []mcts.Policy
 	weights  []float32
@@ -31,15 +40,16 @@ type MCTSPSRO struct {
 	needsRetrain   bool
 }
 
-func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse int) *MCTSPSRO {
+func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse, predictionCacheSize int) *MCTSPSRO {
 	return &MCTSPSRO{
-		model:           model,
-		retrainInterval: maxSamples / maxSampleReuse,
-		policies:        []mcts.Policy{&UniformRandomPolicy{}},
-		weights:         []float32{1.0},
-		samples:         make([]Sample, 0, maxSamples),
-		maxSamples:      maxSamples,
-		rollout:         mcts.NewRandomRollout(1),
+		model:               model,
+		retrainInterval:     maxSamples / maxSampleReuse,
+		predictionCacheSize: predictionCacheSize,
+		policies:            []mcts.Policy{&UniformRandomPolicy{}},
+		weights:             []float32{1.0},
+		samples:             make([]Sample, 0, maxSamples),
+		maxSamples:          maxSamples,
+		rollout:             mcts.NewRandomRollout(1),
 	}
 }
 
@@ -52,6 +62,9 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 		return nil, err
 	}
 	if err := dec.Decode(&m.retrainInterval); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(&m.predictionCacheSize); err != nil {
 		return nil, err
 	}
 	if err := dec.Decode(&m.policies); err != nil {
@@ -83,6 +96,9 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 		return err
 	}
 	if err := enc.Encode(m.retrainInterval); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.predictionCacheSize); err != nil {
 		return err
 	}
 	if err := enc.Encode(m.policies); err != nil {
@@ -153,7 +169,7 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 
 	// TODO(palpant): Implement real PSRO. For now we just average all networks
 	// with equal weight (aka Fictitious Play).
-	m.policies = append(m.policies, &PredictorPolicy{m.currentNetwork})
+	m.policies = append(m.policies, NewPredictorPolicy(m.currentNetwork, m.predictionCacheSize))
 	m.weights = uniformDistribution(len(m.policies))
 	m.currentNetwork = nil
 	m.samples = m.samples[:0]
@@ -194,13 +210,72 @@ func (u *UniformRandomPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 
 // Adaptor to use TrainedLSTM as a mcts.Policy.
 type PredictorPolicy struct {
-	Model *TrainedLSTM
+	model     *TrainedLSTM
+	cache     *lru.Cache
+	cacheSize int
+}
+
+func NewPredictorPolicy(model *TrainedLSTM, cacheSize int) *PredictorPolicy {
+	cache, err := lru.New(cacheSize)
+	if err != nil {
+		panic(err)
+	}
+
+	return &PredictorPolicy{
+		model:     model,
+		cache:     cache,
+		cacheSize: cacheSize,
+	}
 }
 
 func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	p, _ := pp.Model.Predict(is)
+	key := is.Key()
+	cached, ok := pp.cache.Get(key)
+	if ok {
+		cacheHits.Add(1)
+		return cached.([]float32)
+	}
+
+	cacheMisses.Add(1)
+	p, _ := pp.model.Predict(is)
+	pp.cache.Add(key, p)
 	return p
+}
+
+func (pp *PredictorPolicy) GobDecode(buf []byte) error {
+	r := bytes.NewReader(buf)
+	dec := gob.NewDecoder(r)
+
+	if err := dec.Decode(&pp.model); err != nil {
+		return err
+	}
+
+	if err := dec.Decode(&pp.cacheSize); err != nil {
+		return err
+	}
+
+	cache, err := lru.New(pp.cacheSize)
+	if err != nil {
+		return err
+	}
+	pp.cache = cache
+
+	return nil
+}
+
+func (pp *PredictorPolicy) GobEncode() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+
+	if err := enc.Encode(pp.model); err != nil {
+		return nil, err
+	}
+	if err := enc.Encode(pp.cacheSize); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
 func uniformDistribution(n int) []float32 {

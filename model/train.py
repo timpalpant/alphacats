@@ -16,10 +16,10 @@ from tensorflow.keras.layers import (
     Dense,
     Dropout,
     Input,
+    LeakyReLU,
     LSTM,
     Masking,
     Multiply,
-    ReLU,
     Softmax,
 )
 from tensorflow.keras.models import Model
@@ -65,13 +65,13 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # Then send through some dense layers.
     merged_inputs_1 = Concatenate()([history_lstm, drawpile_lstm, hands_input])
     merged_hidden_1 = Dense(128)(merged_inputs_1)
-    relu_1 = ReLU()(merged_hidden_1)
+    relu_1 = LeakyReLU()(merged_hidden_1)
     dropout_1 = Dropout(0.2)(relu_1)
     merged_hidden_2 = Dense(128)(dropout_1)
-    relu_2 = ReLU()(merged_hidden_2)
+    relu_2 = LeakyReLU()(merged_hidden_2)
     dropout_2 = Dropout(0.2)(relu_2)
     merged_hidden_3 = Dense(128)(dropout_2)
-    relu_3 = ReLU()(merged_hidden_3)
+    relu_3 = LeakyReLU()(merged_hidden_3)
 
     # Policy output head.
     policy_hidden_1 = Dense(policy_shape, activation='linear', kernel_regularizer='l2')(relu_3)

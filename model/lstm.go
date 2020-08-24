@@ -251,6 +251,7 @@ func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float
 	req.history = tfHistory
 	req.hands = tfHands
 	req.drawPile = tfDrawPile
+	req.outputMask = tfOutputMask
 
 	m.reqsCh <- req
 	prediction := <-req.resultCh

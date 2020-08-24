@@ -345,6 +345,7 @@ func concat(batch []*predictionRequest) (histories, hands, drawPiles, outputMask
 	for _, req := range batch {
 		histories = append(histories, req.history...)
 		hands = append(hands, req.hands...)
+		drawPiles = append(drawPiles, req.drawPile...)
 		outputMasks = append(outputMasks, req.outputMask...)
 	}
 

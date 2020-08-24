@@ -139,7 +139,7 @@ func getCardProbabilities(drawPile cards.Stack, freeCards cards.Set) []float32 {
 	freeCards.Iter(func(card cards.Card, count uint8) {
 		result[card] = float32(count) / float32(total)
 	})
-	result[cards.ExplodingKitten] = 1.0 / drawPile.Len()
+	result[cards.ExplodingKitten] = 1.0 / float32(drawPile.Len())
 	normalize(result)
 
 	return result

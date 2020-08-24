@@ -53,11 +53,12 @@ func saveTrainingData(batch []Sample, filename string) error {
 	}
 
 	return npyio.MakeNPZ(filename, map[string][]float32{
-		"X_history":  histories,
-		"X_hands":    hands,
-		"X_drawpile": drawPiles,
-		"Y_policy":   yPolicy,
-		"Y_value":    yValue,
+		"X_history":     histories,
+		"X_hands":       hands,
+		"X_drawpile":    drawPiles,
+		"X_output_mask": outputMasks,
+		"Y_policy":      yPolicy,
+		"Y_value":       yValue,
 	})
 }
 

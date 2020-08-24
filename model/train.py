@@ -12,7 +12,7 @@ from tensorflow.keras.callbacks import (
 )
 from tensorflow.keras.layers import (
     Bidirectional,
-    concatenate,
+    Concatenate,
     Dense,
     Dropout,
     Input,
@@ -39,46 +39,45 @@ MAX_INSERT_POSITIONS = 8
 N_OUTPUTS = 2*NUM_CARD_TYPES + MAX_INSERT_POSITIONS + 1
 
 
-def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, policy_shape: int):
+def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple, output_mask_shape: tuple, policy_shape: int):
     logging.info("Building model")
     logging.info("History input shape: %s", history_shape)
+    history_input = Input(name="history", shape=history_shape)
     logging.info("Hands input shape: %s", hands_shape)
+    hands_input = Input(name="hands", shape=hands_shape)
     logging.info("Draw pile input shape: %s", drawpile_shape)
+    drawpile_input = Input(name="drawpile", shape=drawpile_shape)
+    logging.info("Output mask shape: %s", output_mask_shape)
+    output_mask_input = Input(name="output_mask", shape=output_mask_shape)
     logging.info("Policy output shape: %s", policy_shape)
 
     # The history (LSTM) arm of the model.
-    history_input = Input(name="history", shape=history_shape)
     masked_history_input = Masking()(history_input)
     history_lstm = Bidirectional(LSTM(32, return_sequences=False))(masked_history_input)
 
     # The draw pile arm of the model.
-    drawpile_input = Input(name="drawpile", shape=drawpile_shape)
     masked_drawpile_input = Masking()(drawpile_input)
     drawpile_lstm = Bidirectional(LSTM(16, return_sequences=False))(masked_drawpile_input)
 
-    # The private hand arm of the model.
-    hands_input = Input(name="hands", shape=hands_shape)
-
     # Concatenate with LSTM, hand, and draw pile.
     # Then send through some dense layers.
-    merged_inputs_1 = concatenate([history_lstm, drawpile_lstm, hands_input])
+    merged_inputs_1 = Concatenate()([history_lstm, drawpile_lstm, hands_input])
     merged_hidden_1 = Dense(128, activation='relu')(merged_inputs_1)
     merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
     merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
     dropout = Dropout(0.2)(merged_hidden_3)
 
     # Policy output head.
-    policy_hidden_1 = Dense(policy_shape, activation='relu')(dropout)
-    output_mask = Input(name="output_mask", shape=policy_shape)
-    policy_masked = Multiply()(policy_hidden_1, output_mask)
-    policy_output = Dense(policy_shape, activation='softmax', kernel_regularizer=l2(0.001), name='policy')(policy_masked)
+    policy_hidden_1 = Dense(policy_shape, activation='relu', kernel_regularizer=l2(0.001))(dropout)
+    policy_masked = Multiply()([policy_hidden_1, output_mask_input])
+    policy_output = Dense(policy_shape, activation='softmax', name='policy')(policy_masked)
     # Value output head.
     value_hidden_1 = Dense(16, activation='relu')(dropout)
     value_hidden_2 = Dense(1, activation='linear', kernel_regularizer=l2(0.001))(value_hidden_1)
     value_output = Dense(1, activation='tanh', name='value')(value_hidden_1)
 
     model = Model(
-        inputs=[history_input, hands_input, drawpile_input],
+        inputs=[history_input, hands_input, drawpile_input, output_mask_input],
         outputs=[policy_output, value_output])
     model.compile(
         loss=['categorical_crossentropy', 'mean_squared_error'],
@@ -136,8 +135,9 @@ def main():
     history_shape = X["history"][0].shape
     hands_shape = X["hands"][0].shape
     drawpile_shape = X["drawpile"][0].shape
+    output_mask_shape = X["output_mask"][0].shape
     policy_shape = y["policy"][0].shape[0]
-    model = build_model(history_shape, hands_shape, drawpile_shape, policy_shape)
+    model = build_model(history_shape, hands_shape, drawpile_shape, output_mask_shape, policy_shape)
     print(model.summary())
     print("Input layer names:", [node.op.name for node in model.inputs])
     print("Output layer names:", [node.op.name for node in model.outputs])

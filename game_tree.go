@@ -81,7 +81,6 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 
 func (gn *GameNode) Clone() *GameNode {
 	result := *gn
-	result.parent = nil
 	result.children = nil
 	result.actions = nil
 	return &result
@@ -90,7 +89,6 @@ func (gn *GameNode) Clone() *GameNode {
 func (gn *GameNode) CloneWithState(state gamestate.GameState) *GameNode {
 	result := *gn
 	result.state = state
-	result.parent = nil
 	result.children = nil
 	result.actions = nil
 	return &result
@@ -274,7 +272,6 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
-	gn.parent = nil
 	gn.children = nil
 	gn.actions = nil
 }

@@ -40,12 +40,12 @@ type MCTSPSRO struct {
 	needsRetrain   bool
 }
 
-func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse, predictionCacheSize int) *MCTSPSRO {
+func NewMCTSPSRO(initialPolicy mcts.Policy, model *LSTM, maxSamples, maxSampleReuse, predictionCacheSize int) *MCTSPSRO {
 	return &MCTSPSRO{
 		model:               model,
 		retrainInterval:     maxSamples / maxSampleReuse,
 		predictionCacheSize: predictionCacheSize,
-		policies:            []mcts.Policy{&UniformRandomPolicy{}},
+		policies:            []mcts.Policy{initialPolicy},
 		weights:             []float32{1.0},
 		samples:             make([]Sample, 0, maxSamples),
 		maxSamples:          maxSamples,
@@ -202,6 +202,7 @@ func (m *MCTSPSRO) getCurrentNetwork() *TrainedLSTM {
 }
 
 // Policy that always plays randomly. Used to bootstrap fictitious play.
+// Alternative to SmoothUCT for bootstrapping fictitious play.
 type UniformRandomPolicy struct{}
 
 func (u *UniformRandomPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
@@ -288,5 +289,6 @@ func uniformDistribution(n int) []float32 {
 
 func init() {
 	gob.Register(&UniformRandomPolicy{})
+	gob.Register(&SmoothUCTPolicy{})
 	gob.Register(&PredictorPolicy{})
 }

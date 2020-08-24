@@ -69,6 +69,12 @@ func main() {
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
 	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.75,
 		"Exploration factor C used in MCTS search")
+	flag.Float64Var(&params.SamplingParams.Gamma, "sampling.gamma", 0.1,
+		"Mixing factor Gamma used in Smooth UCT search")
+	flag.Float64Var(&params.SamplingParams.Eta, "sampling.eta", 0.9,
+		"Mixing factor eta used in Smooth UCT search")
+	flag.Float64Var(&params.SamplingParams.D, "sampling.d", 0.001,
+		"Mixing factor d used in Smooth UCT search")
 	flag.StringVar(&params.ModelParams.OutputDir, "model.output_dir", "models",
 		"Output directory for trained models")
 	flag.IntVar(&params.ModelParams.NumEncodingWorkers, "model.encoding_workers", 4,
@@ -134,8 +140,12 @@ func main() {
 
 func loadPolicy(params RunParams) []*model.MCTSPSRO {
 	lstm := model.NewLSTM(params.ModelParams)
-	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
-	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
+	search := mcts.NewSmoothUCT(
+		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
+		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D))
+	bootstrapPolicy := model.NewSmoothUCTPolicy(search, float32(params.Temperature), params.MaxParallelSearches)
+	p0 := model.NewMCTSPSRO(bootstrapPolicy, lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
+	p1 := model.NewMCTSPSRO(bootstrapPolicy, lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
 	policies := []*model.MCTSPSRO{p0, p1}
 	for player := range policies {
 		filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))

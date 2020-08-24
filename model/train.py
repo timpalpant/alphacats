@@ -18,6 +18,7 @@ from tensorflow.keras.layers import (
     Dropout,
     Input,
     LSTM,
+    Masking,
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
@@ -47,7 +48,8 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
-    lstm = Bidirectional(LSTM(32, return_sequences=False))(history_input)
+    masked_input = Masking()(history_input)
+    lstm = Bidirectional(LSTM(32, return_sequences=False))(masked_input)
 
     # The private hand arm of the model.
     hands_input = Input(name="hands", shape=hands_shape)

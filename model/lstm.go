@@ -251,7 +251,7 @@ func (m *TrainedLSTM) Predict(is *alphacats.AbstractedInfoSet) ([]float32, float
 	m.reqsCh <- req
 	prediction := <-req.resultCh
 	predictionRequestPool.Put(req)
-	policy := decodeOutputs(is.NumDrawPileCards, is.AvailableActions, prediction.policy)
+	policy := decodeOutputs(is.DrawPile.Len(), is.AvailableActions, prediction.policy)
 	return policy, prediction.value
 }
 

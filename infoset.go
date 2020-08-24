@@ -93,7 +93,6 @@ type AbstractedInfoSet struct {
 	P0PlayedCards    cards.Set
 	P1PlayedCards    cards.Set
 	DrawPile         cards.Stack
-	NumDrawPileCards int
 	AvailableActions []gamestate.Action
 }
 
@@ -108,7 +107,9 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 	p1PlayedCards := cards.NewSet()
 	drawPile := cards.NewStack()
 	// TODO(palpant): This duplicates most of gamestate logic, but from the POV of a single player.
-	nDrawPileCards := 13
+	for i := 0; i < 13; i++ {
+		drawPile.SetNthCard(i, cards.TBD)
+	}
 	for i := 0; i < is.History.Len(); i++ {
 		packed := is.History.GetPacked(i)
 		publicHistory.AppendPacked(hidePrivateInfo(packed))
@@ -128,7 +129,6 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 				}
 			} else if action.Card == cards.DrawFromTheBottom {
 				drawPile.RemoveCard(nDrawPileCards - 1)
-				nDrawPileCards--
 			}
 		case gamestate.InsertExplodingKitten:
 			nDrawPileCards++
@@ -140,12 +140,11 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 				// which of the N random states we're now in.
 				drawPile.InsertCard(cards.ExplodingKitten, 0)
 				for j := 0; j < drawPile.Len(); j++ {
-					drawPile.SetNthCard(j, cards.Unknown)
+					drawPile.SetNthCard(j, cards.TBD)
 				}
 			}
 		case gamestate.DrawCard:
 			drawPile.RemoveCard(0)
-			nDrawPileCards--
 		}
 	}
 
@@ -156,7 +155,6 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 		P0PlayedCards:    p0PlayedCards,
 		P1PlayedCards:    p1PlayedCards,
 		DrawPile:         drawPile,
-		NumDrawPileCards: nDrawPileCards,
 		AvailableActions: availableActions,
 	}
 }

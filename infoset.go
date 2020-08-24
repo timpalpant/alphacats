@@ -123,14 +123,25 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 				p1PlayedCards.Add(action.Card)
 			}
 
-			if action.Card == cards.SeeTheFuture {
+			switch action.Card {
+			case cards.SeeTheFuture:
 				for i, card := range action.CardsSeen {
-					drawPile.SetNthCard(i, card)
+					if card != cards.Unknown {
+						drawPile.SetNthCard(i, card)
+					}
 				}
-			} else if action.Card == cards.DrawFromTheBottom {
+			case cards.DrawFromTheBottom:
 				drawPile.RemoveCard(drawPile.Len() - 1)
+			case cards.Shuffle:
+				drawPile = clearDrawPile(drawPile)
 			}
 		case gamestate.InsertExplodingKitten:
+			if action.Player == gamestate.Player0 {
+				p0PlayedCards.Add(cards.Defuse)
+			} else {
+				p1PlayedCards.Add(cards.Defuse)
+			}
+
 			if action.PositionInDrawPile != 0 {
 				drawPile.InsertCard(cards.ExplodingKitten, int(action.PositionInDrawPile-1))
 			} else {
@@ -138,9 +149,7 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 				// our knowledge of the draw pile, since once we observe the Kitten we know
 				// which of the N random states we're now in.
 				drawPile.InsertCard(cards.ExplodingKitten, 0)
-				for j := 0; j < drawPile.Len(); j++ {
-					drawPile.SetNthCard(j, cards.TBD)
-				}
+				drawPile = clearDrawPile(drawPile)
 			}
 		case gamestate.DrawCard:
 			drawPile.RemoveCard(0)
@@ -156,6 +165,13 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 		DrawPile:         drawPile,
 		AvailableActions: availableActions,
 	}
+}
+
+func clearDrawPile(drawPile cards.Stack) cards.Stack {
+	for j := 0; j < drawPile.Len(); j++ {
+		drawPile.SetNthCard(j, cards.TBD)
+	}
+	return drawPile
 }
 
 func hidePrivateInfo(a gamestate.EncodedAction) gamestate.EncodedAction {

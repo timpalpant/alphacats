@@ -362,7 +362,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 		}
 
 		drawPilesReader := bytes.NewReader(drawPilesBuf)
-		drawPilesShape := []int64{int64(len(batch)), int64(maxCardsInDrawPile * cards.NumTypes)}
+		drawPilesShape := []int64{int64(len(batch)), int64(maxCardsInDrawPile), int64(cards.NumTypes)}
 		drawPilesTensor, err := tf.ReadTensor(tf.Float, drawPilesShape, drawPilesReader)
 		if err != nil {
 			glog.Fatal(err)

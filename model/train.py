@@ -11,7 +11,6 @@ from tensorflow.keras.callbacks import (
     ModelCheckpoint,
 )
 from tensorflow.keras.layers import (
-    BatchNormalization,
     Bidirectional,
     concatenate,
     Dense,
@@ -48,23 +47,24 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
 
     # The history (LSTM) arm of the model.
     history_input = Input(name="history", shape=history_shape)
-    masked_input = Masking()(history_input)
-    lstm = Bidirectional(LSTM(32, return_sequences=False))(masked_input)
+    masked_history_input = Masking()(history_input)
+    history_lstm = Bidirectional(LSTM(32, return_sequences=False))(masked_history_input)
+
+    # The draw pile arm of the model.
+    drawpile_input = Input(name="drawpile", shape=drawpile_shape)
+    masked_drawpile_input = Masking()(drawpile_input)
+    drawpile_lstm = Bidirectional(LSTM(16, return_sequences=False))(masked_drawpile_input)
 
     # The private hand arm of the model.
     hands_input = Input(name="hands", shape=hands_shape)
 
-    # The draw pile arm of the model.
-    drawpile_input = Input(name="drawpile", shape=drawpile_shape)
-
     # Concatenate with LSTM, hand, and draw pile.
     # Then send through some dense layers.
-    merged_inputs_1 = concatenate([lstm, hands_input, drawpile_input])
+    merged_inputs_1 = concatenate([history_lstm, drawpile_lstm, hands_input])
     merged_hidden_1 = Dense(128, activation='relu')(merged_inputs_1)
     merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
     merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
-    norm = BatchNormalization()(merged_hidden_3)
-    dropout = Dropout(0.2)(norm)
+    dropout = Dropout(0.2)(merged_hidden_3)
 
     # Policy output head.
     policy_hidden_1 = Dense(32, activation='relu')(dropout)
@@ -102,7 +102,7 @@ def load_data(filename: str):
     n_samples = len(batch["Y_value"])
     X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
     X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
-    X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE * NUM_CARD_TYPES))
+    X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE, NUM_CARD_TYPES))
     X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile}
     Y_policy = batch["Y_policy"].reshape((n_samples, N_OUTPUTS))
     Y_value = batch["Y_value"].reshape((n_samples, 1))

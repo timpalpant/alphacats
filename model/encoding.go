@@ -93,19 +93,52 @@ func encodeHand(hand cards.Set, result []float32) {
 	})
 }
 
+func newOneHotDrawPile() [][]float32 {
+	result := make([][]float32, maxCardsInDrawPile)
+	for i := range result {
+		result[i] = make([]float32, cards.NumTypes)
+	}
+	return result
+}
+
 func encodeDrawPileTF(drawPile cards.Stack, result []byte) {
-	var oneHot [maxCardsInDrawPile * cards.NumTypes]float32
-	encodeDrawPile(drawPile, oneHot[:])
+	// We encode actions directly, rather than reuse EncodeDrwawPile,
+	// to avoid needing to allocate large intermediate one-hot [][]float32.
+	i := 0
+	drawPile.Iter(func(card cards.Card) {
+		encodeCardTF(drawPile.NthCard(i), result[4*cards.NumTypes*i:])
+		i++
+	})
+
+	for idx := 4 * cards.NumTypes * i; idx < len(result); idx++ {
+		result[idx] = 0
+	}
+}
+
+func encodeDrawPile(drawPile cards.Stack, result [][]float32) {
+	i := 0
+	drawPile.Iter(func(card cards.Card) {
+		encodeCard(card, result[i])
+		i++
+	})
+
+	for ; i < len(result); i++ {
+		clear(result[i])
+	}
+}
+
+func encodeCardTF(card cards.Card, result []byte) {
+	var oneHot [cards.NumTypes]float32
+	encodeCard(card, oneHot[:])
 	tffloats.EncodeF32s(oneHot[:], result)
 }
 
-func encodeDrawPile(drawPile cards.Stack, result []float32) {
+func encodeCard(card cards.Card, result []float32) {
 	clear(result)
-	i := 0
-	drawPile.Iter(func(card cards.Card) {
-		result[i*cards.NumTypes+int(card)] = 1.0
-		i++
-	})
+	// TBD is left as zero value for masking.
+	if card != cards.TBD {
+		result[card] = 1.0
+	}
 }
 
 func encodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, policy, result []float32) {

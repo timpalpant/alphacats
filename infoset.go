@@ -128,10 +128,9 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 					drawPile.SetNthCard(i, card)
 				}
 			} else if action.Card == cards.DrawFromTheBottom {
-				drawPile.RemoveCard(nDrawPileCards - 1)
+				drawPile.RemoveCard(drawPile.Len() - 1)
 			}
 		case gamestate.InsertExplodingKitten:
-			nDrawPileCards++
 			if action.PositionInDrawPile != 0 {
 				drawPile.InsertCard(cards.ExplodingKitten, int(action.PositionInDrawPile-1))
 			} else {

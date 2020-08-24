@@ -19,7 +19,7 @@ func saveTrainingData(batch []Sample, filename string) error {
 
 	history := newOneHotHistory()
 	var hand [cards.NumTypes]float32
-	var drawPile [maxCardsInDrawPile * cards.NumTypes]float32
+	drawPile := newOneHotDrawPile()
 	var policy [outputDimension]float32
 	for _, sample := range batch {
 		is := sample.InfoSet
@@ -38,8 +38,10 @@ func saveTrainingData(batch []Sample, filename string) error {
 		hands = append(hands, hand[:]...)
 		encodeHand(is.P1PlayedCards, hand[:])
 		hands = append(hands, hand[:]...)
-		encodeDrawPile(is.DrawPile, drawPile[:])
-		drawPiles = append(drawPiles, drawPile[:]...)
+		encodeDrawPile(is.DrawPile, drawPile)
+		for _, row := range drawPile {
+			drawPiles = append(drawPiles, row...)
+		}
 
 		encodeOutputs(is.DrawPile.Len(), is.AvailableActions, sample.Policy, policy[:])
 		yPolicy = append(yPolicy, policy[:]...)

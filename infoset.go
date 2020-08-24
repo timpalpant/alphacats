@@ -97,7 +97,7 @@ type AbstractedInfoSet struct {
 }
 
 func (a AbstractedInfoSet) String() string {
-	return fmt.Sprintf("%s. Hand: %s, Known draw pile: %s. Public history: %s. P0 played: %s, P1 played: %s. Available actions: %v",
+	return fmt.Sprintf("%s. Hand: %s, Draw pile: %s. Public history: %s. P0 played: %s, P1 played: %s. Available actions: %v",
 		a.Player, a.Hand, a.DrawPile, a.PublicHistory, a.P0PlayedCards, a.P1PlayedCards, a.AvailableActions)
 }
 

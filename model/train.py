@@ -19,6 +19,8 @@ from tensorflow.keras.layers import (
     LSTM,
     Masking,
     Multiply,
+    ReLU,
+    Softmax,
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
@@ -53,28 +55,30 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
 
     # The history (LSTM) arm of the model.
     masked_history_input = Masking()(history_input)
-    history_lstm = Bidirectional(LSTM(32, return_sequences=False))(masked_history_input)
+    history_lstm = Bidirectional(LSTM(64, return_sequences=False))(masked_history_input)
 
     # The draw pile arm of the model.
     masked_drawpile_input = Masking()(drawpile_input)
-    drawpile_lstm = Bidirectional(LSTM(16, return_sequences=False))(masked_drawpile_input)
+    drawpile_lstm = Bidirectional(LSTM(32, return_sequences=False))(masked_drawpile_input)
 
     # Concatenate with LSTM, hand, and draw pile.
     # Then send through some dense layers.
     merged_inputs_1 = Concatenate()([history_lstm, drawpile_lstm, hands_input])
-    merged_hidden_1 = Dense(128, activation='relu')(merged_inputs_1)
-    merged_hidden_2 = Dense(128, activation='relu')(merged_hidden_1)
-    merged_hidden_3 = Dense(128, activation='relu')(merged_hidden_2)
-    dropout = Dropout(0.2)(merged_hidden_3)
+    merged_hidden_1 = Dense(128)(merged_inputs_1)
+    relu_1 = ReLU()(merged_hidden_1)
+    dropout_1 = Dropout(0.2)(relu_1)
+    merged_hidden_2 = Dense(128)(dropout_1)
+    relu_2 = ReLU()(merged_hidden_2)
+    dropout_2 = Dropout(0.2)(relu_2)
+    merged_hidden_3 = Dense(128)(dropout_2)
+    relu_3 = ReLU()(merged_hidden_3)
 
     # Policy output head.
-    policy_hidden_1 = Dense(policy_shape, activation='relu', kernel_regularizer=l2(0.001))(dropout)
+    policy_hidden_1 = Dense(policy_shape, activation='linear', kernel_regularizer='l2')(relu_3)
     policy_masked = Multiply()([policy_hidden_1, output_mask_input])
-    policy_output = Dense(policy_shape, activation='softmax', name='policy')(policy_masked)
+    policy_output = Softmax(name='policy')(policy_masked)
     # Value output head.
-    value_hidden_1 = Dense(16, activation='relu')(dropout)
-    value_hidden_2 = Dense(1, activation='linear', kernel_regularizer=l2(0.001))(value_hidden_1)
-    value_output = Dense(1, activation='tanh', name='value')(value_hidden_1)
+    value_output = Dense(1, activation='tanh', name='value', kernel_regularizer='l2')(relu_3)
 
     model = Model(
         inputs=[history_input, hands_input, drawpile_input, output_mask_input],

@@ -103,7 +103,7 @@ func newOneHotDrawPile() [][]float32 {
 
 func encodeDrawPileTF(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, result []byte) {
 	freeCards := getRemainingUnknownCards(drawPile, hand, p0Played, p1Played)
-	unkWeights := getCardProbabilities(freeCards)
+	unkWeights := getCardProbabilities(drawPile, freeCards)
 
 	// We encode actions directly, rather than reuse EncodeDrwawPile,
 	// to avoid needing to allocate large intermediate one-hot [][]float32.
@@ -120,7 +120,7 @@ func encodeDrawPileTF(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, 
 
 func encodeDrawPile(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, result [][]float32) {
 	freeCards := getRemainingUnknownCards(drawPile, hand, p0Played, p1Played)
-	unkWeights := getCardProbabilities(freeCards)
+	unkWeights := getCardProbabilities(drawPile, freeCards)
 	i := 0
 	drawPile.Iter(func(card cards.Card) {
 		encodeCard(card, unkWeights, result[i])
@@ -132,12 +132,15 @@ func encodeDrawPile(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, re
 	}
 }
 
-func getCardProbabilities(freeCards cards.Set) []float32 {
-	total := freeCards.Len()
+func getCardProbabilities(drawPile cards.Stack, freeCards cards.Set) []float32 {
+	// We know that one of the cards is always the exploding kitten.
 	result := make([]float32, cards.NumTypes)
+	total := freeCards.Len() - 1
 	freeCards.Iter(func(card cards.Card, count uint8) {
 		result[card] = float32(count) / float32(total)
 	})
+	result[cards.ExplodingKitten] = 1.0 / drawPile.Len()
+	normalize(result)
 
 	return result
 }

@@ -46,7 +46,7 @@ func main() {
 	flag.IntVar(&params.NumMCTSIterations, "iter", 100000, "Number of MCTS iterations to perform")
 	flag.Float64Var(&params.Temperature, "temperature", 0.1,
 		"Temperature used when selecting actions during play")
-	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
+	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 1234, "Random seed")
 	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.75,
 		"Exploration factor C used in MCTS search")
 	flag.Float64Var(&params.SamplingParams.Gamma, "sampling.gamma", 0.1,

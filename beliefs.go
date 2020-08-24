@@ -175,10 +175,8 @@ func (bs *BeliefState) dedupStates() {
 	bs.states = bs.states[:0]
 	bs.reachProbs = bs.reachProbs[:0]
 	for _, b := range states {
-		if b.p > 0 {
-			bs.states = append(bs.states, b.node)
-			bs.reachProbs = append(bs.reachProbs, b.p)
-		}
+		bs.states = append(bs.states, b.node)
+		bs.reachProbs = append(bs.reachProbs, b.p)
 	}
 }
 

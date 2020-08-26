@@ -38,8 +38,8 @@ func (p *SmoothUCTPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	infoSet := rootNode.(*alphacats.GameNode).GetInfoSet(player)
 	beliefs := alphacats.NewBeliefState(opponentPolicy, infoSet)
 	// Walk down the tree from the root, performing simulations at each node.
-	for i := len(ancestors) - 1; i >= 0; i-- {
-		currentNode := ancestors[i]
+	for depth := 0; depth < len(ancestors); depth++ {
+		currentNode := ancestors[len(ancestors)-depth-1]
 		infoSet = currentNode.(*alphacats.GameNode).GetInfoSet(player)
 		beliefs.Update(infoSet)
 

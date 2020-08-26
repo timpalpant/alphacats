@@ -34,10 +34,11 @@ var (
 )
 
 type RunParams struct {
-	NumGamesPerEpoch    int
-	MaxParallelGames    int
-	NumMCTSIterations   int
-	MaxParallelSearches int
+	NumGamesPerEpoch     int
+	MaxParallelGames     int
+	NumMCTSIterations    int
+	NumBootstrapSearches int
+	MaxParallelSearches  int
 
 	SamplingParams   SamplingParams
 	Temperature      float64
@@ -60,7 +61,8 @@ func main() {
 	var params RunParams
 	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000, "Number of games to play each epoch")
 	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(), "Number of games to run in parallel")
-	flag.IntVar(&params.NumMCTSIterations, "search_iter", 20000, "Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.NumMCTSIterations, "search_iter", 1000, "Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.NumBootstrapSearches, "bootstrap_search_iter", 10000, "Number of MCTS iterations to perform per move for Smooth UCT bootstrap")
 	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(), "Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000, "Maximum number of training samples to keep")
 	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30, "Maximum number of times to reuse a sample.")
@@ -143,7 +145,7 @@ func loadPolicy(params RunParams) []*model.MCTSPSRO {
 	search := mcts.NewSmoothUCT(
 		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
 		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D))
-	bootstrapPolicy := model.NewSmoothUCTPolicy(search, float32(params.Temperature), params.MaxParallelSearches)
+	bootstrapPolicy := model.NewSmoothUCTPolicy(search, float32(params.Temperature), params.NumBootstrapSearches)
 	p0 := model.NewMCTSPSRO(bootstrapPolicy, lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
 	p1 := model.NewMCTSPSRO(bootstrapPolicy, lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
 	policies := []*model.MCTSPSRO{p0, p1}

@@ -171,10 +171,6 @@ func playBootstrapGame(game cfr.GameTreeNode, params RunParams) []model.Sample {
 	p1InfoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
 	p1Beliefs := alphacats.NewBeliefState(search.GetPolicy, p1InfoSet)
 	beliefs := []*alphacats.BeliefState{p0Beliefs, p1Beliefs}
-	rng := rand.New(rand.NewSource(rand.Int63()))
-	searchFunc := func(game cfr.GameTreeNode) float32 {
-		return search.Run(rng, game)
-	}
 
 	var samples []model.Sample
 	for game.Type() != cfr.TerminalNodeType {
@@ -183,7 +179,7 @@ func playBootstrapGame(game cfr.GameTreeNode, params RunParams) []model.Sample {
 		} else {
 			u := game.Player()
 			is := game.InfoSet(u).(*alphacats.AbstractedInfoSet)
-			simulate(searchFunc, beliefs[u], params.NumBootstrapSearches, params.MaxParallelSearches)
+			simulate(search.Run, beliefs[u], params.NumBootstrapSearches, params.MaxParallelSearches)
 			p := search.GetPolicy(game)
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
@@ -288,13 +284,12 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 	return policy.SaveTo(w)
 }
 
-type mctsSearchFunc func(cfr.GameTreeNode) float32
+type mctsSearchFunc func(*rand.Rand, cfr.GameTreeNode) float32
 
 func playGame(game cfr.GameTreeNode, search *mcts.OneSidedISMCTS, opponentPolicy mcts.Policy, player int, params RunParams) []model.Sample {
 	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player))
 	beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
-	rng := rand.New(rand.NewSource(rand.Int63()))
-	searchFunc := func(game cfr.GameTreeNode) float32 {
+	searchFunc := func(rng *rand.Rand, game cfr.GameTreeNode) float32 {
 		return search.Run(rng, game, opponentPolicy)
 	}
 
@@ -340,9 +335,10 @@ func simulate(search mctsSearchFunc, beliefs *alphacats.BeliefState, n, nParalle
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			rng := rand.New(rand.NewSource(rand.Int63()))
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				search(game)
+				search(rng, game)
 				searchesPerformed.Add(1)
 			}
 		}()

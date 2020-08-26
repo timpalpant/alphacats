@@ -82,9 +82,10 @@ func simulate(optimizer *mcts.SmoothUCT, beliefs *alphacats.BeliefState, n int) 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			rng := rand.New(rand.NewSource(rand.Int63()))
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				optimizer.Run(game)
+				optimizer.Run(rng, game)
 			}
 		}()
 	}

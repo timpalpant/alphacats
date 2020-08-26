@@ -112,9 +112,10 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			rng := rand.New(rand.NewSource(rand.Int63()))
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				r.search.Run(game, r.opponent)
+				r.search.Run(rng, game, r.opponent)
 			}
 		}()
 	}

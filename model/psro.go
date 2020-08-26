@@ -189,10 +189,10 @@ func (m *MCTSPSRO) SamplePolicy() mcts.Policy {
 
 // Evaluate implements mcts.Evaluator for one-sided IS-MCTS search rollouts
 // when this policy is being trained as the exploiter.
-func (m *MCTSPSRO) Evaluate(node cfr.GameTreeNode, opponent mcts.Policy) ([]float32, float32) {
+func (m *MCTSPSRO) Evaluate(rng *rand.Rand, node cfr.GameTreeNode, opponent mcts.Policy) ([]float32, float32) {
 	nn := m.getCurrentNetwork()
 	if nn == nil {
-		return m.rollout.Evaluate(node, opponent)
+		return m.rollout.Evaluate(rng, node, opponent)
 	}
 
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)

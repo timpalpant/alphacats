@@ -40,13 +40,13 @@ type MCTSPSRO struct {
 	needsRetrain   bool
 }
 
-func NewMCTSPSRO(initialPolicy mcts.Policy, model *LSTM, maxSamples, maxSampleReuse, predictionCacheSize int) *MCTSPSRO {
+func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse, predictionCacheSize int) *MCTSPSRO {
 	return &MCTSPSRO{
 		model:               model,
 		retrainInterval:     maxSamples / maxSampleReuse,
 		predictionCacheSize: predictionCacheSize,
-		policies:            []mcts.Policy{initialPolicy},
-		weights:             []float32{1.0},
+		policies:            []mcts.Policy{},
+		weights:             []float32{},
 		samples:             make([]Sample, 0, maxSamples),
 		maxSamples:          maxSamples,
 		rollout:             mcts.NewRandomRollout(1),
@@ -178,6 +178,10 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	glog.Infof("Added network. PSRO now has %d oracles", len(m.policies))
 }
 
+func (m *MCTSPSRO) Len() int {
+	return len(m.policies)
+}
+
 func (m *MCTSPSRO) SamplePolicy() mcts.Policy {
 	selected := sampling.SampleOne(m.weights, rand.Float32())
 	return m.policies[selected]
@@ -289,6 +293,5 @@ func uniformDistribution(n int) []float32 {
 
 func init() {
 	gob.Register(&UniformRandomPolicy{})
-	gob.Register(&SmoothUCTPolicy{})
 	gob.Register(&PredictorPolicy{})
 }

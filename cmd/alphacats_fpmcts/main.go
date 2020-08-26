@@ -76,9 +76,10 @@ func main() {
 }
 
 type RecursiveSearchPolicy struct {
-	player  gamestate.Player
-	beliefs *alphacats.BeliefState
-	search  *mcts.OneSidedISMCTS
+	player   gamestate.Player
+	beliefs  *alphacats.BeliefState
+	search   *mcts.OneSidedISMCTS
+	opponent mcts.Policy
 
 	level       string
 	temperature float32
@@ -96,7 +97,7 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	defer r.mx.Unlock()
 	if _, ok := r.cache[is]; ok {
 		cacheHitsByLevel.Add(r.level, 1)
-		return r.search.GetPolicy(node, r.temperature)
+		return r.search.GetPolicy(node)
 	}
 
 	searchesByLevel.Add(r.level, 1)
@@ -113,14 +114,14 @@ func (r *RecursiveSearchPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 			defer wg.Done()
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				r.search.Run(game)
+				r.search.Run(game, r.opponent)
 			}
 		}()
 	}
 
 	wg.Wait()
 	r.cache[is] = struct{}{}
-	return r.search.GetPolicy(node, r.temperature)
+	return r.search.GetPolicy(node)
 }
 
 func playGame(params RunParams, deal alphacats.Deal) {
@@ -136,7 +137,8 @@ func playGame(params RunParams, deal alphacats.Deal) {
 		policies[player] = &RecursiveSearchPolicy{
 			player:      gamestate.Player(player),
 			beliefs:     alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet),
-			search:      mcts.NewOneSidedISMCTS(player, opponentPolicy, mcts.NewRandomRollout(1), float32(params.SamplingParams.C)),
+			search:      mcts.NewOneSidedISMCTS(player, mcts.NewRandomRollout(1), float32(params.SamplingParams.C), float32(params.Temperature)),
+			opponent:    opponentPolicy,
 			level:       level,
 			temperature: float32(params.Temperature),
 			numSearches: params.NumMCTSIterations,

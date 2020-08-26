@@ -34,11 +34,15 @@ var (
 )
 
 type RunParams struct {
+	Deck           []cards.Card
+	CardsPerPlayer int
+
 	NumGamesPerEpoch     int
 	MaxParallelGames     int
 	NumMCTSIterations    int
-	NumBootstrapSearches int
 	MaxParallelSearches  int
+	NumBootstrapGames    int
+	NumBootstrapSearches int
 
 	SamplingParams   SamplingParams
 	Temperature      float64
@@ -58,14 +62,26 @@ type SamplingParams struct {
 }
 
 func main() {
-	var params RunParams
-	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000, "Number of games to play each epoch")
-	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(), "Number of games to run in parallel")
-	flag.IntVar(&params.NumMCTSIterations, "search_iter", 1000, "Number of MCTS iterations to perform per move")
-	flag.IntVar(&params.NumBootstrapSearches, "bootstrap_search_iter", 10000, "Number of MCTS iterations to perform per move for Smooth UCT bootstrap")
-	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(), "Number of searches per game to run in parallel")
-	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000, "Maximum number of training samples to keep")
-	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30, "Maximum number of times to reuse a sample.")
+	params := RunParams{
+		Deck:           cards.CoreDeck.AsSlice(),
+		CardsPerPlayer: 4,
+	}
+	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000,
+		"Number of games to play each epoch")
+	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(),
+		"Number of games to run in parallel")
+	flag.IntVar(&params.NumMCTSIterations, "search_iter", 1000,
+		"Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(),
+		"Number of searches per game to run in parallel")
+	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000,
+		"Maximum number of training samples to keep")
+	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30,
+		"Maximum number of times to reuse a sample.")
+	flag.IntVar(&params.NumBootstrapSearches, "bootstrap_search_iter", 20000,
+		"Number of MCTS iterations to perform per move for Smooth UCT bootstrap")
+	flag.IntVar(&params.NumBootstrapGames, "bootstrap_games", 200000,
+		"Number games to play for Smooth UCT bootstrap")
 	flag.Float64Var(&params.Temperature, "temperature", 1.0,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
@@ -93,46 +109,55 @@ func main() {
 	rand.Seed(params.SamplingParams.Seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
-	deck := cards.CoreDeck.AsSlice()
-	cardsPerPlayer := 4
 	policies := loadPolicy(params)
-	for epoch := 0; ; epoch++ {
+	epoch := policies[0].Len() + policies[1].Len()
+	if epoch < 2 {
+		bootstrap(policies, params)
+	}
+
+	for ; ; epoch++ {
 		player := epoch % 2
-		policy := policies[player]
-		search := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C))
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
-		gamesRemaining.Add(int64(params.NumGamesPerEpoch))
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, params.MaxParallelGames)
-		for i := 0; i < params.NumGamesPerEpoch; i++ {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func() {
-				defer func() {
-					gamesRemaining.Add(-1)
-					wg.Done()
-					<-sem
-				}()
-				deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
-				game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
-				infoSet := game.GetInfoSet(gamestate.Player(player))
-				opponentPolicy := policies[1-player].SamplePolicy()
-				beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
+		runEpoch(policies, player, params)
+	}
+}
 
-				glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
-				samples := playGame(game, opponentPolicy, search, beliefs, player, params)
-				glog.Infof("Collected %d samples", len(samples))
-				for i, s := range samples {
-					glog.V(1).Infof("Sample %d: %v", i, s)
-					policy.AddSample(s)
-				}
-
-				policy.TrainNetwork()
+func bootstrap(policies [2]*model.MCTSPSRO, params RunParams) {
+	glog.Info("Performing bootstrap with SmoothUCT search")
+	gamesRemaining.Add(int64(params.NumBootstrapGames))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, params.MaxParallelGames)
+	search := mcts.NewSmoothUCT(
+		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
+		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D),
+		float32(params.Temperature))
+	for i := 0; i < params.NumBootstrapGames; i++ {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() {
+				gamesRemaining.Add(-1)
+				wg.Done()
+				<-sem
 			}()
-		}
 
-		wg.Wait()
+			deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
+			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+			glog.Infof("Playing game with ~%d search iterations", params.NumBootstrapSearches)
+			samples := playBootstrapGame(game, search, params)
+			glog.Infof("Collected %d samples", len(samples))
+			for i, s := range samples {
+				glog.V(1).Infof("Sample %d: %v", i, s)
+				policies[s.InfoSet.Player].AddSample(s)
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	for player, policy := range policies {
+		policy.TrainNetwork()
 		policy.AddCurrentExploiterToModel()
 		if err := savePolicy(params, player, policy); err != nil {
 			glog.Fatal(err)
@@ -140,15 +165,87 @@ func main() {
 	}
 }
 
-func loadPolicy(params RunParams) []*model.MCTSPSRO {
+func playBootstrapGame(game cfr.GameTreeNode, search *mcts.SmoothUCT, params RunParams) []model.Sample {
+	p0InfoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player0)
+	p0Beliefs := alphacats.NewBeliefState(search.GetPolicy, p0InfoSet)
+	p1InfoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
+	p1Beliefs := alphacats.NewBeliefState(search.GetPolicy, p1InfoSet)
+	beliefs := []*alphacats.BeliefState{p0Beliefs, p1Beliefs}
+
+	var samples []model.Sample
+	for game.Type() != cfr.TerminalNodeType {
+		if game.Type() == cfr.ChanceNodeType {
+			game, _ = game.SampleChild()
+		} else {
+			u := game.Player()
+			beliefs[0].Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player0))
+			beliefs[1].Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1))
+			simulate(search.Run, beliefs[u], params.NumBootstrapSearches, params.MaxParallelSearches)
+			is := game.InfoSet(u).(*alphacats.AbstractedInfoSet)
+			p := search.GetPolicy(game)
+			selected := sampling.SampleOne(p, rand.Float32())
+			game = game.GetChild(selected)
+			samples = append(samples, model.Sample{
+				InfoSet: *is,
+				Policy:  p,
+			})
+		}
+	}
+
+	for i, s := range samples {
+		if s.InfoSet.Player == gamestate.Player(game.Player()) {
+			samples[i].Value = 1.0
+		} else {
+			samples[i].Value = -1.0
+		}
+	}
+
+	return samples
+}
+
+func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
+	gamesRemaining.Add(int64(params.NumGamesPerEpoch))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, params.MaxParallelGames)
+	policy := policies[player]
+	opponent := policies[1-player]
+	ismcts := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C), float32(params.Temperature))
+	for i := 0; i < params.NumGamesPerEpoch; i++ {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() {
+				gamesRemaining.Add(-1)
+				wg.Done()
+				<-sem
+			}()
+			deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
+			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+			opponentPolicy := opponent.SamplePolicy()
+			glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
+			samples := playGame(game, ismcts, opponentPolicy, player, params)
+			glog.Infof("Collected %d samples", len(samples))
+			for i, s := range samples {
+				glog.V(1).Infof("Sample %d: %v", i, s)
+				policy.AddSample(s)
+			}
+
+			policy.TrainNetwork()
+		}()
+	}
+
+	wg.Wait()
+	policy.AddCurrentExploiterToModel()
+	if err := savePolicy(params, player, policy); err != nil {
+		glog.Fatal(err)
+	}
+}
+
+func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	lstm := model.NewLSTM(params.ModelParams)
-	search := mcts.NewSmoothUCT(
-		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
-		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D))
-	bootstrapPolicy := model.NewSmoothUCTPolicy(search, float32(params.Temperature), params.NumBootstrapSearches)
-	p0 := model.NewMCTSPSRO(bootstrapPolicy, lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
-	p1 := model.NewMCTSPSRO(bootstrapPolicy, lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
-	policies := []*model.MCTSPSRO{p0, p1}
+	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
+	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
+	policies := [2]*model.MCTSPSRO{p0, p1}
 	for player := range policies {
 		filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))
 		f, err := os.Open(filename)
@@ -184,7 +281,15 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 	return policy.SaveTo(w)
 }
 
-func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.OneSidedISMCTS, beliefs *alphacats.BeliefState, player int, params RunParams) []model.Sample {
+type mctsSearchFunc func(cfr.GameTreeNode) float32
+
+func playGame(game cfr.GameTreeNode, search *mcts.OneSidedISMCTS, opponentPolicy mcts.Policy, player int, params RunParams) []model.Sample {
+	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player))
+	beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
+	searchFunc := func(game cfr.GameTreeNode) float32 {
+		return search.Run(game, opponentPolicy)
+	}
+
 	var samples []model.Sample
 	for game.Type() != cfr.TerminalNodeType {
 		if game.Type() == cfr.ChanceNodeType {
@@ -194,9 +299,9 @@ func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.On
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 		} else {
-			simulate(search, opponentPolicy, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
+			simulate(searchFunc, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
 			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
-			p := search.GetPolicy(game, float32(params.Temperature))
+			p := search.GetPolicy(game)
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 			samples = append(samples, model.Sample{
@@ -219,8 +324,7 @@ func playGame(game cfr.GameTreeNode, opponentPolicy mcts.Policy, search *mcts.On
 	return samples
 }
 
-func simulate(search *mcts.OneSidedISMCTS, opponent mcts.Policy,
-	beliefs *alphacats.BeliefState, n, nParallel int) {
+func simulate(search mctsSearchFunc, beliefs *alphacats.BeliefState, n, nParallel int) {
 	var wg sync.WaitGroup
 	nWorkers := min(n, nParallel)
 	nPerWorker := n / nWorkers
@@ -230,7 +334,7 @@ func simulate(search *mcts.OneSidedISMCTS, opponent mcts.Policy,
 			defer wg.Done()
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
-				search.Run(game, opponent)
+				search(game)
 				searchesPerformed.Add(1)
 			}
 		}()

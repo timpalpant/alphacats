@@ -65,7 +65,8 @@ func main() {
 	cardsPerPlayer := 4
 	optimizer := mcts.NewSmoothUCT(
 		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
-		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D))
+		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D),
+		float32(params.Temperature))
 	for i := 0; ; i++ {
 		deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
 		playGame(optimizer, params, deal)
@@ -95,11 +96,8 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 
 	glog.Infof("Building initial info set")
-	opponentPolicy := func(gn cfr.GameTreeNode) []float32 {
-		return policy.GetPolicy(gn, float32(params.Temperature))
-	}
 	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
-	beliefs := alphacats.NewBeliefState(opponentPolicy, infoSet)
+	beliefs := alphacats.NewBeliefState(policy.GetPolicy, infoSet)
 	glog.Infof("Initial info set has %d game states", beliefs.Len())
 	simulate(policy, beliefs, params.NumMCTSIterations)
 
@@ -123,7 +121,7 @@ func playGame(policy *mcts.SmoothUCT, params RunParams, deal alphacats.Deal) {
 			glog.Infof("[player] Chose to %v", lastAction)
 		} else {
 			simulate(policy, beliefs, params.NumMCTSIterations)
-			p := policy.GetPolicy(game, float32(params.Temperature))
+			p := policy.GetPolicy(game)
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 			lastAction := game.(*alphacats.GameNode).LastAction()

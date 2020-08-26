@@ -128,10 +128,6 @@ func bootstrap(policies [2]*model.MCTSPSRO, params RunParams) {
 	gamesRemaining.Add(int64(params.NumBootstrapGames))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, params.MaxParallelGames)
-	search := mcts.NewSmoothUCT(
-		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
-		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D),
-		float32(params.Temperature))
 	for i := 0; i < params.NumBootstrapGames; i++ {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -145,7 +141,7 @@ func bootstrap(policies [2]*model.MCTSPSRO, params RunParams) {
 			deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
 			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 			glog.Infof("Playing game with ~%d search iterations", params.NumBootstrapSearches)
-			samples := playBootstrapGame(game, search, params)
+			samples := playBootstrapGame(game, params)
 			glog.Infof("Collected %d samples", len(samples))
 			for i, s := range samples {
 				glog.V(1).Infof("Sample %d: %v", i, s)
@@ -165,12 +161,21 @@ func bootstrap(policies [2]*model.MCTSPSRO, params RunParams) {
 	}
 }
 
-func playBootstrapGame(game cfr.GameTreeNode, search *mcts.SmoothUCT, params RunParams) []model.Sample {
+func playBootstrapGame(game cfr.GameTreeNode, params RunParams) []model.Sample {
+	p0Search := mcts.NewSmoothUCT(
+		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
+		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D),
+		float32(params.Temperature))
+	p1Search := mcts.NewSmoothUCT(
+		float32(params.SamplingParams.C), float32(params.SamplingParams.Gamma),
+		float32(params.SamplingParams.Eta), float32(params.SamplingParams.D),
+		float32(params.Temperature))
 	p0InfoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player0)
-	p0Beliefs := alphacats.NewBeliefState(search.GetPolicy, p0InfoSet)
+	p0Beliefs := alphacats.NewBeliefState(p1Search.GetPolicy, p0InfoSet)
 	p1InfoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1)
-	p1Beliefs := alphacats.NewBeliefState(search.GetPolicy, p1InfoSet)
+	p1Beliefs := alphacats.NewBeliefState(p0Search.GetPolicy, p1InfoSet)
 	beliefs := []*alphacats.BeliefState{p0Beliefs, p1Beliefs}
+	searches := []*mcts.SmoothUCT{p0Search, p1Search}
 
 	var samples []model.Sample
 	for game.Type() != cfr.TerminalNodeType {
@@ -178,11 +183,9 @@ func playBootstrapGame(game cfr.GameTreeNode, search *mcts.SmoothUCT, params Run
 			game, _ = game.SampleChild()
 		} else {
 			u := game.Player()
-			beliefs[0].Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player0))
-			beliefs[1].Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1))
-			simulate(search.Run, beliefs[u], params.NumBootstrapSearches, params.MaxParallelSearches)
 			is := game.InfoSet(u).(*alphacats.AbstractedInfoSet)
-			p := search.GetPolicy(game)
+			simulate(searches[u].Run, beliefs[u], params.NumBootstrapSearches, params.MaxParallelSearches)
+			p := searches[u].GetPolicy(game)
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 			samples = append(samples, model.Sample{
@@ -190,6 +193,11 @@ func playBootstrapGame(game cfr.GameTreeNode, search *mcts.SmoothUCT, params Run
 				Policy:  p,
 			})
 		}
+
+		// If it was player 0's turn, then p0 belief update is exact because we know what we played.
+		// We just performed simulations of p0's policy so p1 inference is well-defined (or vice-versa).
+		beliefs[0].Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player0))
+		beliefs[1].Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player1))
 	}
 
 	for i, s := range samples {

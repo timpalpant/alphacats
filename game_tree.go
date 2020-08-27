@@ -4,6 +4,7 @@ import (
 	"expvar"
 	"fmt"
 	"math/rand"
+	"sync"
 
 	"github.com/timpalpant/go-cfr"
 
@@ -133,6 +134,16 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	return newAbstractedInfoSet(is, gn.actions)
 }
 
+func (gn *GameNode) InfoSetKey(player int) []byte {
+	if len(gn.children) == 0 {
+		gn.buildChildren()
+	}
+
+	is := gn.GetInfoSet(gamestate.Player(player))
+	ais := newAbstractedInfoSet(is, gn.actions)
+	return ais.Key()
+}
+
 func (gn *GameNode) GetInfoSet(player gamestate.Player) gamestate.InfoSet {
 	return gn.state.GetInfoSet(player)
 }
@@ -161,9 +172,27 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 	return gn.state.GetDrawPile()
 }
 
+var childrenPool = sync.Pool{
+	New: func() interface{} {
+		return make([]GameNode, 0)
+	},
+}
+
+var actionsPool = sync.Pool{
+	New: func() interface{} {
+		return make([]gamestate.Action, 0)
+	},
+}
+
 func (gn *GameNode) allocChildren(n int) {
-	gn.children = make([]GameNode, 0, n)
-	gn.actions = make([]gamestate.Action, 0, n)
+	gn.children = childrenPool.Get().([]GameNode)
+	if cap(gn.children) < n {
+		gn.children = make([]GameNode, 0, n)
+	}
+	gn.actions = actionsPool.Get().([]gamestate.Action)
+	if cap(gn.actions) < n {
+		gn.actions = make([]gamestate.Action, 0, n)
+	}
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
@@ -272,7 +301,15 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
+	// Sever references to further children so that we don't
+	// keep a bunch of memory around in the pool.
+	for _, child := range gn.children {
+		child.children = nil
+		child.actions = nil
+	}
+	childrenPool.Put(gn.children[:0])
 	gn.children = nil
+	actionsPool.Put(gn.actions[:0])
 	gn.actions = nil
 }
 

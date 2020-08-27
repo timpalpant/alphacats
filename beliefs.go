@@ -133,10 +133,10 @@ type dedupKey struct {
 func (bs *BeliefState) dedupStates() {
 	states := make(map[dedupKey]weightedBelief)
 	for i, game := range bs.states {
-		is := game.InfoSet(int(1 - bs.infoSet.Player))
+		is := game.InfoSetKey(int(1 - bs.infoSet.Player))
 		drawPile := game.GetDrawPile()
 		key := dedupKey{
-			is:       is.Key(),
+			is:       string(is),
 			drawPile: drawPile,
 		}
 		b, ok := states[key]

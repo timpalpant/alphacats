@@ -181,9 +181,9 @@ func hidePrivateInfo(a gamestate.EncodedAction) gamestate.EncodedAction {
 }
 
 // Key implements cfr.InfoSet.
-func (is *AbstractedInfoSet) Key() string {
+func (is *AbstractedInfoSet) Key() []byte {
 	buf, _ := is.MarshalBinary()
-	return string(buf)
+	return buf
 }
 
 func (is *AbstractedInfoSet) MarshalBinary() ([]byte, error) {

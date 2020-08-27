@@ -110,6 +110,7 @@ func main() {
 			if err := saveCheckpoint(params.OutputDir, iter, trainingData); err != nil {
 				glog.Fatal(err)
 			}
+			lastCheckpoint = time.Now()
 			trainingData[0] = trainingData[0][:0]
 			trainingData[1] = trainingData[1][:0]
 			mx.Unlock()
@@ -218,7 +219,7 @@ func saveTrainingSamples(outputDir string, iter int, player int, samples []model
 		return err
 	}
 
-	filename := filepath.Join(outputDir, fmt.Sprintf("player_%d.%4d.samples", player, iter))
+	filename := filepath.Join(outputDir, fmt.Sprintf("player_%d.%04d.samples", player, iter))
 	glog.Infof("Saving player %d training samples to: %v", player, filename)
 	f, err := os.Create(filename)
 	if err != nil {

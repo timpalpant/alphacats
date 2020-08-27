@@ -82,6 +82,9 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 	if err := dec.Decode(&m.sampleIdx); err != nil {
 		return nil, err
 	}
+	if err := dec.Decode(&m.currentNetwork); err != nil {
+		return nil, err
+	}
 	if err := dec.Decode(&m.needsRetrain); err != nil {
 		return nil, err
 	}
@@ -114,6 +117,9 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 		return err
 	}
 	if err := enc.Encode(m.sampleIdx); err != nil {
+		return err
+	}
+	if err := enc.Encode(m.currentNetwork); err != nil {
 		return err
 	}
 	if err := enc.Encode(m.needsRetrain); err != nil {

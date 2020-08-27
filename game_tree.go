@@ -172,18 +172,9 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 	return gn.state.GetDrawPile()
 }
 
-// Cache slices for up to 11 children.
-var childrenPool = make([]gameNodeSlicePool, 12)
-var actionsPool = make([]actionSlicePool, 12)
-
 func (gn *GameNode) allocChildren(n int) {
-	if n < len(childrenPool) {
-		gn.children = childrenPool[n].alloc(n)
-		gn.actions = actionsPool[n].alloc(n)
-	} else {
-		gn.children = make([]GameNode, 0, n)
-		gn.actions = make([]gamestate.Action, 0, n)
-	}
+	gn.children = make([]GameNode, 0, n)
+	gn.actions = make([]gamestate.Action, 0, n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
@@ -292,18 +283,6 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
-	// Sever references to further children so that we don't
-	// keep a bunch of memory around in the pool.
-	n := len(gn.children)
-	if n > 0 && n < len(childrenPool) {
-		for _, child := range gn.children {
-			child.children = nil
-			child.actions = nil
-		}
-		childrenPool[n].free(gn.children)
-		actionsPool[n].free(gn.actions)
-	}
-
 	gn.children = nil
 	gn.actions = nil
 }

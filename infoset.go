@@ -102,69 +102,62 @@ func (a AbstractedInfoSet) String() string {
 }
 
 func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Action) AbstractedInfoSet {
-	var publicHistory gamestate.History
-	p0PlayedCards := cards.NewSet()
-	p1PlayedCards := cards.NewSet()
-	drawPile := cards.NewStack()
+	result := AbstractedInfoSet{
+		Player:           is.Player,
+		Hand:             is.Hand,
+		AvailableActions: availableActions,
+	}
 	// TODO(palpant): This duplicates most of gamestate logic, but from the POV of a single player.
 	for i := 0; i < 13; i++ {
-		drawPile.SetNthCard(i, cards.TBD)
+		result.DrawPile.SetNthCard(i, cards.TBD)
 	}
 	for i := 0; i < is.History.Len(); i++ {
 		packed := is.History.GetPacked(i)
-		publicHistory.AppendPacked(hidePrivateInfo(packed))
+		result.PublicHistory.AppendPacked(hidePrivateInfo(packed))
 
 		action := packed.Decode()
 		switch action.Type {
 		case gamestate.PlayCard:
 			if action.Player == gamestate.Player0 {
-				p0PlayedCards.Add(action.Card)
+				result.P0PlayedCards.Add(action.Card)
 			} else {
-				p1PlayedCards.Add(action.Card)
+				result.P1PlayedCards.Add(action.Card)
 			}
 
 			switch action.Card {
 			case cards.SeeTheFuture:
 				for i, card := range action.CardsSeen {
 					if card != cards.Unknown {
-						drawPile.SetNthCard(i, card)
+						result.DrawPile.SetNthCard(i, card)
 					}
 				}
 			case cards.DrawFromTheBottom:
-				drawPile.RemoveCard(drawPile.Len() - 1)
+				result.DrawPile.RemoveCard(result.DrawPile.Len() - 1)
 			case cards.Shuffle:
-				drawPile = clearDrawPile(drawPile)
+				result.DrawPile = clearDrawPile(result.DrawPile)
 			}
 		case gamestate.InsertExplodingKitten:
 			if action.Player == gamestate.Player0 {
-				p0PlayedCards.Add(cards.Defuse)
+				result.P0PlayedCards.Add(cards.Defuse)
 			} else {
-				p1PlayedCards.Add(cards.Defuse)
+				result.P1PlayedCards.Add(cards.Defuse)
 			}
 
 			if action.PositionInDrawPile != 0 {
-				drawPile.InsertCard(cards.ExplodingKitten, int(action.PositionInDrawPile-1))
+				result.DrawPile.InsertCard(cards.ExplodingKitten, int(action.PositionInDrawPile-1))
 			} else {
 				// TODO(palpant): Inserting the kitten randomly need not totally obliterate
 				// our knowledge of the draw pile, since once we observe the Kitten we know
 				// which of the N random states we're now in.
-				drawPile.InsertCard(cards.ExplodingKitten, 0)
-				drawPile = clearDrawPile(drawPile)
+				result.DrawPile.InsertCard(cards.ExplodingKitten, 0)
+				result.DrawPile = clearDrawPile(result.DrawPile)
 			}
 		case gamestate.DrawCard:
-			drawPile.RemoveCard(0)
+			result.DrawPile.RemoveCard(0)
 		}
 	}
 
-	return AbstractedInfoSet{
-		Player:           is.Player,
-		PublicHistory:    publicHistory,
-		Hand:             is.Hand,
-		P0PlayedCards:    p0PlayedCards,
-		P1PlayedCards:    p1PlayedCards,
-		DrawPile:         drawPile,
-		AvailableActions: availableActions,
-	}
+	return result
 }
 
 func clearDrawPile(drawPile cards.Stack) cards.Stack {
@@ -181,12 +174,12 @@ func hidePrivateInfo(a gamestate.EncodedAction) gamestate.EncodedAction {
 }
 
 // Key implements cfr.InfoSet.
-func (is AbstractedInfoSet) Key() []byte {
+func (is *AbstractedInfoSet) Key() []byte {
 	buf, _ := is.MarshalBinary()
 	return buf
 }
 
-func (is AbstractedInfoSet) MarshalBinary() ([]byte, error) {
+func (is *AbstractedInfoSet) MarshalBinary() ([]byte, error) {
 	// Doing extra work to exactly size the buffer (and avoid any additional
 	// allocations ends up being faster than letting it auto-size)
 	historySize := is.PublicHistory.Len() + 1

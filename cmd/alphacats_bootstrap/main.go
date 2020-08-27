@@ -69,7 +69,7 @@ func main() {
 		"Output directory to save generated training data to")
 	flag.IntVar(&params.NumTrainingSamples, "num_training_samples", 200000,
 		"Maximum number of training samples to keep")
-	flag.DurationVar(&params.CheckpointInterval, "checkpoint_interval", 30*time.Minute,
+	flag.DurationVar(&params.CheckpointInterval, "checkpoint_interval", time.Hour,
 		"How often to write out collected samples to output diretory")
 	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", 2,
 		"Number of games to run in parallel")

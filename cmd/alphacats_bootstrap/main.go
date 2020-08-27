@@ -71,7 +71,7 @@ func main() {
 		"Maximum number of training samples to keep")
 	flag.DurationVar(&params.CheckpointInterval, "checkpoint_interval", 30*time.Minute,
 		"How often to write out collected samples to output diretory")
-	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", 4,
+	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", 2,
 		"Number of games to run in parallel")
 	flag.IntVar(&params.NumMCTSIterations, "search_iter", 100000,
 		"Number of MCTS iterations to perform per move")

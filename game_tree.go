@@ -4,7 +4,6 @@ import (
 	"expvar"
 	"fmt"
 	"math/rand"
-	"sync"
 
 	"github.com/timpalpant/go-cfr"
 
@@ -172,27 +171,12 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 	return gn.state.GetDrawPile()
 }
 
-var childrenPool = sync.Pool{
-	New: func() interface{} {
-		return make([]GameNode, 0)
-	},
-}
-
-var actionsPool = sync.Pool{
-	New: func() interface{} {
-		return make([]gamestate.Action, 0)
-	},
-}
+var childrenPool gameNodeSlicePool
+var actionsPool actionSlicePool
 
 func (gn *GameNode) allocChildren(n int) {
-	gn.children = childrenPool.Get().([]GameNode)
-	if cap(gn.children) < n {
-		gn.children = make([]GameNode, 0, n)
-	}
-	gn.actions = actionsPool.Get().([]gamestate.Action)
-	if cap(gn.actions) < n {
-		gn.actions = make([]gamestate.Action, 0, n)
-	}
+	gn.children = childrenPool.alloc(n)
+	gn.actions = actionsPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
@@ -307,9 +291,9 @@ func (gn *GameNode) Close() {
 		child.children = nil
 		child.actions = nil
 	}
-	childrenPool.Put(gn.children[:0])
+	childrenPool.free(gn.children)
 	gn.children = nil
-	actionsPool.Put(gn.actions[:0])
+	actionsPool.free(gn.actions)
 	gn.actions = nil
 }
 

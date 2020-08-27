@@ -6,6 +6,8 @@ import (
 	"github.com/timpalpant/alphacats/gamestate"
 )
 
+const maxPoolSize = 1024
+
 type gameNodeSlicePool struct {
 	mx   sync.Mutex
 	pool [][]GameNode
@@ -13,23 +15,24 @@ type gameNodeSlicePool struct {
 
 func (p *gameNodeSlicePool) alloc(n int) []GameNode {
 	p.mx.Lock()
-	defer p.mx.Unlock()
-	if len(p.pool) > 0 {
-		m := len(p.pool)
+	m := len(p.pool)
+	if m > 0 {
 		next := p.pool[m-1]
 		p.pool = p.pool[:m-1]
-		return next
+		p.mx.Unlock()
+		return next[:0]
 	}
+	p.mx.Unlock()
 
 	return make([]GameNode, 0, n)
 }
 
 func (p *gameNodeSlicePool) free(s []GameNode) {
-	if cap(s) > 0 {
-		p.mx.Lock()
-		p.pool = append(p.pool, s[:0])
-		p.mx.Unlock()
+	p.mx.Lock()
+	if len(p.pool) < maxPoolSize {
+		p.pool = append(p.pool, s)
 	}
+	p.mx.Unlock()
 }
 
 type actionSlicePool struct {
@@ -39,21 +42,22 @@ type actionSlicePool struct {
 
 func (p *actionSlicePool) alloc(n int) []gamestate.Action {
 	p.mx.Lock()
-	defer p.mx.Unlock()
 	if len(p.pool) > 0 {
 		m := len(p.pool)
 		next := p.pool[m-1]
 		p.pool = p.pool[:m-1]
-		return next
+		p.mx.Unlock()
+		return next[:0]
 	}
+	p.mx.Unlock()
 
 	return make([]gamestate.Action, 0, n)
 }
 
 func (p *actionSlicePool) free(s []gamestate.Action) {
-	if cap(s) > 0 {
-		p.mx.Lock()
-		p.pool = append(p.pool, s[:0])
-		p.mx.Unlock()
+	p.mx.Lock()
+	if len(p.pool) < maxPoolSize {
+		p.pool = append(p.pool, s)
 	}
+	p.mx.Unlock()
 }

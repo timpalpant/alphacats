@@ -101,7 +101,7 @@ func (a AbstractedInfoSet) String() string {
 		a.Player, a.Hand, a.DrawPile, a.PublicHistory, a.P0PlayedCards, a.P1PlayedCards, a.AvailableActions)
 }
 
-func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Action) *AbstractedInfoSet {
+func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Action) AbstractedInfoSet {
 	var publicHistory gamestate.History
 	p0PlayedCards := cards.NewSet()
 	p1PlayedCards := cards.NewSet()
@@ -156,7 +156,7 @@ func newAbstractedInfoSet(is gamestate.InfoSet, availableActions []gamestate.Act
 		}
 	}
 
-	return &AbstractedInfoSet{
+	return AbstractedInfoSet{
 		Player:           is.Player,
 		PublicHistory:    publicHistory,
 		Hand:             is.Hand,
@@ -181,12 +181,12 @@ func hidePrivateInfo(a gamestate.EncodedAction) gamestate.EncodedAction {
 }
 
 // Key implements cfr.InfoSet.
-func (is *AbstractedInfoSet) Key() []byte {
+func (is AbstractedInfoSet) Key() []byte {
 	buf, _ := is.MarshalBinary()
 	return buf
 }
 
-func (is *AbstractedInfoSet) MarshalBinary() ([]byte, error) {
+func (is AbstractedInfoSet) MarshalBinary() ([]byte, error) {
 	// Doing extra work to exactly size the buffer (and avoid any additional
 	// allocations ends up being faster than letting it auto-size)
 	historySize := is.PublicHistory.Len() + 1

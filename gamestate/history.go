@@ -112,7 +112,7 @@ func (h *History) Get(i int) Action {
 
 func (h *History) GetPacked(i int) EncodedAction {
 	if i >= h.n {
-		panic(fmt.Errorf("index out of range: %d %v", i, h))
+		panic(fmt.Errorf("index out of range"))
 	}
 
 	return h.actions[i]
@@ -124,7 +124,7 @@ func (h *History) Append(action Action) {
 
 func (h *History) AppendPacked(packed EncodedAction) {
 	if h.n >= len(h.actions) {
-		panic(fmt.Errorf("history exceeded max capacity: %v", h))
+		panic(fmt.Errorf("history exceeded max capacity"))
 	}
 
 	h.actions[h.n] = packed

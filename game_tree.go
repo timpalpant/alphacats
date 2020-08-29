@@ -130,7 +130,7 @@ func (gn *GameNode) InfoSet(player int) cfr.InfoSet {
 	}
 
 	is := gn.GetInfoSet(gamestate.Player(player))
-	abstractedIS := newAbstractedInfoSet(is, gn.actions)
+	abstractedIS := newAbstractedInfoSet(&is, gn.actions)
 	return &abstractedIS
 }
 
@@ -140,7 +140,7 @@ func (gn *GameNode) InfoSetKey(player int) []byte {
 	}
 
 	is := gn.GetInfoSet(gamestate.Player(player))
-	ais := newAbstractedInfoSet(is, gn.actions)
+	ais := newAbstractedInfoSet(&is, gn.actions)
 	return ais.Key()
 }
 

@@ -105,11 +105,11 @@ func main() {
 	}
 	start := time.Now()
 	lastCheckpoint := time.Now()
-	var iter, nTotal int
-	for ; nTotal < params.NumTrainingSamples; iter++ {
+	var nTotal int
+	for nTotal < params.NumTrainingSamples {
 		if time.Since(lastCheckpoint) > params.CheckpointInterval {
 			mx.Lock()
-			if err := saveCheckpoint(params.OutputDir, iter, trainingData); err != nil {
+			if err := saveCheckpoint(params.OutputDir, trainingData); err != nil {
 				glog.Fatal(err)
 			}
 			lastCheckpoint = time.Now()
@@ -149,7 +149,7 @@ func main() {
 	wg.Wait()
 
 	// Save final checkpoint.
-	if err := saveCheckpoint(params.OutputDir, iter, trainingData); err != nil {
+	if err := saveCheckpoint(params.OutputDir, trainingData); err != nil {
 		glog.Fatal(err)
 	}
 }
@@ -207,9 +207,9 @@ func playGame(game cfr.GameTreeNode, params RunParams) []model.Sample {
 	return samples
 }
 
-func saveCheckpoint(outputDir string, iter int, trainingData [][]model.Sample) error {
+func saveCheckpoint(outputDir string, trainingData [][]model.Sample) error {
 	for player, playerSamples := range trainingData {
-		if err := saveTrainingSamples(outputDir, iter, player, playerSamples); err != nil {
+		if err := saveTrainingSamples(outputDir, player, playerSamples); err != nil {
 			return err
 		}
 	}
@@ -217,12 +217,13 @@ func saveCheckpoint(outputDir string, iter int, trainingData [][]model.Sample) e
 	return nil
 }
 
-func saveTrainingSamples(outputDir string, iter int, player int, samples []model.Sample) error {
+func saveTrainingSamples(outputDir string, player int, samples []model.Sample) error {
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
 	}
 
-	filename := filepath.Join(outputDir, fmt.Sprintf("player_%d.%04d.samples", player, iter))
+	uuid := rand.Int() % 100000000
+	filename := filepath.Join(outputDir, fmt.Sprintf("player_%d.%08d.samples", player, uuid))
 	glog.Infof("Saving player %d training samples to: %v", player, filename)
 	f, err := os.Create(filename)
 	if err != nil {

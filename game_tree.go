@@ -62,6 +62,9 @@ type GameNode struct {
 	// len(actions) must always equal len(children).
 	actions []gamestate.Action
 	parent  *GameNode
+
+	gnPool *gameNodeSlicePool
+	aPool  *actionSlicePool
 }
 
 // Verify that we implement the interface.
@@ -76,6 +79,8 @@ func NewGame(drawPile cards.Stack, p0Deal, p1Deal cards.Set) *GameNode {
 		player:       gamestate.Player0,
 		turnType:     PlayTurn,
 		pendingTurns: 1,
+		gnPool:       &gameNodeSlicePool{},
+		aPool:        &actionSlicePool{},
 	}
 }
 
@@ -173,8 +178,8 @@ func (gn *GameNode) GetDrawPile() cards.Stack {
 }
 
 func (gn *GameNode) allocChildren(n int) {
-	gn.children = make([]GameNode, 0, n)
-	gn.actions = make([]gamestate.Action, 0, n)
+	gn.children = gn.gnPool.alloc(n)
+	gn.actions = gn.aPool.alloc(n)
 	// Children are initialized as a copy of the current game node,
 	// but without any children (the new node's children must be built).
 	childPrototype := *gn
@@ -283,6 +288,17 @@ func (gn *GameNode) SampleChild() (cfr.GameTreeNode, float64) {
 // Close implements cfr.GameTreeNode.
 func (gn *GameNode) Close() {
 	nodesVisited.Add(1)
+	if cap(gn.children) > 0 {
+		// Ensure we don't hang on to nested references,
+		// preventing them from being GC'ed.
+		for _, child := range gn.children {
+			child.children = nil
+		}
+
+		gn.gnPool.free(gn.children)
+		gn.aPool.free(gn.actions)
+	}
+
 	gn.children = nil
 	gn.actions = nil
 }

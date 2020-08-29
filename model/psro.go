@@ -184,6 +184,13 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	glog.Infof("Added network. PSRO now has %d oracles", len(m.policies))
 }
 
+func (m *MCTSPSRO) AddModel(policy mcts.Policy) {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	m.policies = append(m.policies, policy)
+	m.weights = uniformDistribution(len(m.policies))
+}
+
 func (m *MCTSPSRO) Len() int {
 	return len(m.policies)
 }

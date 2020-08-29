@@ -126,7 +126,7 @@ func main() {
 func bootstrap(policy *model.MCTSPSRO, player int, params RunParams) {
 	trainingData, err := filepath.Glob(filepath.Join(params.BootstrapSamplesDir, fmt.Sprintf("player_%d.*.samples", player)))
 	if err != nil || len(trainingData) > 0 {
-		glog.Info("Training initial model with bootstrap data from %d files", len(trainingData))
+		glog.Infof("Training initial model with bootstrap data from %d files", len(trainingData))
 		for _, file := range trainingData {
 			samples, err := loadTrainingSamples(file)
 			if err != nil {

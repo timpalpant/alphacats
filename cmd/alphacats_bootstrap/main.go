@@ -35,6 +35,7 @@ var (
 	p0Wins            = expvar.NewInt("num_wins/player0")
 	p1Wins            = expvar.NewInt("num_wins/player1")
 	searchesPerformed = expvar.NewInt("searches_performed")
+	searchesPerSecond = expvar.NewFloat("searches_per_sec")
 )
 
 type RunParams struct {
@@ -102,6 +103,7 @@ func main() {
 		make([]model.Sample, 0, params.NumTrainingSamples/2),
 		make([]model.Sample, 0, params.NumTrainingSamples/2),
 	}
+	start := time.Now()
 	lastCheckpoint := time.Now()
 	var iter, nTotal int
 	for ; nTotal < params.NumTrainingSamples; iter++ {
@@ -140,6 +142,7 @@ func main() {
 			gamesPlayed.Add(1)
 			p0NumSamples.Set(int64(len(trainingData[0])))
 			p1NumSamples.Set(int64(len(trainingData[1])))
+			searchesPerSecond.Set(float64(searchesPerformed.Value()) / time.Since(start).Seconds())
 		}()
 	}
 

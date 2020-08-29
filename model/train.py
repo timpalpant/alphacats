@@ -155,9 +155,6 @@ def main():
         y=y,
         epochs=50,
         validation_split=0.1,
-        use_multiprocessing=False,
-        workers=4,
-        max_queue_size=8,
         callbacks=[
             EarlyStopping(
                 monitor='val_loss', min_delta=0.0001, patience=5,

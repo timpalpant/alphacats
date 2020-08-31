@@ -12,14 +12,14 @@ func saveTrainingData(batch []Sample, filename string) error {
 	nSamples := len(batch)
 
 	histories := make([]float32, 0, nSamples*gamestate.MaxNumActions*numActionFeatures)
-	hands := make([]float32, 0, nSamples*(3*cards.NumTypes))
+	hands := make([]float32, 0, nSamples*(3*numCardsInDeck))
 	drawPiles := make([]float32, 0, nSamples*maxCardsInDrawPile*cards.NumTypes)
 	outputMasks := make([]float32, 0, nSamples*outputDimension)
 	yPolicy := make([]float32, 0, nSamples*outputDimension)
 	yValue := make([]float32, 0, nSamples)
 
 	history := newOneHotHistory()
-	var hand [cards.NumTypes]float32
+	var hand [numCardsInDeck]float32
 	drawPile := newOneHotDrawPile()
 	var outputMask [outputDimension]float32
 	var policy [outputDimension]float32

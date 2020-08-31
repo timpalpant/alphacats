@@ -8,10 +8,19 @@ import (
 	"github.com/timpalpant/alphacats/model/internal/tffloats"
 )
 
+var (
+	deck = append(cards.CoreDeck.AsSlice(),
+		cards.ExplodingKitten,
+		cards.Defuse,
+		cards.Defuse,
+		cards.Defuse)
+)
+
 const (
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
 	numActionFeatures  = 16
+	numCardsInDeck = 23
 	maxCardsInDrawPile = 13
 	// Vector size of output predictions: one for each card type,
 	// one for each insertion position, and one for drawing a card.
@@ -81,16 +90,23 @@ func encodeAction(action gamestate.Action, result []float32) {
 }
 
 func encodeHandTF(hand cards.Set, result []byte) {
-	var oneHot [cards.NumTypes]float32
+	var oneHot [numCardsInDeck]float32
 	encodeHand(hand, oneHot[:])
 	tffloats.EncodeF32s(oneHot[:], result)
 }
 
 func encodeHand(hand cards.Set, result []float32) {
 	clear(result)
-	hand.Iter(func(card cards.Card, count uint8) {
-		result[int(card)] = float32(count)
-	})
+	for i, card := range deck {
+		if hand.Contains(card) {
+			result[i] = 1.0
+			hand.Remove(card)
+		}
+	}
+
+	if hand.Len() != 0 {
+		panic(fmt.Errorf("cards still remain in hand!"))
+	}
 }
 
 func newOneHotDrawPile() [][]float32 {

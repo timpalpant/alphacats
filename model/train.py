@@ -18,7 +18,6 @@ from tensorflow.keras.layers import (
     Input,
     LeakyReLU,
     LSTM,
-    Masking,
     Multiply,
     Softmax,
 )
@@ -36,6 +35,7 @@ TF_GRAPH_TAG = "serve"
 MAX_HISTORY = 58
 N_ACTION_FEATURES = 16
 NUM_CARD_TYPES = 11
+NUM_CARDS_IN_DECK = 23
 MAX_CARDS_IN_DRAW_PILE = 13
 MAX_INSERT_POSITIONS = 8
 N_OUTPUTS = 2*NUM_CARD_TYPES + MAX_INSERT_POSITIONS + 1
@@ -54,24 +54,31 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     logging.info("Policy output shape: %s", policy_shape)
 
     # The history (LSTM) arm of the model.
-    masked_history_input = Masking()(history_input)
-    history_hidden_1 = Dense(32)(masked_history_input)
+    history_hidden_1 = Dense(32)(history_input)
     history_relu_1 = LeakyReLU()(history_hidden_1)
-    history_hidden_2 = Dense(32)(history_relu_1)
+    history_dropout_1 = Dropout(0.2)(history_relu_1)
+    history_hidden_2 = Dense(32)(history_dropout_1)
     history_relu_2 = LeakyReLU()(history_hidden_2)
     history_lstm = Bidirectional(LSTM(64, return_sequences=False))(history_relu_2)
 
     # The draw pile arm of the model.
-    masked_drawpile_input = Masking()(drawpile_input)
-    drawpile_hidden_1 = Dense(32)(masked_drawpile_input)
+    drawpile_hidden_1 = Dense(32)(drawpile_input)
     drawpile_relu_1 = LeakyReLU()(drawpile_hidden_1)
-    drawpile_hidden_2 = Dense(32)(drawpile_relu_1)
+    drawpile_dropout_1 = Dropout(0.2)(drawpile_relu_1)
+    drawpile_hidden_2 = Dense(32)(drawpile_dropout_1)
     drawpile_relu_2 = LeakyReLU()(drawpile_hidden_2)
     drawpile_lstm = Bidirectional(LSTM(32, return_sequences=False))(drawpile_relu_2)
 
+    # The hands arm of the model.
+    hands_hidden_1 = Dense(32)(hands_input)
+    hands_relu_1 = LeakyReLU()(hands_hidden_1)
+    hands_dropout_1 = Dropout(0.2)(hands_relu_1)
+    hands_hidden_2 = Dense(32)(hands_dropout_1)
+    hands_relu_2 = LeakyReLU()(hands_hidden_2)
+
     # Concatenate with LSTM, hand, and draw pile.
     # Then send through some dense layers.
-    merged_inputs_1 = Concatenate()([history_lstm, drawpile_lstm, hands_input])
+    merged_inputs_1 = Concatenate()([history_lstm, drawpile_lstm, hands_relu_2])
     merged_hidden_1 = Dense(256)(merged_inputs_1)
     relu_1 = LeakyReLU()(merged_hidden_1)
     dropout_1 = Dropout(0.2)(relu_1)
@@ -85,11 +92,11 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     relu_4 = LeakyReLU()(merged_hidden_4)
 
     # Policy output head.
-    policy_hidden_1 = Dense(policy_shape, activation='linear')(relu_4)
+    policy_hidden_1 = Dense(policy_shape, activation='linear', kernel_regularizer=l2(0.001))(relu_4)
     policy_masked = Multiply()([policy_hidden_1, output_mask_input])
     policy_output = Softmax(name='policy')(policy_masked)
     # Value output head.
-    value_output = Dense(1, activation='tanh', name='value')(relu_4)
+    value_output = Dense(1, activation='tanh', name='value', kernel_regularizer=l2(0.001))(relu_4)
 
     model = Model(
         inputs=[history_input, hands_input, drawpile_input, output_mask_input],
@@ -118,7 +125,7 @@ def load_data(filename: str):
     batch = np.load(filename)
     n_samples = len(batch["Y_value"])
     X_history = batch["X_history"].reshape((n_samples, MAX_HISTORY, N_ACTION_FEATURES))
-    X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARD_TYPES))
+    X_hands = batch["X_hands"].reshape((n_samples, 3*NUM_CARDS_IN_DECK))
     X_drawpile = batch["X_drawpile"].reshape((n_samples, MAX_CARDS_IN_DRAW_PILE, NUM_CARD_TYPES))
     X_output_mask = batch["X_output_mask"].reshape((n_samples, N_OUTPUTS))
     X = {"history": X_history, "hands": X_hands, "drawpile": X_drawpile, "output_mask": X_output_mask}
@@ -164,6 +171,7 @@ def main():
     history = model.fit(
         x=X,
         y=y,
+        batch_size=128,
         epochs=50,
         validation_split=0.1,
         callbacks=[

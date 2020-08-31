@@ -223,7 +223,7 @@ func (m *TrainedLSTM) Close() {
 
 const (
 	tfHistorySize    = 4 * gamestate.MaxNumActions * numActionFeatures
-	tfHandSize       = 4 * cards.NumTypes
+	tfHandSize       = 4 * numCardsInDeck
 	tfDrawPileSize   = 4 * maxCardsInDrawPile * cards.NumTypes
 	tfOutputMaskSize = 4 * outputDimension
 )
@@ -365,7 +365,7 @@ func handleEncoding(model *tf.SavedModel, batchCh chan []*predictionRequest, out
 		}
 
 		handsReader := bytes.NewReader(handsBuf)
-		handsShape := []int64{int64(len(batch)), 3 * int64(cards.NumTypes)}
+		handsShape := []int64{int64(len(batch)), 3 * int64(numCardsInDeck)}
 		handTensor, err := tf.ReadTensor(tf.Float, handsShape, handsReader)
 		if err != nil {
 			glog.Fatal(err)

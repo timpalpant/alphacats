@@ -82,11 +82,11 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 	if err := dec.Decode(&m.sampleIdx); err != nil {
 		return nil, err
 	}
-	if err := dec.Decode(&m.currentNetwork); err != nil {
-		return nil, err
-	}
 	if err := dec.Decode(&m.needsRetrain); err != nil {
 		return nil, err
+	}
+	if err := dec.Decode(&m.currentNetwork); err != nil {
+		glog.Warningf("Did not load in-progress network: %v", err)
 	}
 	return m, nil
 }
@@ -119,11 +119,13 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 	if err := enc.Encode(m.sampleIdx); err != nil {
 		return err
 	}
-	if err := enc.Encode(m.currentNetwork); err != nil {
-		return err
-	}
 	if err := enc.Encode(m.needsRetrain); err != nil {
 		return err
+	}
+	if m.currentNetwork != nil {
+		if err := enc.Encode(m.currentNetwork); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -248,7 +250,7 @@ func NewPredictorPolicy(model *TrainedLSTM, cacheSize int) *PredictorPolicy {
 
 func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	key := is.Key()
+	key := string(is.Key())
 	cached, ok := pp.cache.Get(key)
 	if ok {
 		cacheHits.Add(1)

@@ -134,10 +134,8 @@ func encodeCardTF(card cards.Card, result []byte) {
 }
 
 func encodeCard(card cards.Card, result []float32) {
-	if card != cards.TBD && card != cards.Unknown {
-		clear(result)
-		result[card] = 1.0
-	}
+	clear(result)
+	result[card] = 1.0
 }
 
 func encodeOutputMaskTF(numDrawPileCards int, availableActions []gamestate.Action, result []byte) {

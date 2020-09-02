@@ -40,10 +40,10 @@ type MCTSPSRO struct {
 	needsRetrain   bool
 }
 
-func NewMCTSPSRO(model *LSTM, maxSamples, maxSampleReuse, predictionCacheSize int) *MCTSPSRO {
+func NewMCTSPSRO(model *LSTM, maxSamples, retrainInterval, predictionCacheSize int) *MCTSPSRO {
 	return &MCTSPSRO{
 		model:               model,
-		retrainInterval:     maxSamples / maxSampleReuse,
+		retrainInterval:     retrainInterval,
 		predictionCacheSize: predictionCacheSize,
 		policies:            []mcts.Policy{},
 		weights:             []float32{},

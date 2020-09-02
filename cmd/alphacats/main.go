@@ -47,7 +47,7 @@ type RunParams struct {
 	SamplingParams   SamplingParams
 	Temperature      float64
 	SampleBufferSize int
-	MaxSampleReuse   int
+	RetrainInterval  int
 
 	ModelParams         model.Params
 	PredictionCacheSize int
@@ -76,10 +76,10 @@ func main() {
 		"Number of MCTS iterations to perform per move")
 	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(),
 		"Number of searches per game to run in parallel")
-	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 200000,
+	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 500000,
 		"Maximum number of training samples to keep")
-	flag.IntVar(&params.MaxSampleReuse, "max_sample_reuse", 30,
-		"Maximum number of times to reuse a sample.")
+	flag.IntVar(&params.RetrainInterval, "retrain_interval", 10000,
+		"How many samples to collect before retraining.")
 	flag.Float64Var(&params.Temperature, "temperature", 1.0,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
@@ -199,8 +199,8 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 
 func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	lstm := model.NewLSTM(params.ModelParams)
-	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
-	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.MaxSampleReuse, params.PredictionCacheSize)
+	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
+	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
 	policies := [2]*model.MCTSPSRO{p0, p1}
 	for player := range policies {
 		filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))

@@ -80,7 +80,7 @@ func (m *LSTM) Train(initialWeightsFile string, samples []Sample) *TrainedLSTM {
 	if err != nil {
 		glog.Fatal(err)
 	}
-	//defer os.RemoveAll(tmpDir)
+	defer os.RemoveAll(tmpDir)
 
 	inputDataFile := filepath.Join(tmpDir, "input.npz")
 	glog.Infof("Saving training data to: %v", inputDataFile)

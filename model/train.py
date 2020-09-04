@@ -171,7 +171,7 @@ def main():
     history = model.fit(
         x=X,
         y=y,
-        batch_size=128,
+        batch_size=256,
         epochs=50,
         validation_split=0.1,
         callbacks=[

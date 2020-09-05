@@ -20,6 +20,7 @@ import (
 var (
 	cacheHits   = expvar.NewInt("predictions/cache_hits")
 	cacheMisses = expvar.NewInt("predictions/cache_misses")
+	cacheSize = expvar.NewInt("predictions/cache_size")
 )
 
 type MCTSPSRO struct {
@@ -260,6 +261,7 @@ func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	cacheMisses.Add(1)
 	p, _ := pp.model.Predict(is)
 	pp.cache.Add(key, p)
+	cacheSize.Set(int64(pp.cache.Len()))
 	return p
 }
 

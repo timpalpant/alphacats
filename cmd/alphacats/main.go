@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/golang/glog"
 	"github.com/timpalpant/go-cfr"
@@ -28,10 +29,16 @@ import (
 )
 
 var stdin = bufio.NewReader(os.Stdin)
+var start = time.Now()
 
 var (
 	gamesRemaining    = expvar.NewInt("games_remaining")
+	numSamples      = expvar.NewInt("num_samples")
+	gamesPlayed       = expvar.NewInt("games_played")
+	p0Wins            = expvar.NewInt("num_wins/player0")
+	p1Wins            = expvar.NewInt("num_wins/player1")
 	searchesPerformed = expvar.NewInt("searches_performed")
+	searchesPerSecond = expvar.NewFloat("searches_per_sec")
 )
 
 type RunParams struct {
@@ -115,6 +122,7 @@ func main() {
 		bootstrap(policies[1], 1, params)
 	}
 
+	start = time.Now()
 	for epoch := 0; ; epoch++ {
 		player := epoch % 2
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
@@ -169,6 +177,11 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	policy := policies[player]
 	opponent := policies[1-player]
 	ismcts := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C), float32(params.Temperature))
+	numSamples.Set(0)
+	wins, losses := p0Wins, p1Wins
+	if player == 1 {
+		wins, losses = p1Wins, p0Wins
+	}
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -184,11 +197,19 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 			glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
 			samples := playGame(game, ismcts, opponentPolicy, player, params)
 			glog.Infof("Collected %d samples", len(samples))
+			gamesPlayed.Add(1)
+			numSamples.Set(int64(len(samples)))
+
 			for i, s := range samples {
 				glog.V(1).Infof("Sample %d: %v", i, s)
 				policy.AddSample(s)
 			}
 
+			if samples[len(samples)-1].Value == 1.0 {
+				wins.Add(1)
+			} else {
+				losses.Add(1)
+			}
 			policy.TrainNetwork()
 		}()
 	}
@@ -291,6 +312,7 @@ func simulate(search *mcts.OneSidedISMCTS, opponentPolicy mcts.Policy, beliefs *
 				game := beliefs.SampleDeterminization()
 				search.Run(rng, game, opponentPolicy)
 				searchesPerformed.Add(1)
+				searchesPerSecond.Set(float64(searchesPerformed.Value()) / time.Since(start).Seconds())
 			}
 		}()
 	}

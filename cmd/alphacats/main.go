@@ -140,6 +140,9 @@ func bootstrap(policy *model.MCTSPSRO, player int, params RunParams) {
 
 		policy.TrainNetwork()
 		policy.AddCurrentExploiterToModel()
+		if err := savePolicy(params, player, policy); err != nil {
+			glog.Fatal(err)
+		}
 	} else {
 		glog.Warningf("Didn't find any bootstrap data for player %d. Starting with uniform random model", player)
 		policy.AddModel(&model.UniformRandomPolicy{})

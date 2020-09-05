@@ -168,15 +168,22 @@ def main():
         logging.info("Loading initial weights from: %s", args.initial_weights)
         model.load_weights(args.initial_weights)
 
+    # Use batches in largest power of two such that:
+    #   1. At least 128 batches per epoch.
+    #   2. Minimum batch size 32, max 2048.
+    n_samples = len(y["value"])
+    batch_size = 32
+    while batch_size * 128 < n_samples and batch_size < 2048:
+        batch_size *= 2
     history = model.fit(
         x=X,
         y=y,
-        batch_size=256,
+        batch_size=batch_size,
         epochs=50,
         validation_split=0.1,
         callbacks=[
             EarlyStopping(
-                monitor='val_loss', min_delta=0.0001, patience=5,
+                monitor='val_loss', min_delta=0.0001, patience=3,
                 restore_best_weights=True),
             TerminateOnNaN(),
         ],

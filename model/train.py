@@ -175,6 +175,7 @@ def main():
     batch_size = 32
     while batch_size * 128 < n_samples and batch_size < 2048:
         batch_size *= 2
+    logging.info("Using batch size: %d", batch_size)
     history = model.fit(
         x=X,
         y=y,

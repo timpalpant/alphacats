@@ -25,6 +25,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.utils import plot_model
+from tensorflow.python.compiler.tensorrt import trt_convert
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow.compat.v1 as tf
@@ -194,7 +195,16 @@ def main():
         shutil.rmtree(args.output)
 
     logging.info("Saving model to %s", args.output)
-    model.save(args.output)
+    model.save(os.path.join(args.output, "original"))
+    logging.info("Optimizing model with TensorRT")
+    params = trt_convert.DEFAULT_TRT_CONVERSION_PARAMS._replace(
+            precision_mode="FP16")
+    converter = trt_convert.TrtGraphConverterV2(
+            input_saved_model_dir=os.path.join(args.output, "original"),
+            conversion_params=params)
+    converter.convert()
+    logging.info("Saving optimized model to %s", args.output)
+    converter.save(args.output)
     # Save keras model weights for re-initialization on next iteration.
     model.save_weights(os.path.join(args.output, "weights.h5"))
     plot_model(model, to_file=os.path.join(args.output, 'model.pdf'),

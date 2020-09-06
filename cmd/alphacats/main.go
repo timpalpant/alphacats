@@ -13,7 +13,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -63,9 +62,6 @@ type RunParams struct {
 type SamplingParams struct {
 	Seed  int64
 	C     float64
-	Gamma float64
-	Eta   float64
-	D     float64
 }
 
 func main() {
@@ -75,36 +71,30 @@ func main() {
 	}
 	flag.StringVar(&params.BootstrapSamplesDir, "bootstrap_samples_dir", "models/bootstrap-training-data",
 		"Directory with bootstrap training data for initial model")
-	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 5000,
+	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 25000,
 		"Number of games to play each epoch")
-	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", runtime.NumCPU(),
+	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", 768,
 		"Number of games to run in parallel")
-	flag.IntVar(&params.NumMCTSIterations, "search_iter", 1000,
+	flag.IntVar(&params.NumMCTSIterations, "search_iter", 800,
 		"Number of MCTS iterations to perform per move")
-	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", runtime.NumCPU(),
+	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", 64,
 		"Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 500000,
 		"Maximum number of training samples to keep")
 	flag.IntVar(&params.RetrainInterval, "retrain_interval", 10000,
 		"How many samples to collect before retraining.")
-	flag.Float64Var(&params.Temperature, "temperature", 1.0,
+	flag.Float64Var(&params.Temperature, "temperature", 0.8,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
-	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.75,
+	flag.Float64Var(&params.SamplingParams.C, "sampling.c", 1.2,
 		"Exploration factor C used in MCTS search")
-	flag.Float64Var(&params.SamplingParams.Gamma, "sampling.gamma", 0.1,
-		"Mixing factor Gamma used in Smooth UCT search")
-	flag.Float64Var(&params.SamplingParams.Eta, "sampling.eta", 0.9,
-		"Mixing factor eta used in Smooth UCT search")
-	flag.Float64Var(&params.SamplingParams.D, "sampling.d", 0.001,
-		"Mixing factor d used in Smooth UCT search")
 	flag.StringVar(&params.ModelParams.OutputDir, "model.output_dir", "models",
 		"Output directory for trained models")
-	flag.IntVar(&params.ModelParams.NumEncodingWorkers, "model.encoding_workers", 4,
+	flag.IntVar(&params.ModelParams.NumEncodingWorkers, "model.encoding_workers", 1,
 		"Maximum number of workers for training data encoding")
-	flag.IntVar(&params.ModelParams.NumPredictionWorkers, "model.num_predict_workers", 4,
+	flag.IntVar(&params.ModelParams.NumPredictionWorkers, "model.num_predict_workers", 1,
 		"Number of background prediction workers")
-	flag.IntVar(&params.ModelParams.MaxInferenceBatchSize, "model.predict_batch_size", 2048,
+	flag.IntVar(&params.ModelParams.MaxInferenceBatchSize, "model.predict_batch_size", 16384,
 		"Maximum batch size for prediction")
 	flag.IntVar(&params.PredictionCacheSize, "prediction_cache_size", 100000,
 		"Size of LRU prediction cache per model")

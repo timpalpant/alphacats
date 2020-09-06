@@ -123,7 +123,7 @@ func main() {
 	}
 
 	start = time.Now()
-	for epoch := 0; ; epoch++ {
+	for epoch := policies[0].Len() + policies[1].Len(); ; epoch++ {
 		player := epoch % 2
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
 			epoch, params.NumGamesPerEpoch, player)
@@ -183,6 +183,7 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 		wins, losses = p1Wins, p0Wins
 	}
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
+		deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -191,21 +192,20 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 				wg.Done()
 				<-sem
 			}()
-			deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
 			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 			opponentPolicy := opponent.SamplePolicy()
 			glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
 			samples := playGame(game, ismcts, opponentPolicy, player, params)
 			glog.Infof("Collected %d samples", len(samples))
 			gamesPlayed.Add(1)
-			numSamples.Set(int64(len(samples)))
+			numSamples.Add(int64(len(samples)))
 
 			for i, s := range samples {
 				glog.V(1).Infof("Sample %d: %v", i, s)
 				policy.AddSample(s)
 			}
 
-			if samples[len(samples)-1].Value == 1.0 {
+			if len(samples) > 0 && samples[len(samples)-1].Value == 1.0 {
 				wins.Add(1)
 			} else {
 				losses.Add(1)

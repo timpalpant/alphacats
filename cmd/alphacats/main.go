@@ -195,10 +195,12 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 				policy.AddSample(s)
 			}
 
-			if len(samples) > 0 && samples[len(samples)-1].Value == 1.0 {
-				wins.Add(1)
-			} else {
+			// NB: When we are player 1, it is possible that player 0 lost on the first
+			// turn before we had any chance to play.
+			if len(samples) == 0 || samples[len(samples)-1].Value != 1.0 {
 				losses.Add(1)
+			} else {
+				wins.Add(1)
 			}
 			policy.TrainNetwork()
 		}()

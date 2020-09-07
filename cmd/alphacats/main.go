@@ -47,7 +47,9 @@ type RunParams struct {
 	BootstrapSamplesDir string
 	NumGamesPerEpoch    int
 	MaxParallelGames    int
-	NumMCTSIterations   int
+	NumMCTSIterationsExpensive   int
+	NumMCTSIterationsCheap   int
+	ExpensiveMoveFraction float64
 	MaxParallelSearches int
 
 	SamplingParams   SamplingParams
@@ -75,8 +77,12 @@ func main() {
 		"Number of games to play each epoch")
 	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", 768,
 		"Number of games to run in parallel")
-	flag.IntVar(&params.NumMCTSIterations, "search_iter", 800,
-		"Number of MCTS iterations to perform per move")
+	flag.IntVar(&params.NumMCTSIterationsExpensive, "search_iter_expensive", 800,
+		"Number of MCTS iterations to perform on expensive moves")
+	flag.IntVar(&params.NumMCTSIterationsCheap, "search_iter_cheap", 200,
+		"Number of MCTS iterations to perform on cheap moves")
+	flag.Float64Var(&params.ExpensiveMoveFraction, "expensive_fraction", 0.25,
+		"Fraction of moves to perform expensive search")
 	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", 64,
 		"Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 500000,
@@ -184,7 +190,9 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 			}()
 			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 			opponentPolicy := opponent.SamplePolicy()
-			glog.Infof("Playing game with ~%d search iterations", params.NumMCTSIterations)
+			glog.Infof("Playing game with %d/%d search iterations",
+				params.NumMCTSIterationsExpensive,
+				params.NumMCTSIterationsCheap)
 			samples := playGame(game, ismcts, opponentPolicy, player, params)
 			glog.Infof("Collected %d samples", len(samples))
 			gamesPlayed.Add(1)
@@ -266,15 +274,22 @@ func playGame(game cfr.GameTreeNode, search *mcts.OneSidedISMCTS, opponentPolicy
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
 		} else {
-			simulate(search, opponentPolicy, beliefs, params.NumMCTSIterations, params.MaxParallelSearches)
+			numMCTSIterations := params.NumMCTSIterationsCheap
+			expensiveSearch := (rand.Float64() < params.ExpensiveMoveFraction)
+			if expensiveSearch {
+				numMCTSIterations = params.NumMCTSIterationsExpensive
+			}
+			simulate(search, opponentPolicy, beliefs, numMCTSIterations, params.MaxParallelSearches)
 			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			p := search.GetPolicy(game)
 			selected := sampling.SampleOne(p, rand.Float32())
 			game = game.GetChild(selected)
-			samples = append(samples, model.Sample{
-				InfoSet: *is,
-				Policy:  p,
-			})
+			if expensiveSearch {
+				samples = append(samples, model.Sample{
+					InfoSet: *is,
+					Policy:  p,
+				})
+			}
 		}
 
 		beliefs.Update(game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player)))

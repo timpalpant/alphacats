@@ -176,12 +176,12 @@ func encodeOutputMask(numDrawPileCards int, availableActions []gamestate.Action,
 			result[cards.NumTypes+int(action.Card)] = 1.0
 		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
-			// Position 0 -> insert randomly.
-			// Position 1 -> insert on the bottom.
+			// Position 0 -> insert on the bottom.
+			// Position 1 -> insert randomly.
 			// Position 2...N -> insert in the nth position.
 			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
 			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
-				idx = 2*cards.NumTypes + 1
+				idx = 2*cards.NumTypes
 			}
 
 			result[idx] = 1.0
@@ -207,12 +207,12 @@ func encodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, po
 			result[cards.NumTypes+int(action.Card)] = policy[i]
 		case gamestate.InsertExplodingKitten:
 			// Remaining correspond to inserting cat at each position.
-			// Position 0 -> insert randomly.
-			// Position 1 -> insert on the bottom.
+			// Position 0 -> insert on the bottom.
+			// Position 1 -> insert randomly.
 			// Position 2...N -> insert in the nth position.
 			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
 			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
-				idx = 2*cards.NumTypes + 1
+				idx = 2*cards.NumTypes
 			}
 
 			result[idx] = policy[i]
@@ -239,7 +239,7 @@ func decodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, pr
 			// Remaining correspond to inserting cat at each position.
 			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
 			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
-				idx = 2*cards.NumTypes + 1
+				idx = 2*cards.NumTypes
 			}
 			policy[i] = predictions[idx]
 		default:

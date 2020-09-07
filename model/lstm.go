@@ -30,7 +30,7 @@ const (
 	handsInputLayer    = "serving_default_hands"
 	outputMaskLayer    = "serving_default_output_mask"
 	drawPileInputLayer = "serving_default_drawpile"
-	outputLayer        = "StatefulPartitionedCall"
+	outputLayer        = "PartitionedCall"
 )
 
 var (

@@ -117,7 +117,7 @@ func newOneHotDrawPile() [][]float32 {
 	return result
 }
 
-func encodeDrawPileTF(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, result []byte) {
+func encodeDrawPileTF(drawPile cards.Stack, result []byte) {
 	// We encode actions directly, rather than reuse EncodeDrwawPile,
 	// to avoid needing to allocate large intermediate one-hot [][]float32.
 	i := 0
@@ -131,7 +131,7 @@ func encodeDrawPileTF(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, 
 	}
 }
 
-func encodeDrawPile(drawPile cards.Stack, hand, p0Played, p1Played cards.Set, result [][]float32) {
+func encodeDrawPile(drawPile cards.Stack, result [][]float32) {
 	i := 0
 	drawPile.Iter(func(card cards.Card) {
 		encodeCard(card, result[i])

@@ -165,6 +165,11 @@ func (m *MCTSPSRO) TrainNetwork() {
 	// TODO(palpant): Implement evaluation/selection by pitting this network
 	// against the previous best response network and only keeping it if it wins
 	// at least 55% of the time.
+	// FIXME(palpant): Need to ensure that no prediction requests may happen after
+	// closing the current network.
+	if m.currentNetwork != nil {
+		m.currentNetwork.Close()
+	}
 	m.currentNetwork = nn
 	m.needsRetrain = false
 }

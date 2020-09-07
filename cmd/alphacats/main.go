@@ -111,19 +111,38 @@ func main() {
 	go http.ListenAndServe("localhost:4123", nil)
 
 	policies := loadPolicy(params)
+	var wg sync.WaitGroup
 	if policies[0].Len() == 0 {
-		bootstrap(policies[0], 0, params)
+		wg.Add(1)
+		go func() {
+			bootstrap(policies[0], 0, params)
+			wg.Done()
+		}()
 	}
 	if policies[1].Len() == 0 {
-		bootstrap(policies[1], 1, params)
+		wg.Add(1)
+		go func() {
+			bootstrap(policies[1], 1, params)
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 
 	start = time.Now()
-	for epoch := policies[0].Len() + policies[1].Len(); ; epoch++ {
-		player := epoch % 2
-		glog.Infof("Starting epoch %d: Playing %d games to train approximate best response for player %d",
-			epoch, params.NumGamesPerEpoch, player)
-		runEpoch(policies, player, params)
+	for epoch := 0; ; epoch++ {
+		glog.Infof("Starting epoch %d: Playing %d games to train approximate best responses",
+			epoch, params.NumGamesPerEpoch)
+
+		wg.Add(2)
+		go func() {
+			runEpoch(policies, 0, params)
+			wg.Done()
+		}()
+		go func() {
+			runEpoch(policies, 1, params)
+			wg.Done()
+		}()
+		wg.Wait()
 	}
 }
 
@@ -168,6 +187,7 @@ func loadTrainingSamples(filename string) ([]model.Sample, error) {
 
 func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	gamesRemaining.Add(int64(params.NumGamesPerEpoch))
+
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, params.MaxParallelGames)
 	policy := policies[player]
@@ -177,9 +197,9 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	if player == 1 {
 		wins, losses = p1Wins, p0Wins
 	}
+	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
+	// starts to level off rather than running a fixed number of games.
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
-		// NB: NewRandomDeal shuffles params.Deck, so must be done outside the goroutine.
-		deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -188,9 +208,14 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 				wg.Done()
 				<-sem
 			}()
+			// NB: NewRandomDeal shuffles the passed deck.
+			deck := make([]cards.Card, len(params.Deck))
+			copy(deck, params.Deck)
+			deal := alphacats.NewRandomDeal(deck, params.CardsPerPlayer)
 			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 			opponentPolicy := opponent.SamplePolicy()
-			ismcts := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C), float32(params.Temperature))
+			ismcts := mcts.NewOneSidedISMCTS(player, policy,
+				float32(params.SamplingParams.C), float32(params.Temperature))
 			glog.Infof("Playing game with %d/%d search iterations",
 				params.NumMCTSIterationsExpensive,
 				params.NumMCTSIterationsCheap)
@@ -229,7 +254,7 @@ func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
 
 	p1Params := params.ModelParams
-	p1Params.OutputDir = filepath.Join(p1Params.OutputDir, "player0")
+	p1Params.OutputDir = filepath.Join(p1Params.OutputDir, "player1")
 	lstm1 := model.NewLSTM(p1Params)
 	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
 

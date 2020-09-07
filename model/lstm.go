@@ -57,6 +57,10 @@ type LSTM struct {
 }
 
 func NewLSTM(p Params) *LSTM {
+	if err := os.MkdirAll(p.OutputDir, 0755); err != nil {
+		glog.Fatal(err)
+	}
+
 	return &LSTM{
 		params: p,
 		iter:   1,

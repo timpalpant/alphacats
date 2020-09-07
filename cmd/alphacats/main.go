@@ -81,7 +81,7 @@ func main() {
 		"Number of MCTS iterations to perform on expensive moves")
 	flag.IntVar(&params.NumMCTSIterationsCheap, "search_iter_cheap", 200,
 		"Number of MCTS iterations to perform on cheap moves")
-	flag.Float64Var(&params.ExpensiveMoveFraction, "expensive_fraction", 0.25,
+	flag.Float64Var(&params.ExpensiveMoveFraction, "expensive_fraction", 0.5,
 		"Fraction of moves to perform expensive search")
 	flag.IntVar(&params.MaxParallelSearches, "max_parallel_searches", 64,
 		"Number of searches per game to run in parallel")
@@ -172,13 +172,13 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	sem := make(chan struct{}, params.MaxParallelGames)
 	policy := policies[player]
 	opponent := policies[1-player]
-	ismcts := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C), float32(params.Temperature))
 	numSamples.Set(0)
 	wins, losses := p0Wins, p1Wins
 	if player == 1 {
 		wins, losses = p1Wins, p0Wins
 	}
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
+		// NB: NewRandomDeal shuffles params.Deck, so must be done outside the goroutine.
 		deal := alphacats.NewRandomDeal(params.Deck, params.CardsPerPlayer)
 		wg.Add(1)
 		sem <- struct{}{}
@@ -190,6 +190,7 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 			}()
 			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 			opponentPolicy := opponent.SamplePolicy()
+			ismcts := mcts.NewOneSidedISMCTS(player, policy, float32(params.SamplingParams.C), float32(params.Temperature))
 			glog.Infof("Playing game with %d/%d search iterations",
 				params.NumMCTSIterationsExpensive,
 				params.NumMCTSIterationsCheap)
@@ -222,9 +223,16 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 }
 
 func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
-	lstm := model.NewLSTM(params.ModelParams)
-	p0 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
-	p1 := model.NewMCTSPSRO(lstm, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
+	p0Params := params.ModelParams
+	p0Params.OutputDir = filepath.Join(p0Params.OutputDir, "player0")
+	lstm0 := model.NewLSTM(p0Params)
+	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
+
+	p1Params := params.ModelParams
+	p1Params.OutputDir = filepath.Join(p1Params.OutputDir, "player0")
+	lstm1 := model.NewLSTM(p1Params)
+	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
+
 	policies := [2]*model.MCTSPSRO{p0, p1}
 	for player := range policies {
 		filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))

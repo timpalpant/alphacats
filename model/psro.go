@@ -20,6 +20,7 @@ import (
 var (
 	cacheHits   = expvar.NewInt("predictions/cache_hits")
 	cacheMisses = expvar.NewInt("predictions/cache_misses")
+	cacheHitRate = expvar.NewFloat("predictions/cache_hit_rate")
 	cacheSize = expvar.NewInt("predictions/cache_size")
 )
 
@@ -260,10 +261,12 @@ func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	cached, ok := pp.cache.Get(key)
 	if ok {
 		cacheHits.Add(1)
+		cacheHitRate.Set(float64(cacheHits.Value()) / float64(cacheHits.Value() + cacheMisses.Value()))
 		return cached.([]float32)
 	}
 
 	cacheMisses.Add(1)
+	cacheHitRate.Set(float64(cacheHits.Value()) / float64(cacheHits.Value() + cacheMisses.Value()))
 	p, _ := pp.model.Predict(is)
 	pp.cache.Add(key, p)
 	cacheSize.Set(int64(pp.cache.Len()))

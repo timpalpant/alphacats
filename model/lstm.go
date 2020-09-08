@@ -36,6 +36,10 @@ const (
 var (
 	samplesPredicted = expvar.NewInt("num_predicted_samples")
 	batchesPredicted = expvar.NewInt("num_predicted_batches")
+	predictionsInFlight = expvar.NewInt("predictions_in_flight")
+	avgBatchSize = expvar.NewFloat("avg_batch_size")
+	totalPredictionTime = expvar.NewFloat("total_prediction_time_secs")
+	avgBatchPredictionTime = expvar.NewFloat("avg_batch_prediction_time_secs")
 )
 
 // tfConfig is tf.ConfigProto(
@@ -418,10 +422,14 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 		}
 		samplesPredicted.Add(int64(len(req.batch)))
 		batchesPredicted.Add(1)
+		avgBatchSize.Set(float64(samplesPredicted.Value()) / float64(batchesPredicted.Value()))
 	}
 }
 
 func predictBatch(model *tf.SavedModel, history, hands, drawPiles, outputMasks *tf.Tensor) []*tf.Tensor {
+	predictionsInFlight.Add(1)
+	defer predictionsInFlight.Add(-1)
+	start := time.Now()
 	result, err := model.Session.Run(
 		map[tf.Output]*tf.Tensor{
 			model.Graph.Operation(historyInputLayer).Output(0):  history,
@@ -436,6 +444,9 @@ func predictBatch(model *tf.SavedModel, history, hands, drawPiles, outputMasks *
 		nil,
 	)
 
+	elapsed := time.Since(start)
+	totalPredictionTime.Add(elapsed.Seconds())
+	avgBatchPredictionTime.Set(totalPredictionTime.Value() / float64(batchesPredicted.Value()))
 	if err != nil {
 		glog.Fatal(err)
 	}

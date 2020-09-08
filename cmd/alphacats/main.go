@@ -32,11 +32,13 @@ var start = time.Now()
 
 var (
 	gamesRemaining    = expvar.NewInt("games_remaining")
-	numSamples      = expvar.NewInt("num_samples")
 	gamesPlayed       = expvar.NewInt("games_played")
+	gamesInFlight = expvar.NewInt("games_in_flight")
+	numSamples      = expvar.NewInt("num_samples")
 	p0Wins            = expvar.NewInt("num_wins/player0")
 	p1Wins            = expvar.NewInt("num_wins/player1")
 	searchesPerformed = expvar.NewInt("searches_performed")
+	searchesInFlight = expvar.NewInt("searches_in_flight")
 	searchesPerSecond = expvar.NewFloat("searches_per_sec")
 )
 
@@ -110,6 +112,7 @@ func main() {
 	rand.Seed(params.SamplingParams.Seed)
 	go http.ListenAndServe("localhost:4123", nil)
 
+	// Initialize policies. Bootstrap from training data if available.
 	policies := loadPolicy(params)
 	var wg sync.WaitGroup
 	if policies[0].Len() == 0 {
@@ -128,28 +131,42 @@ func main() {
 	}
 	wg.Wait()
 
+	// Run PSRO: Each epoch, train an approximate best response to the opponent's
+	// current policy distribution. Then add the new policies to the meta-model.
 	start = time.Now()
 	for epoch := 0; ; epoch++ {
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best responses",
 			epoch, params.NumGamesPerEpoch)
-
 		wg.Add(2)
 		go func() {
 			runEpoch(policies, 0, params)
 			wg.Done()
 		}()
+		// NB: Work around some CUDA initialization race that leads to segfault.
+		time.Sleep(5 * time.Second)
 		go func() {
 			runEpoch(policies, 1, params)
 			wg.Done()
 		}()
 		wg.Wait()
+
+		// Update meta-model with new best response policies.
+		// TODO: Implement Nash solver for the meta-game rather than using uniform
+		// Fictitious Play.
+		for player := 0; player < 1; player++ {
+			policies[player].AddCurrentExploiterToModel()
+			if err := savePolicy(params, player, policies[player]); err != nil {
+				glog.Fatal(err)
+			}
+		}
 	}
 }
 
 func bootstrap(policy *model.MCTSPSRO, player int, params RunParams) {
 	trainingData, err := filepath.Glob(filepath.Join(params.BootstrapSamplesDir, fmt.Sprintf("player_%d.*.samples", player)))
 	if err != nil || len(trainingData) > 0 {
-		glog.Infof("Training initial model with bootstrap data from %d files", len(trainingData))
+		glog.Infof("Training initial player %d model with bootstrap data from %d files",
+			player, len(trainingData))
 		for _, file := range trainingData {
 			samples, err := loadTrainingSamples(file)
 			if err != nil {
@@ -200,6 +217,11 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
 	// starts to level off rather than running a fixed number of games.
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
+		if i == 1 {
+			// NB: Work around some CUDA initialization race that leads to segfault.
+			time.Sleep(5 * time.Second)
+		}
+
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -241,10 +263,6 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	}
 
 	wg.Wait()
-	policy.AddCurrentExploiterToModel()
-	if err := savePolicy(params, player, policy); err != nil {
-		glog.Fatal(err)
-	}
 }
 
 func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
@@ -295,6 +313,8 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 }
 
 func playGame(game cfr.GameTreeNode, search *mcts.OneSidedISMCTS, opponentPolicy mcts.Policy, player int, params RunParams) []model.Sample {
+	gamesInFlight.Add(1)
+	defer gamesInFlight.Add(-1)
 	infoSet := game.(*alphacats.GameNode).GetInfoSet(gamestate.Player(player))
 	beliefs := alphacats.NewBeliefState(opponentPolicy.GetPolicy, infoSet)
 
@@ -350,7 +370,9 @@ func simulate(search *mcts.OneSidedISMCTS, opponentPolicy mcts.Policy, beliefs *
 			rng := rand.New(rand.NewSource(rand.Int63()))
 			for k := 0; k < nPerWorker; k++ {
 				game := beliefs.SampleDeterminization()
+				searchesInFlight.Add(1)
 				search.Run(rng, game, opponentPolicy)
+				searchesInFlight.Add(-1)
 				searchesPerformed.Add(1)
 				searchesPerSecond.Set(float64(searchesPerformed.Value()) / time.Since(start).Seconds())
 			}

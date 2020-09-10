@@ -162,8 +162,20 @@ func main() {
 	}
 }
 
+func glob(dir string, prefix, ext string) ([]string, error) {
+	var files []string
+	err := filepath.Walk(dir, func(path string, f os.FileInfo, err error) error {
+		if strings.HasPrefix(filepath.Base(path), prefix) && filepath.Ext(path) == ext {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	return files, err
+}
+
 func bootstrap(policy *model.MCTSPSRO, player int, params RunParams) {
-	trainingData, err := filepath.Glob(filepath.Join(params.BootstrapSamplesDir, fmt.Sprintf("player_%d.*.samples", player)))
+	trainingData, err := glob(params.BootstrapSamplesDir, fmt.Sprintf("player_%d", player), ".samples")
 	if err != nil || len(trainingData) > 0 {
 		glog.Infof("Training initial player %d model with bootstrap data from %d files",
 			player, len(trainingData))

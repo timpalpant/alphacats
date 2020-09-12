@@ -36,8 +36,10 @@ var (
 	gamesPlayed       = expvar.NewInt("games_played")
 	gamesInFlight     = expvar.NewInt("games_in_flight")
 	numSamples        = expvar.NewInt("num_samples")
-	p0Wins            = expvar.NewInt("num_wins/player0")
-	p1Wins            = expvar.NewInt("num_wins/player1")
+	p0p0Wins            = expvar.NewInt("num_wins/player0_train/player0")
+	p0p1Wins            = expvar.NewInt("num_wins/player0_train/player1")
+	p1p0Wins            = expvar.NewInt("num_wins/player1_train/player0")
+	p1p1Wins            = expvar.NewInt("num_wins/player1_train/player1")
 	searchesPerformed = expvar.NewInt("searches_performed")
 	searchesInFlight  = expvar.NewInt("searches_in_flight")
 	searchesPerSecond = expvar.NewFloat("searches_per_sec")
@@ -223,9 +225,9 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	policy := policies[player]
 	opponent := policies[1-player]
 	numSamples.Set(0)
-	wins, losses := p0Wins, p1Wins
+	wins, losses := p0p0Wins, p0p1Wins
 	if player == 1 {
-		wins, losses = p1Wins, p0Wins
+		wins, losses = p1p1Wins, p1p0Wins
 	}
 	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
 	// starts to level off rather than running a fixed number of games.
@@ -314,7 +316,16 @@ func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 
 func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
 	filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))
-	glog.Infof("Saving player %d policy to: %v", player, filename)
+	if err := savePolicyToFile(policy, filename); err != nil {
+		return err
+	}
+
+	filename = filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model.%04d", player, policy.Len()))
+	return savePolicyToFile(policy, filename)
+}
+
+func savePolicyToFile(policy *model.MCTSPSRO, filename string) error {
+	glog.Infof("Saving policy to: %v", filename)
 	f, err := os.Create(filename)
 	if err != nil {
 		return err

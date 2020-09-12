@@ -13,6 +13,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,12 +34,12 @@ var start = time.Now()
 var (
 	gamesRemaining    = expvar.NewInt("games_remaining")
 	gamesPlayed       = expvar.NewInt("games_played")
-	gamesInFlight = expvar.NewInt("games_in_flight")
-	numSamples      = expvar.NewInt("num_samples")
+	gamesInFlight     = expvar.NewInt("games_in_flight")
+	numSamples        = expvar.NewInt("num_samples")
 	p0Wins            = expvar.NewInt("num_wins/player0")
 	p1Wins            = expvar.NewInt("num_wins/player1")
 	searchesPerformed = expvar.NewInt("searches_performed")
-	searchesInFlight = expvar.NewInt("searches_in_flight")
+	searchesInFlight  = expvar.NewInt("searches_in_flight")
 	searchesPerSecond = expvar.NewFloat("searches_per_sec")
 )
 
@@ -46,13 +47,13 @@ type RunParams struct {
 	Deck           []cards.Card
 	CardsPerPlayer int
 
-	BootstrapSamplesDir string
-	NumGamesPerEpoch    int
-	MaxParallelGames    int
-	NumMCTSIterationsExpensive   int
-	NumMCTSIterationsCheap   int
-	ExpensiveMoveFraction float64
-	MaxParallelSearches int
+	BootstrapSamplesDir        string
+	NumGamesPerEpoch           int
+	MaxParallelGames           int
+	NumMCTSIterationsExpensive int
+	NumMCTSIterationsCheap     int
+	ExpensiveMoveFraction      float64
+	MaxParallelSearches        int
 
 	SamplingParams   SamplingParams
 	Temperature      float64
@@ -64,8 +65,8 @@ type RunParams struct {
 }
 
 type SamplingParams struct {
-	Seed  int64
-	C     float64
+	Seed int64
+	C    float64
 }
 
 func main() {

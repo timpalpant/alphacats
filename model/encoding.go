@@ -20,7 +20,7 @@ const (
 	// The number of features each history Action is encoded into.
 	// This is used to size the input dimension of the network.
 	numActionFeatures  = 16
-	numCardsInDeck = 23
+	numCardsInDeck     = 23
 	maxCardsInDrawPile = 13
 	// Vector size of output predictions: one for each card type,
 	// one for each insertion position, and one for drawing a card.
@@ -181,7 +181,7 @@ func encodeOutputMask(numDrawPileCards int, availableActions []gamestate.Action,
 			// Position 2...N -> insert in the nth position.
 			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
 			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
-				idx = 2*cards.NumTypes
+				idx = 2 * cards.NumTypes
 			}
 
 			result[idx] = 1.0
@@ -212,7 +212,7 @@ func encodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, po
 			// Position 2...N -> insert in the nth position.
 			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
 			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
-				idx = 2*cards.NumTypes
+				idx = 2 * cards.NumTypes
 			}
 
 			result[idx] = policy[i]
@@ -239,7 +239,7 @@ func decodeOutputs(numDrawPileCards int, availableActions []gamestate.Action, pr
 			// Remaining correspond to inserting cat at each position.
 			idx := 2*cards.NumTypes + 1 + int(action.PositionInDrawPile)
 			if int(action.PositionInDrawPile) == numDrawPileCards+1 {
-				idx = 2*cards.NumTypes
+				idx = 2 * cards.NumTypes
 			}
 			policy[i] = predictions[idx]
 		default:

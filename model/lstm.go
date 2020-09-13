@@ -34,11 +34,11 @@ const (
 )
 
 var (
-	samplesPredicted = expvar.NewInt("num_predicted_samples")
-	batchesPredicted = expvar.NewInt("num_predicted_batches")
-	predictionsInFlight = expvar.NewInt("predictions_in_flight")
-	avgBatchSize = expvar.NewFloat("avg_batch_size")
-	totalPredictionTime = expvar.NewFloat("total_prediction_time_secs")
+	samplesPredicted       = expvar.NewInt("num_predicted_samples")
+	batchesPredicted       = expvar.NewInt("num_predicted_batches")
+	predictionsInFlight    = expvar.NewInt("predictions_in_flight")
+	avgBatchSize           = expvar.NewFloat("avg_batch_size")
+	totalPredictionTime    = expvar.NewFloat("total_prediction_time_secs")
 	avgBatchPredictionTime = expvar.NewFloat("avg_batch_prediction_time_secs")
 )
 

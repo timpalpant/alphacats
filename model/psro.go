@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 
 	"github.com/golang/glog"
 	"github.com/hashicorp/golang-lru"
@@ -18,11 +19,16 @@ import (
 )
 
 var (
-	cacheHits   = expvar.NewInt("predictions/cache_hits")
-	cacheMisses = expvar.NewInt("predictions/cache_misses")
+	cacheHits    = expvar.NewInt("predictions/cache_hits")
+	cacheMisses  = expvar.NewInt("predictions/cache_misses")
 	cacheHitRate = expvar.NewFloat("predictions/cache_hit_rate")
-	cacheSize = expvar.NewInt("predictions/cache_size")
+	cacheSize    = expvar.NewInt("predictions/cache_size")
 )
+
+type RefCountingTrainedLSTM struct {
+	*TrainedLSTM
+	RefCount int64
+}
 
 type MCTSPSRO struct {
 	model               *LSTM
@@ -36,7 +42,7 @@ type MCTSPSRO struct {
 	maxSamples int
 	sampleIdx  int
 
-	currentNetwork *TrainedLSTM
+	currentNetwork *RefCountingTrainedLSTM
 	rollout        mcts.Evaluator
 }
 
@@ -144,12 +150,15 @@ func (m *MCTSPSRO) TrainNetwork() {
 	// TODO(palpant): Implement evaluation/selection by pitting this network
 	// against the previous best response network and only keeping it if it wins
 	// at least 55% of the time.
-	// FIXME(palpant): Need to ensure that no prediction requests may happen after
-	// closing the current network.
-	if m.currentNetwork != nil {
+	if m.currentNetwork != nil && m.currentNetwork.RefCount == 1 {
+		// There are no other concurrent uses of this network making predictions, close it.
 		m.currentNetwork.Close()
+	} else {
+		// There are other concurrent uses of this network.
+		// Decrement the reference count so that when the last one finishes, it is closed.
+		atomic.AddInt64(&m.currentNetwork.RefCount, -1)
 	}
-	m.currentNetwork = nn
+	m.currentNetwork = &RefCountingTrainedLSTM{nn, 1}
 }
 
 func (m *MCTSPSRO) logApproximateWinRateUnsafe() {
@@ -207,15 +216,27 @@ func (m *MCTSPSRO) Evaluate(rng *rand.Rand, node cfr.GameTreeNode, opponent mcts
 	if nn == nil {
 		return m.rollout.Evaluate(rng, node, opponent)
 	}
+	defer m.releaseNetwork(nn)
 
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
 	return nn.Predict(is)
 }
 
-func (m *MCTSPSRO) getCurrentNetwork() *TrainedLSTM {
+func (m *MCTSPSRO) getCurrentNetwork() *RefCountingTrainedLSTM {
 	m.mx.Lock()
 	defer m.mx.Unlock()
+	if m.currentNetwork != nil {
+		atomic.AddInt64(&m.currentNetwork.RefCount, 1)
+	}
 	return m.currentNetwork
+}
+
+func (m *MCTSPSRO) releaseNetwork(nn *RefCountingTrainedLSTM) {
+	numRefs := atomic.AddInt64(&nn.RefCount, -1)
+	if numRefs == 0 {
+		// This is the last reference to this network, close it.
+		nn.Close()
+	}
 }
 
 // Policy that always plays randomly. Used to bootstrap fictitious play.
@@ -252,12 +273,12 @@ func (pp *PredictorPolicy) GetPolicy(node cfr.GameTreeNode) []float32 {
 	cached, ok := pp.cache.Get(key)
 	if ok {
 		cacheHits.Add(1)
-		cacheHitRate.Set(float64(cacheHits.Value()) / float64(cacheHits.Value() + cacheMisses.Value()))
+		cacheHitRate.Set(float64(cacheHits.Value()) / float64(cacheHits.Value()+cacheMisses.Value()))
 		return cached.([]float32)
 	}
 
 	cacheMisses.Add(1)
-	cacheHitRate.Set(float64(cacheHits.Value()) / float64(cacheHits.Value() + cacheMisses.Value()))
+	cacheHitRate.Set(float64(cacheHits.Value()) / float64(cacheHits.Value()+cacheMisses.Value()))
 	p, _ := pp.model.Predict(is)
 	pp.cache.Add(key, p)
 	cacheSize.Set(int64(pp.cache.Len()))
@@ -310,4 +331,5 @@ func uniformDistribution(n int) []float32 {
 func init() {
 	gob.Register(&UniformRandomPolicy{})
 	gob.Register(&PredictorPolicy{})
+	gob.Register(&RefCountingTrainedLSTM{})
 }

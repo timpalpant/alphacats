@@ -417,8 +417,20 @@ type batchPredictionRequest struct {
 
 func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
 	defer model.Session.Close()
+	firstBatch := true
 	for req := range reqCh {
-		resultTensors := predictBatch(model, req.history, req.hands, req.drawPiles, req.outputMasks)
+		if firstBatch {
+			globalCUDAInitMx.Lock()
+		}
+		resultTensors, err := predictBatch(model, req.history, req.hands, req.drawPiles, req.outputMasks)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		if firstBatch {
+			globalCUDAInitMx.Unlock()
+			firstBatch = false
+		}
+
 		policy := resultTensors[0].Value().([][]float32)
 		value := resultTensors[1].Value().([][]float32)
 		for i, req := range req.batch {
@@ -430,7 +442,7 @@ func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionReq
 	}
 }
 
-func predictBatch(model *tf.SavedModel, history, hands, drawPiles, outputMasks *tf.Tensor) []*tf.Tensor {
+func predictBatch(model *tf.SavedModel, history, hands, drawPiles, outputMasks *tf.Tensor) ([]*tf.Tensor, error) {
 	predictionsInFlight.Add(1)
 	defer predictionsInFlight.Add(-1)
 	start := time.Now()
@@ -451,11 +463,7 @@ func predictBatch(model *tf.SavedModel, history, hands, drawPiles, outputMasks *
 	elapsed := time.Since(start)
 	totalPredictionTime.Add(elapsed.Seconds())
 	avgBatchPredictionTime.Set(totalPredictionTime.Value() / float64(batchesPredicted.Value()))
-	if err != nil {
-		glog.Fatal(err)
-	}
-
-	return result
+	return result, err
 }
 
 func init() {

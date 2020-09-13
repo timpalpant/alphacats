@@ -149,13 +149,15 @@ func (m *MCTSPSRO) TrainNetwork() {
 	// TODO(palpant): Implement evaluation/selection by pitting this network
 	// against the previous best response network and only keeping it if it wins
 	// at least 55% of the time.
-	if m.currentNetwork != nil && m.currentNetwork.RefCount == 1 {
-		// There are no other concurrent uses of this network making predictions, close it.
-		m.currentNetwork.Close()
-	} else {
-		// There are other concurrent uses of this network.
-		// Decrement the reference count so that when the last one finishes, it is closed.
-		atomic.AddInt64(&m.currentNetwork.RefCount, -1)
+	if m.currentNetwork != nil {
+		if m.currentNetwork.RefCount == 1 {
+			// There are no other concurrent uses of this network making predictions, close it.
+			m.currentNetwork.Close()
+		} else {
+			// There are other concurrent uses of this network.
+			// Decrement the reference count so that when the last one finishes, it is closed.
+			atomic.AddInt64(&m.currentNetwork.RefCount, -1)
+		}
 	}
 	m.currentNetwork = &RefCountingTrainedLSTM{nn, 1}
 }

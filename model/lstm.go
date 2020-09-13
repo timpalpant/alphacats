@@ -294,7 +294,7 @@ func (m *TrainedLSTM) bgPredictionHandler() {
 	glog.V(1).Infof("Starting %d batch prediction workers",
 		m.params.NumPredictionWorkers)
 	for i := 0; i < m.params.NumPredictionWorkers; i++ {
-		go handleBatchPredictions(m.model, outputCh)
+		go handleBatchPredictions(m.model, outputCh, i)
 	}
 
 	encodeCh := make(chan []*predictionRequest)
@@ -415,8 +415,11 @@ type batchPredictionRequest struct {
 	batch       []*predictionRequest
 }
 
-func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest) {
-	defer model.Session.Close()
+func handleBatchPredictions(model *tf.SavedModel, reqCh chan *batchPredictionRequest, workerID int) {
+	if workerID == 0 {
+		defer model.Session.Close()
+	}
+
 	firstBatch := true
 	for req := range reqCh {
 		if firstBatch {

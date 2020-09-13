@@ -232,6 +232,8 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch i
 	}
 	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
 	// starts to level off rather than running a fixed number of games.
+	var winRates []float64
+	var prevWins, prevLosses int64
 	numSamplesSinceLastTrain := 0
 	modelIter := 0
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
@@ -280,8 +282,17 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch i
 		mx.Lock()
 		needsRetrain := (numSamplesSinceLastTrain >= params.RetrainInterval)
 		if needsRetrain {
+			newWins := wins.Value() - prevWins
+			newLosses := losses.Value() - prevLosses
+			winRate := float64(newWins) / float64(newWins + newLosses)
+			winRates = append(winRates, winRate)
+			glog.Infof("Win rates: %v", winRates)
+			prevWins = wins.Value()
+			prevLosses = losses.Value()
+
 			policy.TrainNetwork()
 			numSamplesSinceLastTrain = 0
+			modelIter++
 			if err := savePolicy(params, player, policy, epoch, modelIter); err != nil {
 				glog.Fatal(err)
 			}

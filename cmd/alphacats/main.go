@@ -137,18 +137,18 @@ func main() {
 	// Run PSRO: Each epoch, train an approximate best response to the opponent's
 	// current policy distribution. Then add the new policies to the meta-model.
 	start = time.Now()
-	for epoch := 0; ; epoch++ {
+	for epoch := 1; ; epoch++ {
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best responses",
 			epoch, params.NumGamesPerEpoch)
 		wg.Add(2)
 		go func() {
-			runEpoch(policies, 0, params)
+			runEpoch(policies, 0, params, epoch)
 			wg.Done()
 		}()
 		// NB: Work around some CUDA initialization race that leads to segfault.
 		time.Sleep(5 * time.Second)
 		go func() {
-			runEpoch(policies, 1, params)
+			runEpoch(policies, 1, params, epoch)
 			wg.Done()
 		}()
 		wg.Wait()
@@ -158,7 +158,7 @@ func main() {
 		// Fictitious Play.
 		for player := 0; player < 1; player++ {
 			policies[player].AddCurrentExploiterToModel()
-			if err := savePolicy(params, player, policies[player]); err != nil {
+			if err := savePolicy(params, player, policies[player], epoch, -1); err != nil {
 				glog.Fatal(err)
 			}
 		}
@@ -195,7 +195,7 @@ func bootstrap(policy *model.MCTSPSRO, player int, params RunParams) {
 
 		policy.TrainNetwork()
 		policy.AddCurrentExploiterToModel()
-		if err := savePolicy(params, player, policy); err != nil {
+		if err := savePolicy(params, player, policy, 0, 0); err != nil {
 			glog.Fatal(err)
 		}
 	} else {
@@ -217,7 +217,7 @@ func loadTrainingSamples(filename string) ([]model.Sample, error) {
 	return samples, err
 }
 
-func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
+func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch int) {
 	gamesRemaining.Add(int64(params.NumGamesPerEpoch))
 
 	var mx sync.Mutex
@@ -233,6 +233,7 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
 	// starts to level off rather than running a fixed number of games.
 	numSamplesSinceLastTrain := 0
+	modelIter := 0
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -281,7 +282,7 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 		if needsRetrain {
 			policy.TrainNetwork()
 			numSamplesSinceLastTrain = 0
-			if err := savePolicy(params, player, policy); err != nil {
+			if err := savePolicy(params, player, policy, epoch, modelIter); err != nil {
 				glog.Fatal(err)
 			}
 		}
@@ -325,13 +326,15 @@ func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	return policies
 }
 
-func savePolicy(params RunParams, player int, policy *model.MCTSPSRO) error {
+func savePolicy(params RunParams, player int, policy *model.MCTSPSRO, epoch, modelIter int) error {
 	filename := filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model", player))
 	if err := savePolicyToFile(policy, filename); err != nil {
 		return err
 	}
 
-	filename = filepath.Join(params.ModelParams.OutputDir, fmt.Sprintf("player_%d.model.%04d", player, policy.Len()))
+	filename = filepath.Join(params.ModelParams.OutputDir,
+		fmt.Sprintf("player_%d.model.epoch_%04d.iter_%04d",
+		player, policy.Len(), epoch, modelIter))
 	return savePolicyToFile(policy, filename)
 }
 

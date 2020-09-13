@@ -144,7 +144,6 @@ func (m *MCTSPSRO) TrainNetwork() {
 		initialWeightsFile = m.currentNetwork.KerasWeightsFile()
 	}
 
-	m.logApproximateWinRateUnsafe()
 	// TODO(palpant): Unlock to allow other games to continue playing while retraining.
 	nn := m.model.Train(initialWeightsFile, m.samples)
 	// TODO(palpant): Implement evaluation/selection by pitting this network
@@ -161,21 +160,6 @@ func (m *MCTSPSRO) TrainNetwork() {
 	m.currentNetwork = &RefCountingTrainedLSTM{nn, 1}
 }
 
-func (m *MCTSPSRO) logApproximateWinRateUnsafe() {
-	recentSamples := m.samples[len(m.samples)-m.retrainInterval:]
-	nWins, nLosses := 0, 0
-	for _, s := range recentSamples {
-		if s.Value == 1.0 {
-			nWins++
-		} else {
-			nLosses++
-		}
-	}
-
-	winRate := float64(nWins) / float64(nWins + nLosses)
-	glog.Infof("Mean value of last %d samples: %.4f", len(recentSamples), winRate)
-}
-
 func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	m.mx.Lock()
 	defer m.mx.Unlock()
@@ -185,7 +169,7 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 
 	// TODO(palpant): Implement real PSRO. For now we just average all networks
 	// with equal weight (aka Fictitious Play).
-	m.policies = append(m.policies, NewPredictorPolicy(m.currentNetwork, m.predictionCacheSize))
+	m.policies = append(m.policies, NewPredictorPolicy(m.currentNetwork.TrainedLSTM, m.predictionCacheSize))
 	m.weights = uniformDistribution(len(m.policies))
 	m.currentNetwork = nil
 	m.samples = m.samples[:0]

@@ -278,10 +278,12 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 
 		mx.Lock()
 		needsRetrain := (numSamplesSinceLastTrain >= params.RetrainInterval)
-		policy.TrainNetwork()
-		numSamplesSinceLastTrain = 0
-		if err := savePolicy(params, player, policy); err != nil {
-			glog.Fatal(err)
+		if needsRetrain {
+			policy.TrainNetwork()
+			numSamplesSinceLastTrain = 0
+			if err := savePolicy(params, player, policy); err != nil {
+				glog.Fatal(err)
+			}
 		}
 		mx.Unlock()
 	}

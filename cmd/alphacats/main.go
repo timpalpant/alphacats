@@ -334,7 +334,7 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO, epoch, mod
 
 	filename = filepath.Join(params.ModelParams.OutputDir,
 		fmt.Sprintf("player_%d.model.epoch_%04d.iter_%04d",
-		player, policy.Len(), epoch, modelIter))
+		player, epoch, modelIter))
 	return savePolicyToFile(policy, filename)
 }
 

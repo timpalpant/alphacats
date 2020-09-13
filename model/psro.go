@@ -26,7 +26,6 @@ var (
 
 type MCTSPSRO struct {
 	model               *LSTM
-	retrainInterval     int
 	predictionCacheSize int
 
 	policies []mcts.Policy
@@ -39,13 +38,11 @@ type MCTSPSRO struct {
 
 	currentNetwork *TrainedLSTM
 	rollout        mcts.Evaluator
-	needsRetrain   bool
 }
 
-func NewMCTSPSRO(model *LSTM, maxSamples, retrainInterval, predictionCacheSize int) *MCTSPSRO {
+func NewMCTSPSRO(model *LSTM, maxSamples, predictionCacheSize int) *MCTSPSRO {
 	return &MCTSPSRO{
 		model:               model,
-		retrainInterval:     retrainInterval,
 		predictionCacheSize: predictionCacheSize,
 		policies:            []mcts.Policy{},
 		weights:             []float32{},
@@ -61,9 +58,6 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 	}
 	dec := gob.NewDecoder(r)
 	if err := dec.Decode(&m.model); err != nil {
-		return nil, err
-	}
-	if err := dec.Decode(&m.retrainInterval); err != nil {
 		return nil, err
 	}
 	if err := dec.Decode(&m.predictionCacheSize); err != nil {
@@ -84,9 +78,6 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 	if err := dec.Decode(&m.sampleIdx); err != nil {
 		return nil, err
 	}
-	if err := dec.Decode(&m.needsRetrain); err != nil {
-		return nil, err
-	}
 	if err := dec.Decode(&m.currentNetwork); err != nil {
 		glog.Warningf("Did not load in-progress network: %v", err)
 	}
@@ -98,9 +89,6 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 	defer m.mx.Unlock()
 	enc := gob.NewEncoder(w)
 	if err := enc.Encode(m.model); err != nil {
-		return err
-	}
-	if err := enc.Encode(m.retrainInterval); err != nil {
 		return err
 	}
 	if err := enc.Encode(m.predictionCacheSize); err != nil {
@@ -121,9 +109,6 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 	if err := enc.Encode(m.sampleIdx); err != nil {
 		return err
 	}
-	if err := enc.Encode(m.needsRetrain); err != nil {
-		return err
-	}
 	if m.currentNetwork != nil {
 		if err := enc.Encode(m.currentNetwork); err != nil {
 			return err
@@ -142,19 +127,11 @@ func (m *MCTSPSRO) AddSample(s Sample) {
 	}
 
 	m.sampleIdx++
-	if m.sampleIdx%m.retrainInterval == 0 {
-		m.needsRetrain = true
-	}
 }
 
 func (m *MCTSPSRO) TrainNetwork() {
 	m.mx.Lock()
 	defer m.mx.Unlock()
-	if !m.needsRetrain {
-		need := m.retrainInterval - (m.sampleIdx % m.retrainInterval)
-		glog.Infof("Need %d more samples before retraining", need)
-		return // Not enough data to retrain yet.
-	}
 
 	var initialWeightsFile string
 	if m.currentNetwork != nil {
@@ -173,7 +150,6 @@ func (m *MCTSPSRO) TrainNetwork() {
 		m.currentNetwork.Close()
 	}
 	m.currentNetwork = nn
-	m.needsRetrain = false
 }
 
 func (m *MCTSPSRO) logApproximateWinRateUnsafe() {
@@ -205,7 +181,6 @@ func (m *MCTSPSRO) AddCurrentExploiterToModel() {
 	m.currentNetwork = nil
 	m.samples = m.samples[:0]
 	m.sampleIdx = 0
-	m.needsRetrain = false
 	glog.Infof("Added network. PSRO now has %d oracles", len(m.policies))
 }
 

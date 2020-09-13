@@ -220,6 +220,7 @@ func loadTrainingSamples(filename string) ([]model.Sample, error) {
 func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	gamesRemaining.Add(int64(params.NumGamesPerEpoch))
 
+	var mx sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, params.MaxParallelGames)
 	policy := policies[player]
@@ -231,12 +232,8 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 	}
 	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
 	// starts to level off rather than running a fixed number of games.
+	numSamplesSinceLastTrain := 0
 	for i := 0; i < params.NumGamesPerEpoch; i++ {
-		if i == 1 {
-			// NB: Work around some CUDA initialization race that leads to segfault.
-			time.Sleep(5 * time.Second)
-		}
-
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -273,8 +270,20 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams) {
 			} else {
 				wins.Add(1)
 			}
-			policy.TrainNetwork()
+
+			mx.Lock()
+			defer mx.Unlock()
+			numSamplesSinceLastTrain += len(samples)
 		}()
+
+		mx.Lock()
+		needsRetrain := (numSamplesSinceLastTrain >= params.RetrainInterval)
+		policy.TrainNetwork()
+		numSamplesSinceLastTrain = 0
+		if err := savePolicy(params, player, policy); err != nil {
+			glog.Fatal(err)
+		}
+		mx.Unlock()
 	}
 
 	wg.Wait()
@@ -284,12 +293,12 @@ func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	p0Params := params.ModelParams
 	p0Params.OutputDir = filepath.Join(p0Params.OutputDir, "player0")
 	lstm0 := model.NewLSTM(p0Params)
-	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
+	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.PredictionCacheSize)
 
 	p1Params := params.ModelParams
 	p1Params.OutputDir = filepath.Join(p1Params.OutputDir, "player1")
 	lstm1 := model.NewLSTM(p1Params)
-	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.RetrainInterval, params.PredictionCacheSize)
+	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.PredictionCacheSize)
 
 	policies := [2]*model.MCTSPSRO{p0, p1}
 	for player := range policies {
@@ -330,10 +339,16 @@ func savePolicyToFile(policy *model.MCTSPSRO, filename string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 	w := bufio.NewWriter(f)
-	defer w.Flush()
-	return policy.SaveTo(w)
+	if err := policy.SaveTo(w); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := w.Flush(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func playGame(game cfr.GameTreeNode, search *mcts.OneSidedISMCTS, opponentPolicy mcts.Policy, player int, params RunParams) []model.Sample {

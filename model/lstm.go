@@ -164,8 +164,12 @@ type TrainedLSTM struct {
 	reqsCh chan *predictionRequest
 }
 
+var globalCUDAInitMx sync.Mutex
+
 func LoadTrainedLSTM(dir string, params Params) (*TrainedLSTM, error) {
 	opts := &tf.SessionOptions{Config: tfConfig}
+	globalCUDAInitMx.Lock()
+	defer globalCUDAInitMx.Unlock()
 	model, err := tf.LoadSavedModel(dir, []string{graphTag}, opts)
 	if err != nil {
 		return nil, err

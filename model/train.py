@@ -172,11 +172,11 @@ def main():
         x=X,
         y=y,
         batch_size=batch_size,
-        epochs=50,
+        epochs=100,
         validation_split=0.1,
         callbacks=[
             EarlyStopping(
-                monitor='val_loss', min_delta=0.0001, patience=3,
+                monitor='val_loss', min_delta=0.0001, patience=5,
                 restore_best_weights=True),
             TerminateOnNaN(),
         ],

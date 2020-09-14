@@ -57,7 +57,7 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # The history (GRU) arm of the model.
     history_hidden_1 = Dense(32)(history_input)
     history_relu_1 = LeakyReLU()(history_hidden_1)
-    history_hidden_2 = Dense(32)(history_relu_1)
+    history_hidden_2 = Dense(16)(history_relu_1)
     history_relu_2 = LeakyReLU()(history_hidden_2)
     history_lstm = Bidirectional(GRU(32, return_sequences=False))(history_relu_2)
 

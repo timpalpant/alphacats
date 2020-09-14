@@ -80,24 +80,18 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # Concatenate history, hand, and draw pile.
     # Then send through some dense layers.
     merged_inputs_1 = Concatenate()([history_lstm, drawpile_lstm, hands_relu_2])
-    merged_hidden_1 = Dense(256)(merged_inputs_1)
+    merged_hidden_1 = Dense(128)(merged_inputs_1)
     relu_1 = LeakyReLU()(merged_hidden_1)
     dropout_1 = Dropout(0.2)(relu_1)
-    merged_hidden_2 = Dense(256)(dropout_1)
+    merged_hidden_2 = Dense(128)(dropout_1)
     relu_2 = LeakyReLU()(merged_hidden_2)
-    dropout_2 = Dropout(0.2)(relu_2)
-    merged_hidden_3 = Dense(128)(dropout_2)
-    relu_3 = LeakyReLU()(merged_hidden_3)
-    dropout_3 = Dropout(0.2)(relu_3)
-    merged_hidden_4 = Dense(128)(dropout_3)
-    relu_4 = LeakyReLU()(merged_hidden_4)
 
     # Policy output head.
-    policy_hidden_1 = Dense(policy_shape, activation='linear', kernel_regularizer=l2(0.001))(relu_4)
+    policy_hidden_1 = Dense(policy_shape, activation='linear', kernel_regularizer=l2(0.001))(relu_2)
     policy_masked = Multiply()([policy_hidden_1, output_mask_input])
     policy_output = Softmax(name='policy')(policy_masked)
     # Value output head.
-    value_output = Dense(1, activation='tanh', name='value', kernel_regularizer=l2(0.001))(relu_4)
+    value_output = Dense(1, activation='tanh', name='value', kernel_regularizer=l2(0.001))(relu_2)
 
     model = Model(
         inputs=[history_input, hands_input, drawpile_input, output_mask_input],

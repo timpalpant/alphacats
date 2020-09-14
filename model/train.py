@@ -57,24 +57,21 @@ def build_model(history_shape: tuple, hands_shape: tuple, drawpile_shape: tuple,
     # The history (GRU) arm of the model.
     history_hidden_1 = Dense(32)(history_input)
     history_relu_1 = LeakyReLU()(history_hidden_1)
-    history_dropout_1 = Dropout(0.2)(history_relu_1)
-    history_hidden_2 = Dense(32)(history_dropout_1)
+    history_hidden_2 = Dense(32)(history_relu_1)
     history_relu_2 = LeakyReLU()(history_hidden_2)
-    history_lstm = Bidirectional(GRU(64, return_sequences=False))(history_relu_2)
+    history_lstm = Bidirectional(GRU(32, return_sequences=False))(history_relu_2)
 
     # The draw pile (GRU) arm of the model.
-    drawpile_hidden_1 = Dense(32)(drawpile_input)
+    drawpile_hidden_1 = Dense(16)(drawpile_input)
     drawpile_relu_1 = LeakyReLU()(drawpile_hidden_1)
-    drawpile_dropout_1 = Dropout(0.2)(drawpile_relu_1)
-    drawpile_hidden_2 = Dense(32)(drawpile_dropout_1)
+    drawpile_hidden_2 = Dense(16)(drawpile_relu_1)
     drawpile_relu_2 = LeakyReLU()(drawpile_hidden_2)
-    drawpile_lstm = Bidirectional(GRU(32, return_sequences=False))(drawpile_relu_2)
+    drawpile_lstm = Bidirectional(GRU(16, return_sequences=False))(drawpile_relu_2)
 
     # The hands arm of the model.
     hands_hidden_1 = Dense(32)(hands_input)
     hands_relu_1 = LeakyReLU()(hands_hidden_1)
-    hands_dropout_1 = Dropout(0.2)(hands_relu_1)
-    hands_hidden_2 = Dense(32)(hands_dropout_1)
+    hands_hidden_2 = Dense(32)(hands_relu_1)
     hands_relu_2 = LeakyReLU()(hands_hidden_2)
 
     # Concatenate history, hand, and draw pile.

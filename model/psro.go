@@ -26,7 +26,7 @@ var (
 )
 
 type RefCountingTrainedLSTM struct {
-	*TrainedLSTM
+	TrainedLSTM *TrainedLSTM
 	RefCount int64
 }
 
@@ -141,7 +141,7 @@ func (m *MCTSPSRO) TrainNetwork() {
 
 	var initialWeightsFile string
 	if m.currentNetwork != nil {
-		initialWeightsFile = m.currentNetwork.KerasWeightsFile()
+		initialWeightsFile = m.currentNetwork.TrainedLSTM.KerasWeightsFile()
 	}
 
 	// TODO(palpant): Unlock to allow other games to continue playing while retraining.
@@ -152,7 +152,7 @@ func (m *MCTSPSRO) TrainNetwork() {
 	if m.currentNetwork != nil {
 		if m.currentNetwork.RefCount == 1 {
 			// There are no other concurrent uses of this network making predictions, close it.
-			m.currentNetwork.Close()
+			m.currentNetwork.TrainedLSTM.Close()
 		} else {
 			// There are other concurrent uses of this network.
 			// Decrement the reference count so that when the last one finishes, it is closed.
@@ -205,7 +205,7 @@ func (m *MCTSPSRO) Evaluate(rng *rand.Rand, node cfr.GameTreeNode, opponent mcts
 	defer m.releaseNetwork(nn)
 
 	is := node.InfoSet(node.Player()).(*alphacats.AbstractedInfoSet)
-	return nn.Predict(is)
+	return nn.TrainedLSTM.Predict(is)
 }
 
 func (m *MCTSPSRO) getCurrentNetwork() *RefCountingTrainedLSTM {
@@ -221,7 +221,7 @@ func (m *MCTSPSRO) releaseNetwork(nn *RefCountingTrainedLSTM) {
 	numRefs := atomic.AddInt64(&nn.RefCount, -1)
 	if numRefs == 0 {
 		// This is the last reference to this network, close it.
-		nn.Close()
+		nn.TrainedLSTM.Close()
 	}
 }
 

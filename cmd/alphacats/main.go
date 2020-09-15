@@ -137,7 +137,7 @@ func main() {
 	// Run PSRO: Each epoch, train an approximate best response to the opponent's
 	// current policy distribution. Then add the new policies to the meta-model.
 	start = time.Now()
-	for epoch := 1; ; epoch++ {
+	for epoch := policies[0].Len(); ; epoch++ {
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best responses",
 			epoch, params.NumGamesPerEpoch)
 		wg.Add(2)
@@ -344,8 +344,8 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO, epoch, mod
 	}
 
 	filename = filepath.Join(params.ModelParams.OutputDir,
-		fmt.Sprintf("player_%d.model.epoch_%04d.iter_%04d",
-		player, epoch, modelIter))
+		fmt.Sprintf("player_%d.model.%9d.epoch_%04d.iter_%04d",
+		player, start.Nanosecond(), epoch, modelIter))
 	return savePolicyToFile(policy, filename)
 }
 

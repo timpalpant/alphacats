@@ -186,8 +186,22 @@ func (m *MCTSPSRO) AddModel(policy mcts.Policy) {
 	m.weights = uniformDistribution(len(m.policies))
 }
 
+func (m *MCTSPSRO) AssignWeights(weights []float32) {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	m.weights = weights
+}
+
 func (m *MCTSPSRO) Len() int {
 	return len(m.policies)
+}
+
+func (m *MCTSPSRO) GetPolicies() []mcts.Policy {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	result := make([]mcts.Policy, len(m.policies))
+	copy(result, m.policies)
+	return result
 }
 
 func (m *MCTSPSRO) SamplePolicy() mcts.Policy {

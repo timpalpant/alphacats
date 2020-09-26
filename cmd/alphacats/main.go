@@ -154,15 +154,25 @@ func main() {
 		wg.Wait()
 
 		// Update meta-model with new best response policies.
-		// TODO: Implement Nash solver for the meta-game rather than using uniform
-		// Fictitious Play.
 		for player := 0; player < 1; player++ {
 			policies[player].AddCurrentExploiterToModel()
+		}
+
+		updateNashWeights(policies)
+
+		for player := 0; player < 1; player++ {
 			if err := savePolicy(params, player, policies[player], epoch, -1); err != nil {
 				glog.Fatal(err)
 			}
 		}
 	}
+}
+
+func updateNashWeights(policies [2]*model.MCTSPSRO) {
+	p0Policies := policies[0].GetPolicies()
+	p1Policies := policies[1].GetPolicies()
+	policies[0].AssignWeights(p0Weights)
+	policies[1].AssignWeights(p1Weights)
 }
 
 func glob(dir string, prefix, ext string) ([]string, error) {
@@ -284,7 +294,7 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch i
 		if needsRetrain {
 			newWins := wins.Value() - prevWins
 			newLosses := losses.Value() - prevLosses
-			winRate := float64(newWins) / float64(newWins + newLosses)
+			winRate := float64(newWins) / float64(newWins+newLosses)
 			winRates = append(winRates, winRate)
 			glog.Infof("Win rates: %v", winRates)
 			prevWins = wins.Value()
@@ -345,7 +355,7 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO, epoch, mod
 
 	filename = filepath.Join(params.ModelParams.OutputDir,
 		fmt.Sprintf("player_%d.model.%9d.epoch_%04d.iter_%04d",
-		player, start.Nanosecond(), epoch, modelIter))
+			player, start.Nanosecond(), epoch, modelIter))
 	return savePolicyToFile(policy, filename)
 }
 

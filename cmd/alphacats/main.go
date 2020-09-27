@@ -151,7 +151,7 @@ func main() {
 	var winRateMatrix [][]float64
 	for epoch := policies[0].Len(); ; epoch++ {
 		winRateMatrix = updateNashWeights(policies[0], policies[1], winRateMatrix, params)
-		for player := 0; player < 1; player++ {
+		for player := range []int{0, 1} {
 			if err := savePolicy(params, player, policies[player], epoch-1, -1); err != nil {
 				glog.Fatal(err)
 			}
@@ -173,7 +173,7 @@ func main() {
 		wg.Wait()
 
 		// Update meta-model with new best response policies.
-		for player := 0; player < 1; player++ {
+		for player := range []int{0, 1} {
 			policies[player].AddCurrentExploiterToModel()
 		}
 	}

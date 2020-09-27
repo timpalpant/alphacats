@@ -8,6 +8,7 @@ import (
 	"expvar"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http"
 	_ "net/http/pprof"
@@ -25,6 +26,7 @@ import (
 	"github.com/timpalpant/alphacats"
 	"github.com/timpalpant/alphacats/cards"
 	"github.com/timpalpant/alphacats/gamestate"
+	"github.com/timpalpant/alphacats/matrixgame"
 	"github.com/timpalpant/alphacats/model"
 )
 
@@ -50,12 +52,15 @@ type RunParams struct {
 	CardsPerPlayer int
 
 	BootstrapSamplesDir        string
-	NumGamesPerEpoch           int
+	MaxNumGamesPerEpoch        int
+	EarlyStoppingPatience      int
 	MaxParallelGames           int
 	NumMCTSIterationsExpensive int
 	NumMCTSIterationsCheap     int
 	ExpensiveMoveFraction      float64
 	MaxParallelSearches        int
+	NumMetaPolicySimulations   int
+	NumMetaPolicyIterations    int
 
 	SamplingParams   SamplingParams
 	Temperature      float64
@@ -78,8 +83,10 @@ func main() {
 	}
 	flag.StringVar(&params.BootstrapSamplesDir, "bootstrap_samples_dir", "models/bootstrap-training-data",
 		"Directory with bootstrap training data for initial model")
-	flag.IntVar(&params.NumGamesPerEpoch, "games_per_epoch", 25000,
-		"Number of games to play each epoch")
+	flag.IntVar(&params.MaxNumGamesPerEpoch, "games_per_epoch", 25000,
+		"Maximum number of games to play each epoch")
+	flag.IntVar(&params.EarlyStoppingPatience, "early_stopping_patience", 3,
+		"Stop epoch early if no improvement for this many trainings")
 	flag.IntVar(&params.MaxParallelGames, "max_parallel_games", 768,
 		"Number of games to run in parallel")
 	flag.IntVar(&params.NumMCTSIterationsExpensive, "search_iter_expensive", 800,
@@ -94,6 +101,10 @@ func main() {
 		"Maximum number of training samples to keep")
 	flag.IntVar(&params.RetrainInterval, "retrain_interval", 10000,
 		"How many samples to collect before retraining.")
+	flag.IntVar(&params.NumMetaPolicySimulations, "num_meta_policy_simulations", 10000,
+		"How many games to simulate when estimating meta policy distribution")
+	flag.IntVar(&params.NumMetaPolicyIterations, "num_meta_policy_iterations", 1000000,
+		"Number of iterations of fictitious play to perform when estimating meta policy distribution")
 	flag.Float64Var(&params.Temperature, "temperature", 0.8,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
@@ -137,16 +148,17 @@ func main() {
 	// Run PSRO: Each epoch, train an approximate best response to the opponent's
 	// current policy distribution. Then add the new policies to the meta-model.
 	start = time.Now()
+	var winRateMatrix [][]float64
 	for epoch := policies[0].Len(); ; epoch++ {
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best responses",
-			epoch, params.NumGamesPerEpoch)
+			epoch, params.MaxNumGamesPerEpoch)
 		wg.Add(2)
 		go func() {
 			runEpoch(policies, 0, params, epoch)
 			wg.Done()
 		}()
 		// NB: Work around some CUDA initialization race that leads to segfault.
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 		go func() {
 			runEpoch(policies, 1, params, epoch)
 			wg.Done()
@@ -158,8 +170,7 @@ func main() {
 			policies[player].AddCurrentExploiterToModel()
 		}
 
-		updateNashWeights(policies)
-
+		winRateMatrix = updateNashWeights(policies[0], policies[1], winRateMatrix, params)
 		for player := 0; player < 1; player++ {
 			if err := savePolicy(params, player, policies[player], epoch, -1); err != nil {
 				glog.Fatal(err)
@@ -168,11 +179,114 @@ func main() {
 	}
 }
 
-func updateNashWeights(policies [2]*model.MCTSPSRO) {
-	p0Policies := policies[0].GetPolicies()
-	p1Policies := policies[1].GetPolicies()
-	policies[0].AssignWeights(p0Weights)
-	policies[1].AssignWeights(p1Weights)
+// Given our collection of policies (models) for player 0 and player 1,
+// determine how often they should play each model based on empirical pairwise
+// win rates of all models against each other.
+func updateNashWeights(policy0, policy1 *model.MCTSPSRO, winRateMatrix [][]float64, params RunParams) [][]float64 {
+	p0Policies := policy0.GetPolicies()
+	p1Policies := policy1.GetPolicies()
+	glog.Infof("Updating win rate matrix with %d x %d policies",
+		len(p0Policies), len(p1Policies))
+	winRateMatrix = updateWinRateMatrix(p0Policies, p1Policies, winRateMatrix, params)
+	glog.Infof("Solving meta game with %d iterations of fictitious play",
+		params.NumMetaPolicyIterations)
+	p0Weights, p1Weights := matrixgame.FictitiousPlay(winRateMatrix, params.NumMetaPolicyIterations)
+	policy0.AssignWeights(p0Weights)
+	policy1.AssignWeights(p1Weights)
+	return winRateMatrix
+}
+
+func updateWinRateMatrix(p0Policies, p1Policies []mcts.Policy, winRateMatrix [][]float64, params RunParams) [][]float64 {
+	// Add rows and columns to the matrix for any new policies. Initialize to NaN.
+	for i := len(winRateMatrix); i < len(p0Policies); i++ {
+		winRateMatrix = append(winRateMatrix, makeNaNs(len(p1Policies)))
+	}
+	for i, winRate := range winRateMatrix {
+		winRateMatrix[i] = append(winRate, makeNaNs(len(p1Policies)-len(winRate))...)
+	}
+
+	// Perform simulations to populate all NaN entries.
+	for i := range winRateMatrix {
+		for j := range winRateMatrix[i] {
+			if !math.IsNaN(winRateMatrix[i][j]) {
+				continue // Already populated.
+			}
+
+			glog.Infof("Simulating %d games between policies %d, %d",
+				params.NumMetaPolicySimulations, i, j)
+			winRate := battlePolicies(p0Policies[i], p1Policies[j], params)
+			winRateMatrix[i][j] = winRate
+		}
+	}
+
+	glog.Infof("Win rate matrix is now:")
+	for _, row := range winRateMatrix {
+		glog.Infof("\t%v", row)
+	}
+	return winRateMatrix
+}
+
+func makeNaNs(n int) []float64 {
+	result := make([]float64, n)
+	for i := range result {
+		result[i] = math.NaN()
+	}
+	return result
+}
+
+func battlePolicies(p0Policy, p1Policy mcts.Policy, params RunParams) float64 {
+	wins := 0
+	var mx sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, params.MaxParallelGames*params.MaxParallelSearches)
+	for i := 1; i <= params.NumMetaPolicySimulations; i++ {
+		if i%1000 == 0 {
+			glog.Infof("...simulated %d games", i)
+		}
+
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
+			winner := playOneVersusMatch(p0Policy, p1Policy, params)
+			if winner == 0 {
+				mx.Lock()
+				defer mx.Unlock()
+				wins++
+			}
+		}()
+	}
+
+	wg.Wait()
+	return float64(wins) / float64(params.NumMetaPolicySimulations)
+}
+
+func playOneVersusMatch(p0Policy, p1Policy mcts.Policy, params RunParams) (winner int) {
+	// NB: NewRandomDeal shuffles the passed deck.
+	deck := make([]cards.Card, len(params.Deck))
+	copy(deck, params.Deck)
+	deal := alphacats.NewRandomDeal(deck, params.CardsPerPlayer)
+	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+	for game.Type() != cfr.TerminalNodeType {
+		if game.Type() == cfr.ChanceNodeType {
+			game, _ = game.SampleChild()
+		} else {
+			policy := p0Policy
+			if game.Player() == 1 {
+				policy = p1Policy
+			}
+
+			p := policy.GetPolicy(game)
+			selected := sampling.SampleOne(p, rand.Float32())
+			game = game.GetChild(selected)
+		}
+
+	}
+
+	return game.Player()
 }
 
 func glob(dir string, prefix, ext string) ([]string, error) {
@@ -228,7 +342,7 @@ func loadTrainingSamples(filename string) ([]model.Sample, error) {
 }
 
 func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch int) {
-	gamesRemaining.Add(int64(params.NumGamesPerEpoch))
+	gamesRemaining.Add(int64(params.MaxNumGamesPerEpoch))
 
 	var mx sync.Mutex
 	var wg sync.WaitGroup
@@ -240,13 +354,11 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch i
 	if player == 1 {
 		wins, losses = p1p1Wins, p1p0Wins
 	}
-	// TODO(palpant): Dynamic stoppping -- stop epoch when win rate
-	// starts to level off rather than running a fixed number of games.
 	var winRates []float64
 	var prevWins, prevLosses int64
 	numSamplesSinceLastTrain := 0
 	modelIter := 0
-	for i := 0; i < params.NumGamesPerEpoch; i++ {
+	for i := 0; i < params.MaxNumGamesPerEpoch && !shouldStopEarly(winRates, params); i++ {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -306,11 +418,30 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch i
 			if err := savePolicy(params, player, policy, epoch, modelIter); err != nil {
 				glog.Fatal(err)
 			}
+
 		}
 		mx.Unlock()
 	}
 
 	wg.Wait()
+}
+
+func shouldStopEarly(winRates []float64, params RunParams) bool {
+	_, idx := argMax(winRates)
+	return idx < len(winRates)-1-params.EarlyStoppingPatience
+}
+
+func argMax(vs []float64) (float64, int) {
+	best := -math.MaxFloat64
+	bestIdx := 0
+	for i, v := range vs {
+		if v > best {
+			best = v
+			bestIdx = i
+		}
+	}
+
+	return best, bestIdx
 }
 
 func loadPolicy(params RunParams) [2]*model.MCTSPSRO {

@@ -150,6 +150,13 @@ func main() {
 	start = time.Now()
 	var winRateMatrix [][]float64
 	for epoch := policies[0].Len(); ; epoch++ {
+		winRateMatrix = updateNashWeights(policies[0], policies[1], winRateMatrix, params)
+		for player := 0; player < 1; player++ {
+			if err := savePolicy(params, player, policies[player], epoch-1, -1); err != nil {
+				glog.Fatal(err)
+			}
+		}
+
 		glog.Infof("Starting epoch %d: Playing %d games to train approximate best responses",
 			epoch, params.MaxNumGamesPerEpoch)
 		wg.Add(2)
@@ -168,13 +175,6 @@ func main() {
 		// Update meta-model with new best response policies.
 		for player := 0; player < 1; player++ {
 			policies[player].AddCurrentExploiterToModel()
-		}
-
-		winRateMatrix = updateNashWeights(policies[0], policies[1], winRateMatrix, params)
-		for player := 0; player < 1; player++ {
-			if err := savePolicy(params, player, policies[player], epoch, -1); err != nil {
-				glog.Fatal(err)
-			}
 		}
 	}
 }
@@ -319,9 +319,6 @@ func bootstrap(policy *model.MCTSPSRO, player int, params RunParams) {
 
 		policy.TrainNetwork()
 		policy.AddCurrentExploiterToModel()
-		if err := savePolicy(params, player, policy, 0, 0); err != nil {
-			glog.Fatal(err)
-		}
 	} else {
 		glog.Warningf("Didn't find any bootstrap data for player %d. Starting with uniform random model", player)
 		policy.AddModel(&model.UniformRandomPolicy{})

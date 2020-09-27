@@ -165,7 +165,7 @@ func main() {
 			wg.Done()
 		}()
 		// NB: Work around some CUDA initialization race that leads to segfault.
-		time.Sleep(10 * time.Second)
+		time.Sleep(20 * time.Second)
 		go func() {
 			runEpoch(policies, 1, params, epoch)
 			wg.Done()
@@ -240,7 +240,10 @@ func battlePolicies(p0Policy, p1Policy mcts.Policy, params RunParams) float64 {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, params.MaxParallelGames*params.MaxParallelSearches)
 	for i := 1; i <= params.NumMetaPolicySimulations; i++ {
-		if i%1000 == 0 {
+		if i == 2 {
+			// NB: Work around some CUDA initialization race that leads to segfault.
+			time.Sleep(15 * time.Second)
+		} else if i%1000 == 0 {
 			glog.Infof("...simulated %d games", i)
 		}
 

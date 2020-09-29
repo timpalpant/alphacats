@@ -26,6 +26,7 @@ var stdin = bufio.NewReader(os.Stdin)
 
 func main() {
 	model := flag.String("model", "models/player_0.model", "Model to play against")
+	recommenderModel := flag.String("recommender_model", "models/player_1.model", "Model to recommend moves")
 	seed := flag.Int64("sampling.seed", 123, "Random seed")
 	flag.Parse()
 
@@ -35,10 +36,12 @@ func main() {
 	deck := cards.CoreDeck.AsSlice()
 	cardsPerPlayer := 4
 	opponent := loadPolicy(*model)
+	recommender := loadPolicy(*recommenderModel)
 	for i := 0; ; i++ {
 		opponentPolicy := opponent.SamplePolicy()
+		recommenderPolicy := recommender.SamplePolicy()
 		deal := alphacats.NewRandomDeal(deck, cardsPerPlayer)
-		playGame(opponentPolicy, deal)
+		playGame(opponentPolicy, recommenderPolicy, deal)
 	}
 }
 
@@ -58,7 +61,7 @@ func loadPolicy(modelPath string) *model.MCTSPSRO {
 	return policy
 }
 
-func playGame(opponent mcts.Policy, deal alphacats.Deal) {
+func playGame(opponent, recommender mcts.Policy, deal alphacats.Deal) {
 	var game cfr.GameTreeNode = alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
 	for game.Type() != cfr.TerminalNodeType {
 		if game.Type() == cfr.ChanceNodeType {
@@ -69,9 +72,10 @@ func playGame(opponent mcts.Policy, deal alphacats.Deal) {
 			is := game.InfoSet(game.Player()).(*alphacats.AbstractedInfoSet)
 			glog.Infof("[player] Your turn. %d cards remaining in draw pile.",
 				game.(*alphacats.GameNode).GetDrawPile().Len())
+			p := recommender.GetPolicy(game)
 			glog.Infof("[player] Hand: %v, Choices:", is.Hand)
 			for i, action := range is.AvailableActions {
-				glog.Infof("%d: %v", i, action)
+				glog.Infof("%d: %v (recommender P: %.3f)", i, action, p[i])
 			}
 
 			selected := prompt("Which action? ")

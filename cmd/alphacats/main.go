@@ -59,13 +59,14 @@ type RunParams struct {
 	NumMCTSIterationsCheap     int
 	ExpensiveMoveFraction      float64
 	MaxParallelSearches        int
-	NumMetaPolicySimulations   int
-	NumMetaPolicyIterations    int
 
-	SamplingParams   SamplingParams
-	Temperature      float64
-	SampleBufferSize int
-	RetrainInterval  int
+	SamplingParams           SamplingParams
+	Temperature              float64
+	SampleBufferSize         int
+	RetrainInterval          int
+	NumMetaPolicySimulations int
+	NumMetaPolicyIterations  int
+	MetaPolicyMixingLambda   float64
 
 	ModelParams         model.Params
 	PredictionCacheSize int
@@ -105,6 +106,8 @@ func main() {
 		"How many games to simulate when estimating meta policy distribution")
 	flag.IntVar(&params.NumMetaPolicyIterations, "num_meta_policy_iterations", 1000000,
 		"Number of iterations of fictitious play to perform when estimating meta policy distribution")
+	flag.Float64Var(&params.MetaPolicyMixingLambda, "meta_policy_mixing_lambda", 0.2,
+		"Fraction of time to pick a policy uniformly randomly (vs. using Nash equilibrium weights)")
 	flag.Float64Var(&params.Temperature, "temperature", 0.8,
 		"Temperature used when selecting actions during play")
 	flag.Int64Var(&params.SamplingParams.Seed, "sampling.seed", 123, "Random seed")
@@ -448,12 +451,12 @@ func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	p0Params := params.ModelParams
 	p0Params.OutputDir = filepath.Join(p0Params.OutputDir, "player0")
 	lstm0 := model.NewLSTM(p0Params)
-	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.PredictionCacheSize)
+	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.PredictionCacheSize, params.MetaPolicyMixingLambda)
 
 	p1Params := params.ModelParams
 	p1Params.OutputDir = filepath.Join(p1Params.OutputDir, "player1")
 	lstm1 := model.NewLSTM(p1Params)
-	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.PredictionCacheSize)
+	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.PredictionCacheSize, params.MetaPolicyMixingLambda)
 
 	policies := [2]*model.MCTSPSRO{p0, p1}
 	for player := range policies {

@@ -11,7 +11,7 @@ func TestFictitiousPlay_RockPaperScissors(t *testing.T) {
 		[]float64{1, -1, 0}, // Player 0 plays paper.
 	}
 
-	p0, p1 := FictitiousPlay(winRateMatrix, 10000)
+	p0, p1 := FictitiousPlay(winRateMatrix, 10000, 0.1)
 	t.Logf("Player 0 Nash equilibrium policy: %v", p0)
 	t.Logf("Player 1 Nash equilibrium policy: %v", p1)
 }

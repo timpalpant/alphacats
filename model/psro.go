@@ -33,7 +33,6 @@ type RefCountingTrainedLSTM struct {
 type MCTSPSRO struct {
 	model               *LSTM
 	predictionCacheSize int
-	mixingLambda        float64
 
 	policies []mcts.Policy
 	weights  []float32
@@ -47,11 +46,10 @@ type MCTSPSRO struct {
 	rollout        mcts.Evaluator
 }
 
-func NewMCTSPSRO(model *LSTM, maxSamples, predictionCacheSize int, mixingLambda float64) *MCTSPSRO {
+func NewMCTSPSRO(model *LSTM, maxSamples, predictionCacheSize int) *MCTSPSRO {
 	return &MCTSPSRO{
 		model:               model,
 		predictionCacheSize: predictionCacheSize,
-		mixingLambda:        mixingLambda,
 		policies:            []mcts.Policy{},
 		weights:             []float32{},
 		samples:             make([]Sample, 0, maxSamples),
@@ -69,9 +67,6 @@ func LoadMCTSPSRO(r io.Reader) (*MCTSPSRO, error) {
 		return nil, err
 	}
 	if err := dec.Decode(&m.predictionCacheSize); err != nil {
-		return nil, err
-	}
-	if err := dec.Decode(&m.mixingLambda); err != nil {
 		return nil, err
 	}
 	if err := dec.Decode(&m.policies); err != nil {
@@ -103,9 +98,6 @@ func (m *MCTSPSRO) SaveTo(w io.Writer) error {
 		return err
 	}
 	if err := enc.Encode(m.predictionCacheSize); err != nil {
-		return err
-	}
-	if err := enc.Encode(m.mixingLambda); err != nil {
 		return err
 	}
 	if err := enc.Encode(m.policies); err != nil {
@@ -217,13 +209,7 @@ func (m *MCTSPSRO) GetPolicies() []mcts.Policy {
 func (m *MCTSPSRO) SamplePolicy() mcts.Policy {
 	m.mx.Lock()
 	defer m.mx.Unlock()
-	var selected int
-	if rand.Float64() < m.mixingLambda {
-		// Force (mix in) policies by choosing one uniformly randomly.
-		selected = rand.Intn(len(m.policies))
-	} else {
-		selected = sampling.SampleOne(m.weights, rand.Float32())
-	}
+	selected := sampling.SampleOne(m.weights, rand.Float32())
 	return m.policies[selected]
 }
 

@@ -193,7 +193,7 @@ func updateNashWeights(policy0, policy1 *model.MCTSPSRO, winRateMatrix [][]float
 	winRateMatrix = updateWinRateMatrix(p0Policies, p1Policies, winRateMatrix, params)
 	glog.Infof("Solving meta game with %d iterations of fictitious play",
 		params.NumMetaPolicyIterations)
-	p0Weights, p1Weights := matrixgame.FictitiousPlay(winRateMatrix, params.NumMetaPolicyIterations)
+	p0Weights, p1Weights := matrixgame.FictitiousPlay(winRateMatrix, params.NumMetaPolicyIterations, params.MetaPolicyMixingLambda)
 	policy0.AssignWeights(p0Weights)
 	policy1.AssignWeights(p1Weights)
 	return winRateMatrix
@@ -451,12 +451,12 @@ func loadPolicy(params RunParams) [2]*model.MCTSPSRO {
 	p0Params := params.ModelParams
 	p0Params.OutputDir = filepath.Join(p0Params.OutputDir, "player0")
 	lstm0 := model.NewLSTM(p0Params)
-	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.PredictionCacheSize, params.MetaPolicyMixingLambda)
+	p0 := model.NewMCTSPSRO(lstm0, params.SampleBufferSize, params.PredictionCacheSize)
 
 	p1Params := params.ModelParams
 	p1Params.OutputDir = filepath.Join(p1Params.OutputDir, "player1")
 	lstm1 := model.NewLSTM(p1Params)
-	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.PredictionCacheSize, params.MetaPolicyMixingLambda)
+	p1 := model.NewMCTSPSRO(lstm1, params.SampleBufferSize, params.PredictionCacheSize)
 
 	policies := [2]*model.MCTSPSRO{p0, p1}
 	for player := range policies {

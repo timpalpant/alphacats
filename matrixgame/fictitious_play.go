@@ -7,14 +7,25 @@ import (
 	"github.com/golang/glog"
 )
 
-func FictitiousPlay(winRateMatrix [][]float64, nIter int) ([]float32, []float32) {
+func FictitiousPlay(winRateMatrix [][]float64, nIter int, mixingLambda float64) ([]float32, []float32) {
 	p0PlayCounts := make([]int, len(winRateMatrix))
 	p1PlayCounts := make([]int, len(winRateMatrix[0]))
 	for i := 1; i <= nIter; i++ {
-		p0BR := getP0BestResponse(winRateMatrix, p1PlayCounts)
-		p1BR := getP1BestResponse(winRateMatrix, p0PlayCounts)
-		p0PlayCounts[p0BR] += 1
-		p1PlayCounts[p1BR] += 1
+		var p0Selected int
+		if rand.Float64() < mixingLambda {
+			p0Selected = rand.Intn(len(p0PlayCounts))
+		} else {
+			p0Selected = getP0BestResponse(winRateMatrix, p1PlayCounts)
+		}
+
+		var p1Selected int
+		if rand.Float64() < mixingLambda {
+			p0Selected = rand.Intn(len(p1PlayCounts))
+		} else {
+			p1Selected = getP1BestResponse(winRateMatrix, p0PlayCounts)
+		}
+		p0PlayCounts[p0Selected] += 1
+		p1PlayCounts[p1Selected] += 1
 
 		if i%(nIter/10) == 0 {
 			glog.Infof("After %d iterations, player 0 weights: %v", i, normalize(p0PlayCounts))

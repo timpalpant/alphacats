@@ -52,7 +52,7 @@ func getP1BestResponse(winRateMatrix [][]float64, p0PlayCounts []int) int {
 	utilities := make([]float64, len(winRateMatrix[0]))
 	for i, c := range p0PlayCounts {
 		for j := range utilities {
-			utilities[j] += float64(c) * (1.0 - winRateMatrix[i][j])
+			utilities[j] -= float64(c) * winRateMatrix[i][j]
 		}
 	}
 

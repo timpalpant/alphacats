@@ -196,6 +196,13 @@ func updateNashWeights(policy0, policy1 *model.MCTSPSRO, winRateMatrix [][]float
 	p0Weights, p1Weights := matrixgame.FictitiousPlay(winRateMatrix, params.NumMetaPolicyIterations, params.MetaPolicyMixingLambda)
 	policy0.AssignWeights(p0Weights)
 	policy1.AssignWeights(p1Weights)
+	var gameValue float32
+	for i, w0 := range p0Weights {
+		for j, w1 := range p1Weights {
+			gameValue += w0 * w1 * float32(winRateMatrix[i][j])
+		}
+	}
+	glog.Infof("Game value for player 0 is: %v", gameValue)
 	return winRateMatrix
 }
 
@@ -218,7 +225,7 @@ func updateWinRateMatrix(p0Policies, p1Policies []mcts.Policy, winRateMatrix [][
 			glog.Infof("Simulating %d games between policies %d, %d",
 				params.NumMetaPolicySimulations, i, j)
 			winRate := battlePolicies(p0Policies[i], p1Policies[j], params)
-			winRateMatrix[i][j] = winRate
+			winRateMatrix[i][j] = 2 * winRate - 1.0  // Player 0 game value.
 		}
 	}
 

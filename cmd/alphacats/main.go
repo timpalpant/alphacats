@@ -100,8 +100,8 @@ func main() {
 		"Number of searches per game to run in parallel")
 	flag.IntVar(&params.SampleBufferSize, "sample_buffer_size", 500000,
 		"Maximum number of training samples to keep")
-	flag.IntVar(&params.RetrainInterval, "retrain_interval", 10000,
-		"How many samples to collect before retraining.")
+	flag.IntVar(&params.RetrainInterval, "retrain_interval", 2000,
+		"How many games to play before retraining.")
 	flag.IntVar(&params.NumMetaPolicySimulations, "num_meta_policy_simulations", 10000,
 		"How many games to simulate when estimating meta policy distribution")
 	flag.IntVar(&params.NumMetaPolicyIterations, "num_meta_policy_iterations", 1000000,
@@ -354,7 +354,6 @@ func loadTrainingSamples(filename string) ([]model.Sample, error) {
 func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch int) {
 	gamesRemaining.Add(int64(params.MaxNumGamesPerEpoch))
 
-	var mx sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, params.MaxParallelGames)
 	policy := policies[player]
@@ -366,79 +365,90 @@ func runEpoch(policies [2]*model.MCTSPSRO, player int, params RunParams, epoch i
 	}
 	var winRates []float64
 	var prevWins, prevLosses int64
-	numSamplesSinceLastTrain := 0
 	modelIter := 0
 	for i := 0; i < params.MaxNumGamesPerEpoch && !shouldStopEarly(winRates, params); i++ {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer func() {
-				gamesRemaining.Add(-1)
-				wg.Done()
-				<-sem
-			}()
-			// NB: NewRandomDeal shuffles the passed deck.
-			deck := make([]cards.Card, len(params.Deck))
-			copy(deck, params.Deck)
-			deal := alphacats.NewRandomDeal(deck, params.CardsPerPlayer)
-			game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+		// Group games by opponent to try to improve model inference batching.
+		opponents := make(map[mcts.Policy]int)
+		for j := 0; j < params.RetrainInterval; j++ {
 			opponentPolicy := opponent.SamplePolicy()
-			ismcts := mcts.NewOneSidedISMCTS(player, policy,
-				float32(params.SamplingParams.C), float32(params.Temperature))
-			glog.Infof("Playing game with %d/%d search iterations",
-				params.NumMCTSIterationsExpensive,
-				params.NumMCTSIterationsCheap)
-			samples := playGame(game, ismcts, opponentPolicy, player, params)
-			glog.Infof("Collected %d samples", len(samples))
-			gamesPlayed.Add(1)
-			numSamples.Add(int64(len(samples)))
-
-			for i, s := range samples {
-				glog.V(1).Infof("Sample %d: %v", i, s)
-				policy.AddSample(s)
-			}
-
-			// NB: When we are player 1, it is possible that player 0 lost on the first
-			// turn before we had any chance to play.
-			if len(samples) == 0 || samples[len(samples)-1].Value != 1.0 {
-				losses.Add(1)
-			} else {
-				wins.Add(1)
-			}
-
-			mx.Lock()
-			defer mx.Unlock()
-			numSamplesSinceLastTrain += len(samples)
-		}()
-
-		mx.Lock()
-		needsRetrain := (numSamplesSinceLastTrain >= params.RetrainInterval)
-		if needsRetrain {
-			newWins := wins.Value() - prevWins
-			newLosses := losses.Value() - prevLosses
-			winRate := float64(newWins) / float64(newWins+newLosses)
-			winRates = append(winRates, winRate)
-			glog.Infof("Win rates: %v", winRates)
-			prevWins = wins.Value()
-			prevLosses = losses.Value()
-
-			policy.TrainNetwork()
-			numSamplesSinceLastTrain = 0
-			modelIter++
-			if err := savePolicy(params, player, policy, epoch, modelIter); err != nil {
-				glog.Fatal(err)
-			}
-
+			opponents[opponentPolicy]++
 		}
-		mx.Unlock()
-	}
 
-	wg.Wait()
+		var mx sync.Mutex
+		var newSamples []model.Sample
+		for opponentPolicy, nGamesToPlay := range opponents {
+			for j := 0; j < nGamesToPlay; j++ {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func() {
+					defer func() {
+						gamesRemaining.Add(-1)
+						wg.Done()
+						<-sem
+					}()
+					// NB: NewRandomDeal shuffles the passed deck.
+					deck := make([]cards.Card, len(params.Deck))
+					copy(deck, params.Deck)
+					deal := alphacats.NewRandomDeal(deck, params.CardsPerPlayer)
+					game := alphacats.NewGame(deal.DrawPile, deal.P0Deal, deal.P1Deal)
+					ismcts := mcts.NewOneSidedISMCTS(player, policy,
+						float32(params.SamplingParams.C), float32(params.Temperature))
+					glog.Infof("Playing game with %d/%d search iterations",
+						params.NumMCTSIterationsExpensive,
+						params.NumMCTSIterationsCheap)
+					samples := playGame(game, ismcts, opponentPolicy, player, params)
+					glog.Infof("Collected %d samples", len(samples))
+					gamesPlayed.Add(1)
+					numSamples.Add(int64(len(samples)))
+
+					mx.Lock()
+					defer mx.Unlock()
+					newSamples = append(newSamples, samples...)
+
+					// NB: When we are player 1, it is possible that player 0 lost on the first
+					// turn before we had any chance to play.
+					if len(samples) == 0 || samples[len(samples)-1].Value != 1.0 {
+						losses.Add(1)
+					} else {
+						wins.Add(1)
+					}
+				}()
+			}
+		}
+
+		wg.Wait()
+
+		// Shuffle newly collected samples so we don't get weird artifacts when aging out,
+		// then add to the model.
+		rand.Shuffle(len(newSamples), func(i, j int) {
+			newSamples[i], newSamples[j] = newSamples[j], newSamples[i]
+		})
+		for _, s := range newSamples {
+			policy.AddSample(s)
+		}
+
+		newWins := wins.Value() - prevWins
+		newLosses := losses.Value() - prevLosses
+		winRate := float64(newWins) / float64(newWins+newLosses)
+		winRates = append(winRates, winRate)
+		glog.Infof("Win rates: %v", winRates)
+		prevWins = wins.Value()
+		prevLosses = losses.Value()
+
+		policy.TrainNetwork()
+		modelIter++
+		if err := savePolicy(params, player, policy, epoch, modelIter); err != nil {
+			glog.Fatal(err)
+		}
+	}
 }
 
 func shouldStopEarly(winRates []float64, params RunParams) bool {
-	_, idx := argMax(winRates)
-	return idx < len(winRates)-1-params.EarlyStoppingPatience
+	if len(winRates) == 0 {
+		return false
+	}
+	_, idx := argMax(winRates[1:])
+	return idx+1 < len(winRates)-1-params.EarlyStoppingPatience
 }
 
 func argMax(vs []float64) (float64, int) {
@@ -495,7 +505,7 @@ func savePolicy(params RunParams, player int, policy *model.MCTSPSRO, epoch, mod
 	}
 
 	filename = filepath.Join(params.ModelParams.OutputDir,
-		fmt.Sprintf("player_%d.model.%9d.epoch_%04d.iter_%04d",
+		fmt.Sprintf("player_%d.model.%09d.epoch_%04d.iter_%04d",
 			player, start.Nanosecond(), epoch, modelIter))
 	return savePolicyToFile(policy, filename)
 }

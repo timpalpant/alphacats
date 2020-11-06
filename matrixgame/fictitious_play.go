@@ -20,7 +20,7 @@ func FictitiousPlay(winRateMatrix [][]float64, nIter int, mixingLambda float64) 
 
 		var p1Selected int
 		if rand.Float64() < mixingLambda {
-			p0Selected = rand.Intn(len(p1PlayCounts))
+			p1Selected = rand.Intn(len(p1PlayCounts))
 		} else {
 			p1Selected = getP1BestResponse(winRateMatrix, p0PlayCounts)
 		}
